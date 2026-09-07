@@ -19,6 +19,7 @@ import { readJsonBody, sendJson } from '@noodle-borg/transport-http';
 import { assistantSessionResponseSchema } from '@noodle-borg/wire-contracts';
 import type { AssistantRouteDeps } from './assistant.js';
 import { applyBrowserCors, assistantSessionEndpoints, now } from './assistant-route-http.js';
+import { activeAssistantTarget } from './assistant-session-target.js';
 
 /**
  * The transport half of anonymous session minting. Every decision — which refusal, in which order, and
@@ -47,13 +48,9 @@ export async function handlePublicAssistantSession(
   const { embedId, visitorId } = body.value as { embedId?: unknown; visitorId?: unknown };
   // The browser's Origin header is the claim under test. The body never asserts its own origin.
   const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
-  // Admission tier 3. Hashed here so no raw address crosses into the decision, a counter key, or an
-  // audit payload; the socket address is Google's front end on Cloud Run, so the forwarded chain is the
-  // only place the visitor appears. Unparseable ingress yields no bucket and the surface tier alone
-  // applies — losing fairness, never solvency.
-  const addressBucket = clientAddressBucket(
-    typeof req.headers['x-forwarded-for'] === 'string' ? req.headers['x-forwarded-for'] : undefined,
-  );
+  // Without deployment-verified ingress attribution only the immediate peer is authoritative.
+  // A shared proxy bucket can reduce fairness, but forged forwarding headers cannot rotate it.
+  const addressBucket = clientAddressBucket(req.socket.remoteAddress);
 
   let configuration: AssistantAppearanceOverride | undefined;
   let sponsoredBudget: SurfaceBudgetBounds | undefined;
@@ -65,7 +62,7 @@ export async function handlePublicAssistantSession(
       embeds,
       counters,
       resolveActiveSurface: async (embed) => {
-        const target = await deps.registry.getActiveByTenant(publicEmbedTenant(embed));
+        const target = await activeAssistantTarget(deps, publicEmbedTenant(embed));
         if (!target?.deploymentId) return undefined;
         if (target.served.artifact.server.assistant?.model.kind === 'noodle-managed') {
           sponsoredBudget = (
@@ -81,8 +78,12 @@ export async function handlePublicAssistantSession(
       },
       resolveBudgetBounds: async () => sponsoredBudget,
       createSession: async (input) => {
-        const target = await deps.registry.getActiveByTenant(publicEmbedTenant(input.embed));
-        if (!target?.deploymentId) throw new Error('assistant deployment vanished mid-mint');
+        const target = await activeAssistantTarget(deps, publicEmbedTenant(input.embed));
+        if (
+          !target?.deploymentId ||
+          !publicSurfaceOf(target.served.artifact.server.assistant)?.origins.includes(input.origin)
+        )
+          throw new Error('assistant surface changed mid-mint');
         const current = now(deps);
         configuration = (
           await effectiveAssistantBrowserConfiguration(
@@ -90,6 +91,7 @@ export async function handlePublicAssistantSession(
             publicEmbedTenant(input.embed),
             deps.appearance,
             'public',
+            target.businessNotice,
           )
         ).effective;
         const created = await deps.store.createSession({

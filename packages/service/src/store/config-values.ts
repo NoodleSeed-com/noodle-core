@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomUUID } from 'node:crypto';
 import { validateConfigName, validateConfigScope } from './validate.js';
 
 export type ManagedConfigKind = 'secret' | 'variable';
@@ -8,6 +10,8 @@ export type ConfigScope =
   | { readonly level: 'env'; readonly org: string; readonly app: string; readonly env: string };
 
 export interface ConfigValueMetadata {
+  /** Internal mutation identity; non-enumerable and excluded from operator wire projections. */
+  readonly generation?: string;
   readonly kind: ManagedConfigKind;
   readonly scope: ConfigScope;
   readonly name: string;
@@ -15,17 +19,21 @@ export interface ConfigValueMetadata {
   readonly updatedBySubject?: string;
   readonly updatedByEmail?: string;
   readonly value?: string;
+  readonly valueOrigin?: 'default';
+}
+
+export interface ConfigValueInput {
+  readonly kind: ManagedConfigKind;
+  readonly scope: ConfigScope;
+  readonly name: string;
+  readonly value: string;
+  readonly updatedBySubject?: string;
+  readonly updatedByEmail?: string;
+  readonly valueOrigin?: 'default';
 }
 
 export interface ConfigStore {
-  setConfigValue(input: {
-    readonly kind: ManagedConfigKind;
-    readonly scope: ConfigScope;
-    readonly name: string;
-    readonly value: string;
-    readonly updatedBySubject?: string;
-    readonly updatedByEmail?: string;
-  }): Promise<ConfigValueMetadata>;
+  setConfigValue(input: ConfigValueInput): Promise<ConfigValueMetadata>;
   deleteConfigValue(kind: ManagedConfigKind, scope: ConfigScope, name: string): Promise<boolean>;
   listConfigValues(
     kind: ManagedConfigKind,
@@ -36,19 +44,29 @@ export interface ConfigStore {
     scope: ConfigScope,
     name?: string,
   ): Promise<Record<string, string>>;
+  /** Atomic organization-scoped snapshot. Required for hosted business-setting mutations. */
+  transactConfig?<T>(org: string, work: (transaction: ConfigStore) => Promise<T>): Promise<T>;
 }
 
-export class InMemoryConfigStore implements ConfigStore {
-  readonly #records = new Map<string, ConfigRecord>();
+const memoryTransactions = new AsyncLocalStorage<{
+  owner: ConfigStore;
+  snapshot: MemoryConfigSnapshot;
+  org: string;
+  active: boolean;
+  failure?: { error: unknown } | undefined;
+}>();
 
-  setConfigValue(input: {
-    readonly kind: ManagedConfigKind;
-    readonly scope: ConfigScope;
-    readonly name: string;
-    readonly value: string;
-    readonly updatedBySubject?: string;
-    readonly updatedByEmail?: string;
-  }): Promise<ConfigValueMetadata> {
+class MemoryConfigSnapshot implements ConfigStore {
+  #records = new Map<string, ConfigRecord>();
+  get records(): Map<string, ConfigRecord> {
+    const context = memoryTransactions.getStore();
+    return context?.active && context.owner === this ? context.snapshot.records : this.#records;
+  }
+  set records(value: Map<string, ConfigRecord>) {
+    this.#records = value;
+  }
+
+  setConfigValue(input: ConfigValueInput): Promise<ConfigValueMetadata> {
     const scope = validateConfigScope(input.scope);
     const name = validateConfigName(input.name);
     const record: ConfigRecord = {
@@ -57,16 +75,18 @@ export class InMemoryConfigStore implements ConfigStore {
       name,
       value: input.value,
       updatedAt: new Date().toISOString(),
+      generation: randomUUID(),
       ...(input.updatedBySubject !== undefined ? { updatedBySubject: input.updatedBySubject } : {}),
       ...(input.updatedByEmail !== undefined ? { updatedByEmail: input.updatedByEmail } : {}),
+      ...(input.valueOrigin === undefined ? {} : { valueOrigin: input.valueOrigin }),
     };
-    this.#records.set(configKey(input.kind, scope, name), record);
+    this.records.set(configKey(input.kind, scope, name), record);
     return Promise.resolve(toMetadata(record));
   }
 
   deleteConfigValue(kind: ManagedConfigKind, scope: ConfigScope, name: string): Promise<boolean> {
     return Promise.resolve(
-      this.#records.delete(configKey(kind, validateConfigScope(scope), validateConfigName(name))),
+      this.records.delete(configKey(kind, validateConfigScope(scope), validateConfigName(name))),
     );
   }
 
@@ -76,7 +96,7 @@ export class InMemoryConfigStore implements ConfigStore {
   ): Promise<readonly ConfigValueMetadata[]> {
     const safe = validateConfigScope(scope);
     return Promise.resolve(
-      [...this.#records.values()]
+      [...this.records.values()]
         .filter((record) => record.kind === kind && sameScope(record.scope, safe))
         .sort((a, b) => a.name.localeCompare(b.name))
         .map(toMetadata),
@@ -89,29 +109,100 @@ export class InMemoryConfigStore implements ConfigStore {
     name?: string,
   ): Promise<Record<string, string>> {
     const safeName = name === undefined ? undefined : validateConfigName(name);
-    const chain = scopeChain(validateConfigScope(scope));
-    if (safeName !== undefined) {
-      for (let index = chain.length - 1; index >= 0; index -= 1) {
-        const current = chain[index] as ConfigScope;
-        const record = [...this.#records.values()].find(
-          (candidate) =>
-            candidate.kind === kind &&
-            candidate.name === safeName &&
-            sameScope(candidate.scope, current),
-        );
-        if (record !== undefined) return Promise.resolve({ [safeName]: record.value });
-      }
-      return Promise.resolve({});
-    }
-    const out: Record<string, string> = {};
-    for (const current of chain) {
-      for (const record of this.#records.values()) {
-        if (record.kind === kind && sameScope(record.scope, current))
-          out[record.name] = record.value;
-      }
-    }
-    return Promise.resolve(out);
+    const rows = scopeChain(validateConfigScope(scope)).flatMap((current) =>
+      [...this.records.values()].filter(
+        (record) =>
+          record.kind === kind &&
+          sameScope(record.scope, current) &&
+          (safeName === undefined || record.name === safeName),
+      ),
+    );
+    return Promise.resolve(effectiveConfigValues(rows));
   }
+}
+
+/** Copy-on-commit isolates readers from partially applied batches; transactions serialize writers. */
+export class InMemoryConfigStore extends MemoryConfigSnapshot {
+  #pending: Promise<void> = Promise.resolve();
+
+  override setConfigValue(input: ConfigValueInput): Promise<ConfigValueMetadata> {
+    return this.transactConfig(input.scope.org, (transaction) => transaction.setConfigValue(input));
+  }
+
+  override deleteConfigValue(
+    kind: ManagedConfigKind,
+    scope: ConfigScope,
+    name: string,
+  ): Promise<boolean> {
+    return this.transactConfig(scope.org, (transaction) =>
+      transaction.deleteConfigValue(kind, scope, name),
+    );
+  }
+
+  async transactConfig<T>(org: string, work: (transaction: ConfigStore) => Promise<T>): Promise<T> {
+    validateConfigScope({ level: 'org', org });
+    const active = memoryTransactions.getStore();
+    if (active?.active && active.owner === this) {
+      try {
+        if (active.org !== org) throw new Error('configuration transaction organization mismatch');
+        return await work(scopeConfigTransaction(org, active.snapshot));
+      } catch (error) {
+        active.failure ??= { error };
+        throw error;
+      }
+    }
+    const previous = this.#pending;
+    let release = () => {};
+    this.#pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await previous;
+    const snapshot = new MemoryConfigSnapshot();
+    snapshot.records = new Map(this.records);
+    const context = {
+      owner: this,
+      snapshot,
+      org,
+      active: true,
+      failure: undefined as { error: unknown } | undefined,
+    };
+    try {
+      const result = await memoryTransactions.run(context, () =>
+        work(scopeConfigTransaction(org, snapshot)),
+      );
+      if (context.failure) throw context.failure.error;
+      this.records = snapshot.records;
+      return result;
+    } finally {
+      context.active = false;
+      release();
+    }
+  }
+}
+
+/** Prevent a transaction from reaching an organization outside its acquired lock. */
+export function scopeConfigTransaction(org: string, transaction: ConfigStore): ConfigStore {
+  const check = (scope: ConfigScope) => {
+    if (scope.org !== org) throw new Error('configuration transaction organization mismatch');
+  };
+  return {
+    setConfigValue(input) {
+      check(input.scope);
+      return transaction.setConfigValue(input);
+    },
+    deleteConfigValue(kind, scope, name) {
+      check(scope);
+      return transaction.deleteConfigValue(kind, scope, name);
+    },
+    listConfigValues(kind, scope) {
+      check(scope);
+      return transaction.listConfigValues(kind, scope);
+    },
+    resolveConfigValues(kind, scope, name) {
+      check(scope);
+      return transaction.resolveConfigValues(kind, scope, name);
+    },
+  };
 }
 
 export function resolveConfigScope(input: {
@@ -139,6 +230,7 @@ export function scopeChain(scope: ConfigScope): readonly ConfigScope[] {
 }
 
 interface ConfigRecord {
+  readonly generation: string;
   readonly kind: ManagedConfigKind;
   readonly scope: ConfigScope;
   readonly name: string;
@@ -146,6 +238,7 @@ interface ConfigRecord {
   readonly updatedAt: string;
   readonly updatedBySubject?: string;
   readonly updatedByEmail?: string;
+  readonly valueOrigin?: 'default';
 }
 
 function configKey(kind: ManagedConfigKind, scope: ConfigScope, name: string): string {
@@ -163,13 +256,46 @@ function sameScope(a: ConfigScope, b: ConfigScope): boolean {
 }
 
 function toMetadata(record: ConfigRecord): ConfigValueMetadata {
-  return {
-    kind: record.kind,
-    scope: record.scope,
-    name: record.name,
-    updatedAt: record.updatedAt,
-    ...(record.updatedBySubject !== undefined ? { updatedBySubject: record.updatedBySubject } : {}),
-    ...(record.updatedByEmail !== undefined ? { updatedByEmail: record.updatedByEmail } : {}),
-    ...(record.kind === 'variable' ? { value: record.value } : {}),
-  };
+  return Object.defineProperty(
+    {
+      kind: record.kind,
+      scope: record.scope,
+      name: record.name,
+      updatedAt: record.updatedAt,
+      ...(record.updatedBySubject !== undefined
+        ? { updatedBySubject: record.updatedBySubject }
+        : {}),
+      ...(record.updatedByEmail !== undefined ? { updatedByEmail: record.updatedByEmail } : {}),
+      ...(record.kind === 'variable' ? { value: record.value } : {}),
+      ...(record.valueOrigin === undefined ? {} : { valueOrigin: record.valueOrigin }),
+    },
+    'generation',
+    { value: record.generation },
+  );
+}
+
+/** Explicit operator values outrank pinned publisher defaults at every hierarchy level. */
+export function effectiveConfigValues(
+  rows: readonly Pick<ConfigValueMetadata, 'name' | 'value' | 'valueOrigin'>[],
+): Record<string, string> {
+  const defaults: Record<string, string> = {};
+  const explicit: Record<string, string> = {};
+  for (const row of rows) {
+    if (row.value === undefined) continue;
+    if (row.valueOrigin === 'default')
+      Object.defineProperty(defaults, row.name, {
+        value: row.value,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+    else
+      Object.defineProperty(explicit, row.name, {
+        value: row.value,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
+  }
+  return { ...defaults, ...explicit };
 }

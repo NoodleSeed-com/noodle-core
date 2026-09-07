@@ -17,6 +17,8 @@ export function artifactConfig(
   ambientFulfilment?: ArtifactFulfilment,
 ): { readonly variables?: readonly string[] } | undefined {
   const variables = new Set<string>();
+  if (manifest.manifestVersion === '2')
+    for (const declaration of manifest.server.variables ?? []) variables.add(declaration.name);
   collectVariablesFromManagedOrigins(manifest, variables);
   for (const tool of tools) collectVariablesFromFulfilment(tool.fulfilment, variables);
   for (const resource of resources) collectVariablesFromFulfilment(resource.fulfilment, variables);

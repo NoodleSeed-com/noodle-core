@@ -45,40 +45,44 @@ export function buildCredentialBindingIndex(
       ? []
       : [artifact.server.context.ambient.fulfilment]),
   ];
-  for (const fulfilment of fulfilments) {
-    for (const ref of resolvedOperationRefs(fulfilment)) {
-      const credentialBinding = ref.credentialBinding;
-      if (credentialBinding === undefined) continue;
-      const binding = artifact.connectorBindings?.[credentialBinding.bindingId];
-      if (
-        binding === undefined ||
-        binding.connection.id !== credentialBinding.connectionId ||
-        binding.profile !== credentialBinding.profile ||
-        computeConnectionConfigRevision(binding.connection) !==
-          credentialBinding.connectionConfigRevision
-      ) {
-        continue;
-      }
-      const descriptor: CredentialBindingDescriptor = {
-        connectorId: ref.connectorId,
-        connectorVersion: ref.connectorVersion,
-        operation: ref.operation,
-        ...credentialBinding,
-      };
-      const key = MapServiceBroker.bindingKey(descriptor);
-      const source = structuredClone(binding.connection.source);
-      const allowed = {
-        descriptor,
-        source,
-        ...(ref.customerEndpoint === undefined ? {} : { customerEndpoint: ref.customerEndpoint }),
-      };
-      byKey.set(key, allowed);
-      if (source.kind === 'externalExchange') {
-        externalExchange.set(key, allowed);
-      }
-      if (source.kind === 'googleWorkloadIdentity') {
-        googleWorkloadIdentity.set(key, allowed);
-      }
+  const sourceRefs = (artifact.server.managedCollections ?? []).flatMap((collection) => {
+    const source = collection.source;
+    if (source?.authority !== 'external') return [];
+    return source.scan.resolved ? [source.scan] : [];
+  });
+  const operationRefs = [...fulfilments.flatMap(resolvedOperationRefs), ...sourceRefs];
+  for (const ref of operationRefs) {
+    const credentialBinding = ref.credentialBinding;
+    if (credentialBinding === undefined) continue;
+    const binding = artifact.connectorBindings?.[credentialBinding.bindingId];
+    if (
+      binding === undefined ||
+      binding.connection.id !== credentialBinding.connectionId ||
+      binding.profile !== credentialBinding.profile ||
+      computeConnectionConfigRevision(binding.connection) !==
+        credentialBinding.connectionConfigRevision
+    ) {
+      continue;
+    }
+    const descriptor: CredentialBindingDescriptor = {
+      connectorId: ref.connectorId,
+      connectorVersion: ref.connectorVersion,
+      operation: ref.operation,
+      ...credentialBinding,
+    };
+    const key = MapServiceBroker.bindingKey(descriptor);
+    const source = structuredClone(binding.connection.source);
+    const allowed = {
+      descriptor,
+      source,
+      ...(ref.customerEndpoint === undefined ? {} : { customerEndpoint: ref.customerEndpoint }),
+    };
+    byKey.set(key, allowed);
+    if (source.kind === 'externalExchange') {
+      externalExchange.set(key, allowed);
+    }
+    if (source.kind === 'googleWorkloadIdentity') {
+      googleWorkloadIdentity.set(key, allowed);
     }
   }
   return {

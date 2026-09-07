@@ -121,6 +121,62 @@ afterEach(async () => {
 });
 
 describe('HTTP per-tool authorization', () => {
+  it.each([
+    '2025-11-25',
+    '2026-07-28',
+  ])('derives private write attribution from the peer and verified caller on %s', async (version) => {
+    const invoke = async (token?: string, forwarded = '198.51.100.1') => {
+      const modern = version === '2026-07-28';
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          ...HEADERS,
+          'mcp-protocol-version': version,
+          ...(modern ? { 'mcp-method': 'tools/call', 'mcp-name': 'public_order' } : {}),
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+          'x-forwarded-for': forwarded,
+          'x-noodle-public-admission': 'forged',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 20,
+          method: 'tools/call',
+          params: {
+            name: 'public_order',
+            arguments: { order_id: 'A1' },
+            _meta: {
+              publicAdmission: { network: 'forged', visitor: 'forged' },
+              ...(modern
+                ? {
+                    'io.modelcontextprotocol/protocolVersion': version,
+                    'io.modelcontextprotocol/clientCapabilities': {},
+                    'io.modelcontextprotocol/clientInfo': { name: 'admission-test', version: '1' },
+                  }
+                : {}),
+            },
+          },
+        }),
+      });
+      expect(response.status).toBe(200);
+      const body = await response.text();
+      expect(body).not.toContain('publicAdmission');
+      return calls.at(-1);
+    };
+    const anonymous = await invoke();
+    expect(anonymous?.publicAdmission).toEqual({
+      network: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    const forgedPeer = await invoke(undefined, '198.51.100.2');
+    expect(forgedPeer?.publicAdmission).toEqual(anonymous?.publicAdmission);
+    const authenticated = await invoke('support-write');
+    expect(authenticated?.publicAdmission?.network).toBe(anonymous?.publicAdmission?.network);
+    expect(authenticated?.publicAdmission?.visitor).toMatch(/^[a-f0-9]{64}$/);
+    expect((await invoke('viewer'))?.publicAdmission?.visitor).not.toBe(
+      authenticated?.publicAdmission?.visitor,
+    );
+    expect(authenticated?.args).toEqual({ id: 'A1' });
+    expect(logLines.join('\n')).not.toContain(authenticated?.publicAdmission?.network);
+  });
   it('filters tools/list per request while preserving artifact order', async () => {
     const anonymous = await post({
       jsonrpc: '2.0',
@@ -300,6 +356,7 @@ function restrictedTarget(connector: Connector): ServedArtifact {
       ],
     },
     deps: {
+      tenantId: 'org/app/production',
       connectors: new InMemoryConnectorRegistry([connector]),
       broker: new StaticServiceBroker({ token: 'svc' }),
     },

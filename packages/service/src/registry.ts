@@ -33,10 +33,15 @@ import {
   deploymentLockedPreflight,
 } from './deployment-lock.js';
 import { defaultActiveRecord } from './deployment-versioning.js';
+import type { NativeRecordConnectorFactory } from './native-record-connector.js';
 import type { OAuthStore } from './oauth/store.js';
 import { updateRegistryAccess } from './registry-access.js';
 import { compileRegistryTarget, type RegistryCompileResult } from './registry-compile.js';
-import { preflightRegistryDeploy, resolveDeployAttempt } from './registry-deploy-transaction.js';
+import {
+  preflightRegistryDeploy,
+  resolveDeployAttempt,
+  withDeploymentConfiguration,
+} from './registry-deploy-transaction.js';
 import {
   type ActiveDeployProvenance,
   deploymentOwnerSubject,
@@ -66,7 +71,9 @@ import {
 } from './registry-state.js';
 import { deploymentStatusFor } from './registry-status.js';
 import {
+  deploymentSourceFor,
   emptySecretEnvelope,
+  rebindNativeRecords,
   recordTenant,
   servedTargetFor,
   targetForPersistedRecord,
@@ -131,12 +138,16 @@ export class ServerRegistry {
   readonly #activeTenants = new Map<string, string>();
   readonly #productionEnvironments = new Map<string, string>();
   readonly #store: ArtifactStore | undefined;
+  #applicationLifecycleObserver:
+    | ((org: string, app: string, at: string, retired?: boolean) => Promise<void>)
+    | undefined;
   readonly #configStore: ConfigStore;
   readonly #customerVerifierFactory: ((auth: TenantAuthConfig) => OwnerTokenVerifier) | undefined;
   readonly #policyGate: PolicyGate | undefined;
   readonly #transactionalModuleDeploymentActivation: boolean;
   #platformCatalog: readonly CatalogConnector[];
   #platformConnectors: readonly Connector[];
+  #nativeRecords: NativeRecordConnectorFactory | undefined;
   readonly #stateHandleStoreFactory: StateHandleStoreFactory | undefined;
   readonly #delegatedCredentialStore:
     | Pick<OAuthStore, 'getDelegatedCredential' | 'putDelegatedCredential'>
@@ -175,6 +186,7 @@ export class ServerRegistry {
       options.transactionalModuleDeploymentActivation === true;
     this.#platformCatalog = withBuiltinStateCatalog(options.platformCatalog ?? []);
     this.#platformConnectors = options.platformConnectors ?? [];
+    this.#nativeRecords = options.nativeRecords;
     this.#stateHandleStoreFactory = options.stateHandleStoreFactory;
     this.#delegatedCredentialStore = options.delegatedCredentialStore;
     this.#sealCustomerCredential = options.sealCustomerCredential;
@@ -198,11 +210,23 @@ export class ServerRegistry {
     return this.#transactionalModuleDeploymentActivation;
   }
   setPlatformConnectors(input: {
-    readonly catalog: readonly CatalogConnector[];
-    readonly connectors: readonly Connector[];
+    readonly catalog?: readonly CatalogConnector[];
+    readonly connectors?: readonly Connector[];
+    readonly nativeRecords?: NativeRecordConnectorFactory;
   }): void {
-    this.#platformCatalog = withBuiltinStateCatalog(input.catalog);
-    this.#platformConnectors = input.connectors;
+    if (input.catalog !== undefined) this.#platformCatalog = withBuiltinStateCatalog(input.catalog);
+    if (input.connectors !== undefined) this.#platformConnectors = input.connectors;
+    this.#nativeRecords = input.nativeRecords;
+    if (input.catalog !== undefined || input.connectors !== undefined) {
+      this.#servers.clear();
+      return;
+    }
+    // Bind the new native-record port without resetting unrelated deployment-owned state or hooks.
+    for (const [id, target] of this.#servers) {
+      const record = this.#records.get(id);
+      if (!record) continue;
+      this.#servers.set(id, rebindNativeRecords(target, record, input.nativeRecords));
+    }
   }
   setLocalAssetOptions(options: LocalAssetOptions): void {
     this.#localAssetOptions = options;
@@ -216,118 +240,96 @@ export class ServerRegistry {
     manifest: string,
     options: DeployOptions = {},
   ): Promise<RunDeployResult> {
-    const {
-      connectors,
-      actor,
-      accessMode,
-      hostedAssets,
-      serverVersion,
-      deploymentSource,
-      idempotencyKey,
-    } = options;
-    const { orgMembershipSources } = options;
-    const { automationId } = options;
-    const safeTenant = validateTenantRef(tenant);
-    const safeServerVersion =
-      serverVersion !== undefined ? normalizeServerVersion(serverVersion) : undefined;
-    if (safeServerVersion !== undefined) {
-      const active = await activeRecordVersion(this.#stateView(), safeTenant, safeServerVersion);
-      if (active?.deploymentLock !== undefined) return deploymentLockedConflict();
-    }
-    const preflight = await preflightRegistryDeploy({
-      options,
-      serviceCapabilities: this.#serviceCapabilities,
-      compile: () => this.#compileTarget(safeTenant, manifest, connectors, hostedAssets, false),
-    });
-    if (!preflight.ok) return preflight;
-    const attempt = await resolveDeployAttempt({
-      serverName: preflight.serverName,
-      ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
-      ...(this.#store !== undefined ? { store: this.#store } : {}),
-      records: this.#records,
-      tenant: safeTenant,
-      manifest,
-      options,
-    });
-    if (attempt.replay !== undefined) return attempt.replay;
-    const { deploymentId } = attempt;
-    let appPackageSnapshot = preflight.appPackageSnapshot;
-    if (preflight.appPackageArtifact !== undefined && appPackageSnapshot === undefined) {
-      const rendered = renderDeploymentPackageSnapshot(
-        preflight.appPackageArtifact,
-        this.#appPackageRenderer,
-      );
-      if (!rendered.ok) return rendered;
-      appPackageSnapshot = rendered.snapshot;
-    }
-    const version = Date.now();
-    const built = preflight.bindDeployment(deploymentId);
-    const serverAuth = built.artifact.server.auth;
-    const ownerSubject =
-      accessMode === 'owner-only' ? (options.ownerSubject ?? actor?.subject) : undefined;
-    const record: DeployRecord = {
-      schemaVersion: 1,
-      deploymentId,
-      orgSlug: safeTenant.org,
-      appSlug: safeTenant.app,
-      environment: safeTenant.env,
-      ...(safeServerVersion !== undefined ? { serverVersion: safeServerVersion } : {}),
-      deploymentVersion: version,
-      active: automationId === undefined,
-      serverName: built.artifact.server.name,
-      createdAt: new Date().toISOString(),
-      ...(actor ? { createdBySubject: actor.subject, createdByEmail: actor.email } : {}),
-      ...(ownerSubject !== undefined ? { ownerSubject } : {}),
-      ...(deploymentSource !== undefined ? { deploymentSource } : {}),
-      ...(accessMode !== undefined ? { accessMode } : {}),
-      ...(orgMembershipSources !== undefined ? { orgMembershipSources } : {}),
-      ...(serverAuth !== undefined ? { serverAuth } : {}),
-      manifest,
-      ...(connectors !== undefined ? { connectors } : {}),
-      ...(hostedAssets !== undefined && hostedAssets.length > 0 ? { hostedAssets } : {}),
-      ...(appPackageSnapshot !== undefined ? { appPackageSnapshot } : {}),
-      secrets: emptySecretEnvelope(),
-    };
-
-    if (await this.#hasCustomerAuthAudienceConflict(record, serverAuth)) {
-      return customerAuthAudienceConflictFailure();
-    }
-    let active: DeployRecord;
-    try {
-      active = await withKnowledgePublication(
-        this.#knowledgeHooks,
-        safeTenant,
-        deploymentId,
-        built.artifact.server.knowledge,
-        () =>
-          persistDeployRecord(this.#stateView(), record, safeTenant, automationId === undefined),
-      );
-    } catch (error) {
-      if (error instanceof KnowledgePublicationError) {
-        return { ok: false, errors: error.errors };
+    return withDeploymentConfiguration(this.#configStore, tenant.org, async () => {
+      const {
+        connectors,
+        actor,
+        accessMode,
+        hostedAssets,
+        serverVersion,
+        deploymentSource,
+        idempotencyKey,
+      } = options;
+      const { orgMembershipSources } = options;
+      const { automationId } = options;
+      const safeTenant = validateTenantRef(tenant);
+      const safeServerVersion =
+        serverVersion !== undefined ? normalizeServerVersion(serverVersion) : undefined;
+      if (safeServerVersion !== undefined) {
+        const active = await activeRecordVersion(this.#stateView(), safeTenant, safeServerVersion);
+        if (active?.deploymentLock !== undefined) return deploymentLockedConflict();
       }
-      if (error instanceof CustomerAuthAudienceConflictError) {
+      const preflight = await preflightRegistryDeploy({
+        options,
+        serviceCapabilities: this.#serviceCapabilities,
+        compile: () => this.#compileTarget(safeTenant, manifest, connectors, hostedAssets, false),
+      });
+      if (!preflight.ok) return preflight;
+      const attempt = await resolveDeployAttempt({
+        serverName: preflight.serverName,
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+        ...(this.#store !== undefined ? { store: this.#store } : {}),
+        records: this.#records,
+        tenant: safeTenant,
+        manifest,
+        options,
+      });
+      if (attempt.replay !== undefined) return attempt.replay;
+      const { deploymentId } = attempt;
+      let appPackageSnapshot = preflight.appPackageSnapshot;
+      if (preflight.appPackageArtifact !== undefined && appPackageSnapshot === undefined) {
+        const rendered = renderDeploymentPackageSnapshot(
+          preflight.appPackageArtifact,
+          this.#appPackageRenderer,
+        );
+        if (!rendered.ok) return rendered;
+        appPackageSnapshot = rendered.snapshot;
+      }
+      const version = Date.now();
+      const built = preflight.bindDeployment(deploymentId);
+      const serverAuth = built.artifact.server.auth;
+      const ownerSubject =
+        accessMode === 'owner-only' ? (options.ownerSubject ?? actor?.subject) : undefined;
+      const record: DeployRecord = {
+        schemaVersion: 1,
+        deploymentId,
+        orgSlug: safeTenant.org,
+        appSlug: safeTenant.app,
+        environment: safeTenant.env,
+        ...(safeServerVersion !== undefined ? { serverVersion: safeServerVersion } : {}),
+        deploymentVersion: version,
+        active: automationId === undefined,
+        serverName: built.artifact.server.name,
+        createdAt: new Date().toISOString(),
+        ...(actor ? { createdBySubject: actor.subject, createdByEmail: actor.email } : {}),
+        ...(ownerSubject !== undefined ? { ownerSubject } : {}),
+        ...(deploymentSource !== undefined ? { deploymentSource } : {}),
+        ...(accessMode !== undefined ? { accessMode } : {}),
+        ...(orgMembershipSources !== undefined ? { orgMembershipSources } : {}),
+        ...(serverAuth !== undefined ? { serverAuth } : {}),
+        manifest,
+        ...(connectors !== undefined ? { connectors } : {}),
+        ...(hostedAssets !== undefined && hostedAssets.length > 0 ? { hostedAssets } : {}),
+        ...(appPackageSnapshot !== undefined ? { appPackageSnapshot } : {}),
+        secrets: emptySecretEnvelope(),
+      };
+
+      if (await this.#hasCustomerAuthAudienceConflict(record, serverAuth)) {
         return customerAuthAudienceConflictFailure();
       }
-      if (error instanceof DeploymentLockedError) return deploymentLockedConflict();
-      throw error;
-    }
-
-    if (automationId !== undefined) {
-      let activation: Awaited<ReturnType<ArtifactStore['activateDeployment']>>;
+      let active: DeployRecord;
       try {
-        activation = await this.#store?.activateDeployment(safeTenant, deploymentId, undefined, {
-          automationId,
-        });
+        active = await withKnowledgePublication(
+          this.#knowledgeHooks,
+          safeTenant,
+          deploymentId,
+          built.artifact.server.knowledge,
+          () =>
+            persistDeployRecord(this.#stateView(), record, safeTenant, automationId === undefined),
+        );
       } catch (error) {
-        if (error instanceof DeploymentActivationError && error.code === 'automation_superseded') {
-          return {
-            ok: false,
-            superseded: true,
-            deploymentId,
-            deploymentVersion: version,
-            ...(safeServerVersion !== undefined ? { serverVersion: safeServerVersion } : {}),
-          };
+        if (error instanceof KnowledgePublicationError) {
+          return { ok: false, errors: error.errors };
         }
         if (error instanceof CustomerAuthAudienceConflictError) {
           return customerAuthAudienceConflictFailure();
@@ -335,40 +337,70 @@ export class ServerRegistry {
         if (error instanceof DeploymentLockedError) return deploymentLockedConflict();
         throw error;
       }
-      if (activation === undefined) {
-        return {
-          ok: false,
-          errors: [
-            {
-              code: 'run_activation_failed',
-              path: 'deploymentId',
-              message: 'deployment could not be activated for this automation run',
-            },
-          ],
-        };
+
+      if (automationId !== undefined) {
+        let activation: Awaited<ReturnType<ArtifactStore['activateDeployment']>>;
+        try {
+          activation = await this.#store?.activateDeployment(safeTenant, deploymentId, undefined, {
+            automationId,
+          });
+        } catch (error) {
+          if (
+            error instanceof DeploymentActivationError &&
+            error.code === 'automation_superseded'
+          ) {
+            return {
+              ok: false,
+              superseded: true,
+              deploymentId,
+              deploymentVersion: version,
+              ...(safeServerVersion !== undefined ? { serverVersion: safeServerVersion } : {}),
+            };
+          }
+          if (error instanceof CustomerAuthAudienceConflictError) {
+            return customerAuthAudienceConflictFailure();
+          }
+          if (error instanceof DeploymentLockedError) return deploymentLockedConflict();
+          throw error;
+        }
+        if (activation === undefined) {
+          return {
+            ok: false,
+            errors: [
+              {
+                code: 'run_activation_failed',
+                path: 'deploymentId',
+                message: 'deployment could not be activated for this automation run',
+              },
+            ],
+          };
+        }
+        active = activation.active;
+        this.#records.set(active.deploymentId, active);
+        const previous = activation.previousActive;
+        if (previous !== undefined && previous.deploymentId !== active.deploymentId) {
+          this.#records.set(previous.deploymentId, { ...previous, active: false });
+        }
       }
-      active = activation.active;
-      this.#records.set(active.deploymentId, active);
-      const previous = activation.previousActive;
-      if (previous !== undefined && previous.deploymentId !== active.deploymentId) {
-        this.#records.set(previous.deploymentId, { ...previous, active: false });
+      if (await this.#hasCustomerAuthAudienceConflict(active, serverAuth)) {
+        return customerAuthAudienceConflictFailure();
       }
-    }
-    if (await this.#hasCustomerAuthAudienceConflict(active, serverAuth)) {
-      return customerAuthAudienceConflictFailure();
-    }
-    this.#servers.set(deploymentId, servedTargetFor(active, built, this.#customerVerifierFactory));
-    this.#activeTenants.set(tenantDeploymentKey(safeTenant, safeServerVersion), deploymentId);
-    this.#activeTenants.delete(tenantKey(safeTenant));
-    const activeOwnerSubject = deploymentOwnerSubject(active);
-    return {
-      ok: true,
-      deploymentId,
-      deploymentVersion: version,
-      ...(safeServerVersion !== undefined ? { serverVersion: safeServerVersion } : {}),
-      ...(accessMode !== undefined ? { accessMode } : {}),
-      ...(activeOwnerSubject !== undefined ? { ownerSubject: activeOwnerSubject } : {}),
-    };
+      this.#servers.set(
+        deploymentId,
+        servedTargetFor(active, built, this.#customerVerifierFactory),
+      );
+      this.#activeTenants.set(tenantDeploymentKey(safeTenant, safeServerVersion), deploymentId);
+      this.#activeTenants.delete(tenantKey(safeTenant));
+      const activeOwnerSubject = deploymentOwnerSubject(active);
+      return {
+        ok: true,
+        deploymentId,
+        deploymentVersion: version,
+        ...(safeServerVersion !== undefined ? { serverVersion: safeServerVersion } : {}),
+        ...(accessMode !== undefined ? { accessMode } : {}),
+        ...(activeOwnerSubject !== undefined ? { ownerSubject: activeOwnerSubject } : {}),
+      };
+    });
   }
   /** Read-only deploy validation used by the CLI before config writes, asset upload, or persistence. */
   async preflightDeploy(
@@ -418,6 +450,7 @@ export class ServerRegistry {
   ): Promise<RegistryCompileResult> {
     return compileRegistryTarget(
       {
+        activeArtifact: async () => (await this.getActiveByTenant(tenant))?.served.artifact,
         configStore: this.#configStore,
         platformCatalog: this.#platformCatalog,
         localAssetOptions: this.#localAssetOptions,
@@ -431,6 +464,7 @@ export class ServerRegistry {
         googleWorkloadIdentity: this.#googleWorkloadIdentity,
         stateHandleStoreFactory: this.#stateHandleStoreFactory,
         platformConnectors: this.#platformConnectors,
+        nativeRecords: this.#nativeRecords,
         policyGate: this.#policyGate,
         appPackageRenderer: this.#appPackageRenderer,
         knowledgeSearch: this.#knowledgeSearch,
@@ -455,10 +489,9 @@ export class ServerRegistry {
     if (this.#records.get(deploymentId)?.archivedAt !== undefined) return undefined;
     const cached = this.#servers.get(deploymentId);
     if (cached) return cached;
-    if (!this.#store) return undefined;
     const inflight = this.#inflight.get(deploymentId);
     if (inflight) return inflight;
-    const promise = this.#loadAndCompile(this.#store, deploymentId).finally(() => {
+    const promise = this.#loadAndCompile(deploymentId).finally(() => {
       this.#inflight.delete(deploymentId);
     });
     this.#inflight.set(deploymentId, promise);
@@ -526,8 +559,16 @@ export class ServerRegistry {
     return registryAppArchivedAt(this.#stateView(), org, app);
   }
 
-  archiveApp(org: string, app: string, at: string): Promise<AppArchiveResult | undefined> {
-    return registryArchiveApp(this.#stateView(), org, app, at);
+  setApplicationLifecycleObserver(
+    observer: (org: string, app: string, at: string, retired?: boolean) => Promise<void>,
+  ): void {
+    this.#applicationLifecycleObserver = observer;
+  }
+
+  async archiveApp(org: string, app: string, at: string): Promise<AppArchiveResult | undefined> {
+    const result = await registryArchiveApp(this.#stateView(), org, app, at);
+    if (result) await this.#applicationLifecycleObserver?.(org, app, result.archivedAt);
+    return result;
   }
 
   restoreApp(org: string, app: string): Promise<AppRestoreResult | undefined> {
@@ -537,7 +578,7 @@ export class ServerRegistry {
   }
 
   sweepArchived(before: string): Promise<readonly DeployRecord[]> {
-    return registrySweepArchived(this.#stateView(), before);
+    return registrySweepArchived(this.#stateView(), before, this.#applicationLifecycleObserver);
   }
 
   listApps(
@@ -545,6 +586,12 @@ export class ServerRegistry {
     opts: { includeArchived?: boolean; limit?: number } = {},
   ): Promise<{ readonly apps: readonly AppSummary[]; readonly truncated: boolean }> {
     return registryListApps(this.#stateView(), org, opts);
+  }
+
+  async getAppGeneration(org: string, app: string): Promise<string | undefined> {
+    return this.#store
+      ? this.#store.getAppGeneration(org, app)
+      : (await this.getApp(org, app))?.createdAt;
   }
 
   getApp(org: string, app: string): Promise<AppSummary | undefined> {
@@ -569,6 +616,11 @@ export class ServerRegistry {
     env: string,
   ): Promise<ProductionEnvironmentChange | undefined> {
     return registrySetProductionEnvironment(this.#stateView(), org, app, env);
+  }
+
+  /** Immutable executable bytes for a same-tenant installation; never includes configuration or credentials. */
+  getDeploymentSource(tenant: TenantRef, deploymentId: string) {
+    return deploymentSourceFor(this.#stateView(), tenant, deploymentId);
   }
 
   getDeployment(org: string, deploymentId: string): Promise<DeploymentSummary | undefined> {
@@ -644,6 +696,8 @@ export class ServerRegistry {
   async rollback(ref: TenantRef, deploymentId: string): Promise<RollbackResult> {
     const safe = validateTenantRef(ref);
     return rollbackWithMappedErrors({
+      configStore: this.#configStore,
+      org: safe.org,
       run: () =>
         rollbackDeployment(
           this.#stateView(),
@@ -673,7 +727,6 @@ export class ServerRegistry {
   }
 
   async #targetForPersistedRecord(record: DeployRecord): Promise<ServedTarget | undefined> {
-    const store = this.#store;
     return targetForPersistedRecord(record, {
       records: this.#records,
       servers: this.#servers,
@@ -682,15 +735,17 @@ export class ServerRegistry {
         : {}),
       hasCustomerAuthConflict: (candidate, auth) =>
         this.#hasCustomerAuthAudienceConflict(candidate, auth),
-      ...(store ? { load: () => this.#loadAndCompile(store, record) } : {}),
+      load: () => this.#loadAndCompile(record),
     });
   }
 
-  async #loadAndCompile(
-    store: ArtifactStore,
-    source: string | DeployRecord,
-  ): Promise<ServedTarget | undefined> {
-    const record = typeof source === 'string' ? await store.get(source) : source;
+  async #loadAndCompile(source: string | DeployRecord): Promise<ServedTarget | undefined> {
+    const record =
+      typeof source === 'string'
+        ? this.#store
+          ? await this.#store.get(source)
+          : this.#records.get(source)
+        : source;
     if (!record) return undefined;
     const deploymentId = record.deploymentId;
     if (record.archivedAt !== undefined) return undefined;

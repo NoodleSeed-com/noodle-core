@@ -40,6 +40,7 @@ import {
   rewriteLocalAssets,
 } from './assets.js';
 import { brandingWarnings, normalizeRuntimeBranding } from './branding.js';
+import { compileVariableDeclarations } from './business-variables.js';
 import type { ConnectorCatalog } from './catalog/types.js';
 import { validateInteractiveFlow } from './confirmation-flow.js';
 import { parseAmbientContext } from './context-compile.js';
@@ -213,10 +214,19 @@ export function compileManifest(raw: unknown, options: CompileOptions = {}): Com
   // 2. Structural passes (catalog-independent): duplicate names, `$use` resolution, external refs,
   // fulfilment parsing. `$use` is resolved first so external-ref detection also scans bundled defs.
   const errors: CompileError[] = widgetHtmlSizeErrors(manifest, runtimeBranding);
+  const variables = compileVariableDeclarations(
+    manifest.manifestVersion === '2' ? (manifest.server.variables ?? []) : [],
+    manifest.tools.map((tool) => tool.name),
+    errors,
+  );
   const managedCollections = compileManagedCollections(
     manifest.manifestVersion === '2' ? (manifest.server.collections ?? []) : [],
     manifest.tools.map((tool) => tool.name),
     errors,
+    {
+      ...(options.catalog === undefined ? {} : { catalog: options.catalog }),
+      declared: manifest.connectors ?? {},
+    },
   );
   const requirements = parseCapabilityRequirements(manifest.requires, errors);
   const seen = new Set<string>();
@@ -543,6 +553,7 @@ export function compileManifest(raw: unknown, options: CompileOptions = {}): Com
     customerEndpoints,
     ...(knowledge.length > 0 ? { knowledge } : {}),
     ...(managedCollections.length > 0 ? { managedCollections } : {}),
+    ...(variables.length > 0 ? { variables } : {}),
   });
 
   const warnings = [

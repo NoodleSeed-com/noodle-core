@@ -695,6 +695,11 @@ noodle-assistant {
 }
 ```
 
+Embedding pages can keep a floating pill compact in constrained layouts without changing its accessible
+name or its expansion behavior. Set `--ns-assistant-collapsed-launcher-width` and
+`--ns-assistant-collapsed-launcher-label-display` inside the embedding page's own media query; once the
+visitor activates the launcher, the normal prompt-input width takes over.
+
 For each matching region or token, precedence is the typed host appearance object, then host-provided slot
 content or a public CSS custom property, then the saved environment operator override, compiled server
 `presentation`/`branding`, and built-in defaults. The public slots are `launcher-icon`,

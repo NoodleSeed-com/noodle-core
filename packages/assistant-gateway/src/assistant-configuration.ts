@@ -7,6 +7,28 @@ import type { AssistantAppearanceSettingsStore } from './assistant-appearance-st
 import { ASSISTANT_BROWSER_UI_FIELDS } from './assistant-browser-fields.js';
 import type { TenantRef } from './tenant-ref.js';
 
+type BusinessNoticeDisplay = {
+  readonly displayName: string;
+  readonly privacyUrl: string;
+  readonly supportUrl: string;
+};
+const noticeText = (notice: BusinessNoticeDisplay) =>
+  `Information is shared with ${notice.displayName}. Support: ${notice.supportUrl}`;
+
+/** A current action must not silently use a different recipient from the session's visible notice. */
+export function assistantConfigurationHasBusinessNotice(
+  configuration: AssistantAppearanceOverride | undefined,
+  notice: BusinessNoticeDisplay,
+): boolean {
+  const text = noticeText(notice);
+  const welcome = configuration?.assistant?.labels?.welcomeMessage;
+  return (
+    configuration?.branding?.name === notice.displayName &&
+    configuration?.assistant?.privacyUrl === notice.privacyUrl &&
+    (welcome === text || welcome?.startsWith(`${text}\n\n`) === true)
+  );
+}
+
 /**
  * What the browser is allowed to see.
  *
@@ -64,12 +86,36 @@ export async function effectiveAssistantBrowserConfiguration(
   tenant: TenantRef,
   store: AssistantAppearanceSettingsStore | undefined,
   boundSurface?: 'public' | 'authenticated',
+  notice?: BusinessNoticeDisplay,
 ) {
   const developer = assistantBrowserConfiguration(server, boundSurface);
   const record = await store?.get(tenant);
+  const resolved = resolveAssistantAppearanceConfiguration(developer, record?.override);
+  // Receiving-business authority is separate from optional appearance; use fields old widgets render.
+  const requiredNotice = notice && noticeText(notice);
+  const originalWelcome = resolved.effective?.assistant?.labels?.welcomeMessage;
+  const welcome =
+    requiredNotice &&
+    requiredNotice +
+      (originalWelcome
+        ? `\n\n${originalWelcome}`.slice(0, Math.max(0, 1000 - requiredNotice.length))
+        : '');
   return {
     developer,
     record,
-    ...resolveAssistantAppearanceConfiguration(developer, record?.override),
+    ...resolved,
+    ...(notice
+      ? {
+          effective: {
+            ...resolved.effective,
+            branding: { ...resolved.effective?.branding, name: notice.displayName },
+            assistant: {
+              ...resolved.effective?.assistant,
+              privacyUrl: notice.privacyUrl,
+              labels: { ...resolved.effective?.assistant?.labels, welcomeMessage: welcome ?? '' },
+            },
+          },
+        }
+      : {}),
   };
 }

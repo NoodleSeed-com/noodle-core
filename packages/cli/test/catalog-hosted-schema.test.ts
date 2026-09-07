@@ -953,6 +953,8 @@ describe('umbrella parser parity', () => {
       .filter((node) => nestedSubcommands(node.value).length === 0)
       .map((node) => node.path.join(' '));
     expect(paths).toEqual([
+      'catalog status',
+      'catalog activate',
       'accounts list',
       'accounts inspect',
       'accounts checkout',
@@ -977,6 +979,8 @@ describe('umbrella parser parity', () => {
     ]);
 
     const acceptedBeforeAuth: readonly (readonly string[])[] = [
+      ['catalog', 'status'],
+      ['catalog', 'activate', '--proof', 'release-proof.json'],
       ['accounts', 'list'],
       ['accounts', 'inspect', 'billing-account'],
       ['accounts', 'checkout', 'billing-account', '--plan', 'pro', '--interval', 'month'],

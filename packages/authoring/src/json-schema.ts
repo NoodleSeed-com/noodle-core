@@ -21,9 +21,29 @@ export type JsonSchema = Record<string, unknown>;
 export function toJsonSchema(
   schema: JsonSchema | z.ZodType,
   io: 'input' | 'output' = 'output',
+  rejectRuntimeChecks = false,
 ): JsonSchema {
   if (schema instanceof z.ZodType) {
-    const json = z.toJSONSchema(schema, { target: 'draft-2020-12', io }) as JsonSchema;
+    const json = z.toJSONSchema(schema, {
+      target: 'draft-2020-12',
+      io,
+      ...(rejectRuntimeChecks
+        ? {
+            override: ({ zodSchema }) => {
+              const definition = zodSchema._zod.def;
+              if (
+                definition.checks?.some((check) =>
+                  ['custom', 'overwrite'].includes(check._zod.def.check),
+                )
+              ) {
+                throw new Error(
+                  'business variable schemas cannot contain runtime refinements or transforms',
+                );
+              }
+            },
+          }
+        : {}),
+    }) as JsonSchema;
     if (io === 'input') closeObjectSchemas(json);
     return json;
   }

@@ -14,6 +14,7 @@ import type { TenantRef } from '../store.js';
 import type { AssistantRouteDeps } from './assistant.js';
 import { resolveAssistantModelBinding } from './assistant-model-binding.js';
 import { now } from './assistant-route-http.js';
+import { activeAssistantTarget } from './assistant-session-target.js';
 import { authorizeControlPlane } from './control-plane.js';
 
 /**
@@ -55,7 +56,7 @@ export async function handleAssistantDoctor(
     return sendJson(res, 400, { error: 'clientId, clientSecret, and origin are required' });
   }
 
-  const target = await deps.registry.getActiveByTenant(tenant);
+  const target = await activeAssistantTarget({ registry: deps.registry }, tenant);
   const assistant = target?.served.artifact.server.assistant;
   const deploymentOk = Boolean(target?.deploymentId && assistant);
   const client = await deps.store.authenticateClient(clientId, clientSecret);

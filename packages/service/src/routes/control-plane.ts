@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { cspFaultsInManifest, type HostedPackagedAsset } from '@noodle-borg/compiler';
+import type { HostedPackagedAsset } from '@noodle-borg/compiler';
 import type { ControlPlaneIdentity, DeployAuthGate } from '@noodle-borg/control-plane/portable';
 import { ensurePersonalWorkspace } from '@noodle-borg/control-plane/portable';
 import {
@@ -8,7 +8,7 @@ import {
   type DeveloperCapability,
 } from '@noodle-borg/developer-mcp';
 import { normalizeServerVersion, type OrgMembershipSource } from '@noodle-borg/module';
-import { type AccessMode, noopLogger, readDeployBody, sendJson } from '@noodle-borg/transport-http';
+import { type AccessMode, readDeployBody, sendJson } from '@noodle-borg/transport-http';
 import {
   type DeploymentSource,
   deployRequestSchema,
@@ -19,18 +19,15 @@ import {
   authorizeDeveloperGrant,
   type DeveloperGrantAuthorizationContext,
 } from '../auth/developer-grant-guard.js';
+import { executeAuthorizedDeployment } from '../deployment-execution.js';
 import { baseFromRequest, sendForbidden, sendUnauthorized } from '../http-util.js';
 import { endpointUrlOptionsForOrg } from '../mcp-public-routing.js';
 import type { DeveloperGrantStore } from '../oauth/developer-grant.js';
 import type { ServiceOptions } from '../options.js';
 import type { ServerRegistry } from '../registry.js';
-import { manifestUsesUserRoot } from '../registry-access.js';
 import type { AuditSink } from '../store/audit.js';
 import type { ControlPlaneStore, TenantRef } from '../store.js';
-import { isIdentityAccessMode } from './access-mode.js';
 import { validateDeployIdempotency } from './deploy-idempotency.js';
-import { provisionPublicEmbed } from './deploy-public-embed.js';
-import { respondDeploymentActivationError } from './deployment-activation-response.js';
 import { tenantMcpUrl } from './endpoint-enrichment.js';
 import { canManageMembers } from './org-admin.js';
 
@@ -207,238 +204,28 @@ export async function handleDeploy(
     });
   }
 
-  // Identity access modes bind the data plane to verified identity, so the deployer must be authenticated.
-  // (Localhost dev runs the gate open; such deploys are rejected for lack of an owner/audit actor.)
-  if (isIdentityAccessMode(accessMode) && !identity) {
-    return sendJson(res, 401, {
-      error: `${accessMode} deployments require an authenticated deployer`,
-    });
-  }
-  if (accessMode === 'public' && manifestUsesUserRoot(manifest)) {
-    return sendJson(res, 400, {
-      error: 'public access mode cannot reference ${user}; use mixed for optional identity',
-    });
-  }
-  // Widget CSP gate (deploy-only): a CSP origin the host renderer will silently drop breaks the widget
-  // for end users, so the deploy is refused here. The compiler surfaces the same faults as non-blocking
-  // warnings, so `noodle dev`/`validate` still render the widget locally — only shipping is gated.
-  const [cspFault] = cspFaultsInManifest(manifest);
-  if (cspFault !== undefined) {
-    return sendJson(res, 400, {
-      error:
-        `widget "${cspFault.widget}" CSP ${cspFault.list} origin "${cspFault.value}" is not an ` +
-        `absolute https:// origin and would be dropped by the host renderer` +
-        (cspFault.suggestion !== undefined ? `; use "${cspFault.suggestion}"` : ''),
-    });
-  }
-
-  if ((await controlPlane.getOrg(tenant.org)) === undefined) {
-    await audit.emit({
-      eventType: 'deploy.rejected',
-      org: tenant.org,
-      app: tenant.app,
-      env: tenant.env,
-      decision: 'deny',
-      status: 404,
-      reasonCode: 'organization_not_found',
-      ...(identity?.subject !== undefined ? { actorSubject: identity.subject } : {}),
-      ...(identity?.email !== undefined ? { actorEmail: identity.email } : {}),
-    });
-    return sendJson(res, 404, {
-      code: 'organization_not_found',
-      error: 'organization must be created before deploy',
-    });
-  }
-
-  const logger = options.logger ?? noopLogger;
-  if (hostedAssets !== undefined && hostedAssets.length > 0) {
-    if (options.assetStore === undefined) {
-      await audit.emit({
-        eventType: 'asset.rejected',
-        org: tenant.org,
-        app: tenant.app,
-        env: tenant.env,
-        decision: 'deny',
-        status: 400,
-        reasonCode: 'asset_store_not_configured',
-        ...(identity?.subject !== undefined ? { actorSubject: identity.subject } : {}),
-        ...(identity?.email !== undefined ? { actorEmail: identity.email } : {}),
-        details: { assetCount: hostedAssets.length },
-      });
-      return sendJson(res, 400, { error: 'hosted assets are not configured for this service' });
-    }
-    const verified = await options.assetStore.verifyUploadedAssets({
-      scope: tenant,
-      assets: hostedAssets,
-    });
-    if (!verified.ok) {
-      await audit.emit({
-        eventType: 'asset.rejected',
-        org: tenant.org,
-        app: tenant.app,
-        env: tenant.env,
-        decision: 'deny',
-        status: 400,
-        reasonCode: 'asset_verification_failed',
-        ...(identity?.subject !== undefined ? { actorSubject: identity.subject } : {}),
-        ...(identity?.email !== undefined ? { actorEmail: identity.email } : {}),
-        details: { assetCount: hostedAssets.length },
-      });
-      return sendJson(res, 400, { error: verified.error });
-    }
-    hostedAssets = verified.assets;
-  }
-  let result: Awaited<ReturnType<ServerRegistry['deploy']>>;
-  try {
-    result = await registry.deploy(tenant, manifest, {
+  const executed = await executeAuthorizedDeployment(
+    {
+      tenant,
+      manifest,
       connectors,
-      actor: identity || undefined,
-      accessMode,
-      ownerSubject,
-      ...(orgMembershipSources !== undefined ? { orgMembershipSources } : {}),
       hostedAssets,
+      accessMode,
+      identity,
+      ownerSubject,
+      orgMembershipSources,
+      deploymentSource,
       serverVersion,
-      deploymentSource: automationId === undefined ? (deploymentSource ?? 'api') : 'github',
-      ...(idempotency.key !== undefined ? { idempotencyKey: idempotency.key } : {}),
-      ...(automationId === undefined ? {} : { automationId }),
-    });
-  } catch (error) {
-    const handled = await respondDeploymentActivationError(res, error, {
-      audit,
-      eventType: 'deploy.rejected',
-      org: tenant.org,
-      app: tenant.app,
-      env: tenant.env,
-      ...(identity?.subject !== undefined ? { actorSubject: identity.subject } : {}),
-      ...(identity?.email !== undefined ? { actorEmail: identity.email } : {}),
-    });
-    if (handled) return;
-    throw error;
-  }
-  if (!result.ok) {
-    if ('conflict' in result) {
-      if (result.code === 'deployment_locked') {
-        await audit.emit({
-          eventType: 'deploy.rejected',
-          org: tenant.org,
-          app: tenant.app,
-          env: tenant.env,
-          decision: 'deny',
-          status: 409,
-          reasonCode: result.code,
-          ...(identity?.subject !== undefined ? { actorSubject: identity.subject } : {}),
-          ...(identity?.email !== undefined ? { actorEmail: identity.email } : {}),
-          details: { serverVersion },
-        });
-      }
-      return sendJson(res, 409, {
-        ok: false,
-        code: result.code,
-        error: result.message,
-      });
-    }
-    if ('superseded' in result) {
-      if (automationId !== undefined) {
-        await options.deploymentAutomation
-          ?.recordSuperseded?.({ automationId, target: tenant })
-          .catch(() => undefined);
-      }
-      return sendJson(res, 409, {
-        ok: false,
-        code: 'run_superseded',
-        error: 'a newer GitHub deploy run exists for this app/env; this run was not activated',
-        deploymentId: result.deploymentId,
-        ...(result.serverVersion !== undefined ? { serverVersion: result.serverVersion } : {}),
-      });
-    }
-    // Codes are safe enum strings; never a path-with-value. No secret name or value is logged.
-    const codes = result.errors.map((error) => error.code).join(',');
-    logger.warn('deploy.rejected', {
-      status: 400,
-      errorCount: result.errors.length,
-      codes,
-    });
-    // Durable audit: a rejected deploy is a governance event. Safe fields only — no manifest body.
-    await audit.emit({
-      eventType: 'deploy.rejected',
-      org: tenant.org,
-      app: tenant.app,
-      env: tenant.env,
-      decision: 'deny',
-      status: 400,
-      reasonCode: 'compile_failed',
-      ...(identity?.subject !== undefined ? { actorSubject: identity.subject } : {}),
-      ...(identity?.email !== undefined ? { actorEmail: identity.email } : {}),
-      details: { errorCount: result.errors.length, codes },
-    });
-    return sendJson(res, 400, { ok: false, errors: result.errors });
-  }
-
-  // Counts only — never secret names or values.
-  logger.info('deploy.ok', {
-    deploymentId: result.deploymentId,
-    serverVersion: result.serverVersion,
-    org: tenant.org,
-    app: tenant.app,
-    env: tenant.env,
-    hasConnectors: connectors !== undefined,
-  });
-  await audit.emit({
-    eventType: 'deploy.accepted',
-    org: tenant.org,
-    app: tenant.app,
-    env: tenant.env,
-    decision: 'allow',
-    status: 201,
-    ...(result.deploymentId !== undefined ? { deploymentId: result.deploymentId } : {}),
-    ...(identity?.subject !== undefined ? { actorSubject: identity.subject } : {}),
-    ...(identity?.email !== undefined ? { actorEmail: identity.email } : {}),
-    details: {
-      accessMode: result.accessMode ?? accessMode,
-      deploymentSource: automationId === undefined ? (deploymentSource ?? 'api') : 'github',
-      ...(ownerSubject !== undefined ? { ownerSubject } : {}),
-      serverVersion: result.serverVersion,
-      hasConnectors: connectors !== undefined,
+      idempotencyKey: idempotency.key,
+      automationId,
     },
-  });
-  // Tenant-safe developer-facing log (M3, ADR 0101): a safe deploy-lifecycle record the developer can read
-  // via `noodle logs`. Only scalar metadata, no manifest/secret/payload material.
-  await options.userAppLogStore?.emit({
-    level: 'info',
-    message: 'deployment live',
-    org: tenant.org,
-    app: tenant.app,
-    env: tenant.env,
-    ...(result.deploymentId !== undefined ? { deploymentId: result.deploymentId } : {}),
-    details: { accessMode: result.accessMode ?? accessMode, serverVersion: result.serverVersion },
-  });
-  if (result.ok && hostedAssets !== undefined && hostedAssets.length > 0) {
-    await audit.emit({
-      eventType: 'asset.activation.accepted',
-      org: tenant.org,
-      app: tenant.app,
-      env: tenant.env,
-      decision: 'allow',
-      status: 201,
-      deploymentId: result.deploymentId,
-      ...(identity?.subject !== undefined ? { actorSubject: identity.subject } : {}),
-      ...(identity?.email !== undefined ? { actorEmail: identity.email } : {}),
-      details: {
-        assetCount: hostedAssets.length,
-        totalBytes: hostedAssets.reduce((sum, asset) => sum + asset.byteLength, 0),
-      },
-    });
-    await options.assetStore?.recordReachability({
-      scope: tenant,
-      deploymentId: result.deploymentId,
-      deploymentVersion: result.deploymentVersion,
-      assets: hostedAssets,
-    });
-  }
+    { registry, options, controlPlane, audit },
+  );
+  if (!executed.ok) return sendJson(res, executed.status, executed.body);
+  const { result, embedId } = executed;
 
   const base = options.publicBaseUrl ?? baseFromRequest(req, options.tls ?? {});
   const endpointOptions = await endpointUrlOptionsForOrg(options, controlPlane, tenant.org);
-  const embedId = await provisionPublicEmbed(registry, options, tenant, result.deploymentId);
   return sendJson(res, 201, {
     ok: true,
     org: tenant.org,

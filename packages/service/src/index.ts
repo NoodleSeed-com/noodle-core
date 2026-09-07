@@ -195,6 +195,10 @@ export {
   type WebhookUrlPolicy,
 } from './alert-webhook.js';
 export {
+  type ApplicationConnectionsOptions,
+  createApplicationConnections,
+} from './application-connections.js';
+export {
   ARCHIVE_SWEEP_INTERVAL_MS,
   ArchiveSweeper,
   type ArchiveSweeperOptions,
@@ -214,6 +218,15 @@ export {
   type DeveloperGrantAuthorizationContext,
 } from './auth/developer-grant-guard.js';
 export { type BuildInfo, resolveBuildInfo } from './build-info.js';
+export type { ConnectionProvider } from './connections/oauth.js';
+export { PortableConnections, type PortableConnectionsOptions } from './connections/service.js';
+export { InMemoryConnectionStore, PostgresConnectionStore } from './connections/store.js';
+export type {
+  ApplicationConnections,
+  ConnectionKey,
+  ConnectionStore,
+  ConnectionTarget,
+} from './connections/types.js';
 export {
   type CustomerVerifierFactoryOptions,
   createCustomerVerifierFactory,
@@ -242,6 +255,7 @@ export {
   type ExternalCredentialSubjectPinStore,
   InMemoryExternalCredentialProviderConfigStore,
   InMemoryExternalCredentialSubjectPinStore,
+  type LocalExternalCredentialProvider,
 } from './external-credential-exchange.js';
 export {
   GoogleWorkloadIdentityBindingBroker,

@@ -1,15 +1,14 @@
-import { annotations, managedCollection, server, tool, z } from '@noodleseed/one';
+import {
+  annotations,
+  managedCollection,
+  noodlePlatform,
+  server,
+  tool,
+  variable,
+  z,
+} from '@noodleseed/one';
 
-// Acme Bistro is a fictional restaurant. This app is deliberately END-TO-END: the customer browses the
-// menu and builds the order in chat, and the order completes in chat — only *payment* hands off, via a
-// checkout deep link (the card never touches the app). It is the flagship for the end-to-end pattern.
-//
-// Authoring notes:
-// - A tool `fulfil` is *recorded*, not run as live JS. Inline inputs directly as `${input.x}` into
-//   output strings; do not transform them (no arithmetic/encode/filter) or substitution breaks. The
-//   cart total is summed in the widget (live React), not in a `fulfil`. The menu below is static data.
-// - Tool inputs stay business-facing. `__noodleIntent` is reserved for Noodle's optional serve-time
-//   analytics adapter and is removed before `fulfil`, so applications never declare or handle it.
+// Fictional ordering app. Payment uses a checkout link; native guest requests require installation.
 
 const menu = [
   { id: 'stone_pizza', name: 'Stone-baked Margherita', price: 14, kind: 'Mains' },
@@ -21,6 +20,14 @@ const menu = [
 
 const itemId = z.enum(['stone_pizza', 'roast_bowl', 'house_salad', 'lemon_tart', 'sparkling']);
 
+// A business administrator may change this notice; the reusable application stays the same.
+const serviceNotice = variable('SERVICE_NOTICE', {
+  schema: z.string().max(500),
+  default: 'Ask us about dietary requirements before placing your order.',
+  portal: { label: 'Service notice', group: 'Guest experience' },
+  requiredFor: ['show_menu'],
+});
+
 const menuItemOutput = z.object({
   id: z.string(),
   name: z.string(),
@@ -28,15 +35,28 @@ const menuItemOutput = z.object({
   kind: z.string(),
 });
 
+const guestRequestRecord = z.object({
+  locationReference: z.string().min(1).max(120),
+  requestType: z.enum(['reservation_help', 'accessibility', 'dietary_question', 'other']),
+  summary: z.string().min(1).max(1000),
+  guestReference: z.string().max(120).optional(),
+  progress: z.enum(['received', 'reviewing', 'handled']).default('received'),
+});
+
 const guestRequests = managedCollection('guest_requests', {
   title: 'Guest requests',
   description: 'Guest service requests that restaurant staff can review and resolve.',
   schemaVersion: 1,
-  record: z.object({
-    locationReference: z.string().min(1).max(120),
-    requestType: z.enum(['reservation_help', 'accessibility', 'dietary_question', 'other']),
-    summary: z.string().min(1).max(1000),
-  }),
+  // No source is declared, so Noodle is authoritative. Outside-owned records would name an exact
+  // connector scan contract here; changes in that outside system would remain ordinary tools.
+  record: guestRequestRecord,
+  management: { notes: true },
+  publicFields: ['locationReference', 'requestType', 'summary'],
+  editableFields: ['locationReference', 'requestType', 'summary', 'guestReference', 'progress'],
+  fields: { progress: { label: 'Progress' }, summary: { label: 'Guest request' } },
+  summaryFields: ['requestType', 'summary', 'progress'],
+  filterFields: ['progress'],
+  sortFields: ['progress'],
 });
 
 // Tool annotations for host planners: the menu read is read-only; cart edits are local writes; checkout
@@ -65,8 +85,28 @@ export default server(
     },
     // Reusable business-record intent. Storage, lifecycle, access, and public intake bind separately.
     collections: [guestRequests],
+    use: { records: noodlePlatform.records.v1 },
+    variables: [serviceNotice],
   },
   [
+    tool('submit_guest_request', {
+      title: 'Submit a guest request',
+      description: 'Record a guest request for staff review; this does not confirm a reservation.',
+      annotations: annotations.localAction({ destructive: false, confirm: true }),
+      input: guestRequestRecord.pick({ locationReference: true, requestType: true, summary: true }),
+      output: z.object({ recordId: z.string() }),
+      fulfil: ({ input, connectors }) => {
+        const receipt = connectors.records.submitRecord({
+          collection: 'guest_requests',
+          payload: {
+            locationReference: input.locationReference,
+            requestType: input.requestType,
+            summary: input.summary,
+          },
+        });
+        return { recordId: receipt.recordId };
+      },
+    }),
     tool('show_menu', {
       title: 'Show the menu',
       description: 'Show the Acme Bistro menu and render the ordering widget.',
@@ -75,6 +115,7 @@ export default server(
       output: z.object({
         status: z.string(),
         customer: z.string(),
+        serviceNotice: z.string().max(500),
         // Bounded list: the menu is a fixed catalog, so the ceiling is declared on the shape rather
         // than taken as a pagination input. `noodle check` reports `tool_design_output_bounds`.
         items: z.array(menuItemOutput).max(50),
@@ -82,6 +123,7 @@ export default server(
       fulfil: ({ input }) => ({
         status: `Acme Bistro menu is ready for ${input.customer}. Build the order here; pay at checkout.`,
         customer: input.customer,
+        serviceNotice,
         items: menu,
       }),
       viewTitle: 'Order at Acme Bistro',

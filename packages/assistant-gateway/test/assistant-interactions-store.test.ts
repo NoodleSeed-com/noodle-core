@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ASSISTANT_INTERACTION_EXECUTING_GRACE_MS,
+  ASSISTANT_INTERACTION_EXECUTION_LIMIT_MS,
   ASSISTANT_INTERACTION_OUTCOME_RETENTION_MS,
   AssistantInteractionCapacityError,
   InMemoryAssistantStore,
@@ -422,6 +422,34 @@ describe('in-memory assistant interaction state machine', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('hands exact inputs only to the winning executor and removes durable input custody before dispatch', async () => {
+    const store = new InMemoryAssistantStore();
+    const pending = await store.createInteraction(
+      confirmationInput({
+        arguments: { note: 'private-once' },
+        continuation: { value: 'private-once' },
+        review: { value: 'private-once' },
+      }),
+    );
+    const scope = {
+      id: pending.id,
+      sessionId: pending.sessionId,
+      deploymentId: pending.deploymentId,
+      now,
+    };
+    const winner = await store.claimInteraction(scope);
+    expect(winner).toMatchObject({
+      disposition: 'claimed',
+      interaction: { arguments: { note: 'private-once' } },
+    });
+    const persisted = await store.getInteraction(scope);
+    expect(persisted).toMatchObject({ status: 'executing', arguments: null });
+    expect(JSON.stringify(persisted)).not.toContain('private-once');
+    const repeated = await store.claimInteraction(scope);
+    expect(repeated.disposition).toBe('replay');
+    expect(JSON.stringify(repeated)).not.toContain('private-once');
+  });
+
   it('expires stranded executions into scrubbed, bounded unknown-outcome tombstones', async () => {
     const store = new InMemoryAssistantStore();
     const confirmation = await store.createInteraction(
@@ -458,7 +486,7 @@ describe('in-memory assistant interaction state machine', () => {
       ),
     );
 
-    const scrubbedAt = new Date(now.getTime() + ASSISTANT_INTERACTION_EXECUTING_GRACE_MS);
+    const scrubbedAt = new Date(now.getTime() + ASSISTANT_INTERACTION_EXECUTION_LIMIT_MS);
     await expect(
       store.getInteraction({
         id: confirmation.id,

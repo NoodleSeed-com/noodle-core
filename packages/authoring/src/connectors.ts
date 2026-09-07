@@ -133,8 +133,13 @@ type HttpOperationOptionsWithRefs = Omit<
 
 export type HttpConnectorOptions = Omit<
   HttpConnectorDef['http'],
-  'baseUrl' | 'allowedOrigins' | 'auth'
+  'baseUrl' | 'allowedOrigins' | 'auth' | 'transportAuth'
 > & {
+  readonly transportAuth?: {
+    readonly kind: 'apiKey';
+    readonly header: string;
+    readonly secret: string | ConfigRef;
+  };
   readonly baseUrl: string | ConfigRef | CustomerEndpointRef;
   /** Exact literal or operator-managed origins that may receive connector requests. */
   readonly allowedOrigins?: readonly (string | ConfigRef)[];
@@ -569,6 +574,14 @@ function normalizeHttpOptions(
     ...(options.auth !== undefined
       ? { auth: normalizeAuth(options.auth, `connectors.${id}.http.auth`) }
       : {}),
+    ...(options.transportAuth === undefined
+      ? {}
+      : {
+          transportAuth: normalizeAuth(
+            options.transportAuth,
+            `connectors.${id}.http.transportAuth`,
+          ),
+        }),
     operations,
   };
   return normalized as {

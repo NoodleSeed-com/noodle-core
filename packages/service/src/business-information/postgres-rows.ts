@@ -1,7 +1,7 @@
 import { openActivityContent, openRecordContent } from './cipher.js';
 import type {
-  BuiltInProfileKey,
   BusinessGrant,
+  BusinessInvitation,
   BusinessRole,
   InstallationScope,
   ManagedRequestActivity,
@@ -10,9 +10,10 @@ import type {
   ManagedRequestRecord,
   ManagedRequestStatus,
   PayloadCipher,
+  SolutionDefinitionSnapshot,
   SolutionInstallation,
 } from './contracts.js';
-import { builtInProfile } from './profiles.js';
+import { builtInDefinitionAtRelease, isBuiltInProfileKey } from './profiles.js';
 import { validateEmail } from './validation.js';
 
 export interface InstallationRow {
@@ -25,12 +26,15 @@ export interface InstallationRow {
   readonly profile_version: number;
   readonly managed_collections: string[];
   readonly retention_days: number;
+  readonly intake_active: boolean;
+  readonly application_generation: string | null;
   readonly revision: string;
   readonly create_fingerprint: string;
   readonly created_at: Date;
   readonly created_by_subject: string;
   readonly updated_at: Date;
   readonly updated_by_subject: string;
+  readonly definition_snapshot: unknown | null;
 }
 
 export interface GrantRow {
@@ -49,7 +53,29 @@ export interface GrantRow {
   readonly revoked_at: Date | null;
 }
 
+export interface InvitationRow {
+  readonly org_slug: string;
+  readonly app_slug: string;
+  readonly environment: string;
+  readonly installation_id: string;
+  readonly invitation_id: string;
+  readonly email: string;
+  readonly role: string;
+  readonly token_digest: string;
+  readonly idempotency_digest: string;
+  readonly create_fingerprint: string;
+  readonly revision: string;
+  readonly created_at: Date;
+  readonly expires_at: Date;
+  readonly created_by_subject: string;
+  readonly accepted_at: Date | null;
+  readonly accepted_by_subject: string | null;
+  readonly revoked_at: Date | null;
+  readonly revoked_by_subject: string | null;
+}
+
 export interface RequestRow {
+  readonly original_schema_identity?: unknown;
   readonly org_slug: string;
   readonly app_slug: string;
   readonly environment: string;
@@ -60,7 +86,7 @@ export interface RequestRow {
   readonly profile_version: number;
   readonly schema_version: number;
   readonly schema_digest: string;
-  readonly status: string;
+  readonly status: string | null;
   readonly assignee_subject: string | null;
   readonly origin_kind: string;
   readonly revision: string;
@@ -85,7 +111,7 @@ export interface ActivityRow {
   readonly record_id: string;
   readonly revision: string;
   readonly kind: string;
-  readonly status: string;
+  readonly status: string | null;
   readonly assignee_subject: string | null;
   readonly occurred_at: Date;
   readonly actor_subject: string;
@@ -107,8 +133,8 @@ export function scopeFromRow(row: {
 }
 
 export function installationFromRow(row: InstallationRow): SolutionInstallation {
-  const profileKey = profileKeyFrom(row.profile_key);
-  builtInProfile(profileKey);
+  const profileKey = row.profile_key;
+  const definition = definitionFromRow(row.definition_snapshot, profileKey, row.profile_version);
   const retentionDays = row.retention_days;
   if (retentionDays !== 7 && retentionDays !== 30 && retentionDays !== 90) {
     throw new Error('stored installation retention is invalid');
@@ -119,7 +145,12 @@ export function installationFromRow(row: InstallationRow): SolutionInstallation 
     profileKey,
     profileVersion: row.profile_version,
     managedCollections: [...row.managed_collections],
+    definition,
     retentionDays,
+    intakeActive: row.intake_active,
+    ...(row.application_generation == null
+      ? {}
+      : { applicationGeneration: row.application_generation }),
     revision: safeRevision(row.revision),
     createdAt: timestamp(row.created_at),
     createdBySubject: row.created_by_subject,
@@ -143,6 +174,26 @@ export function grantFromRow(row: GrantRow): BusinessGrant {
   };
 }
 
+export function invitationFromRow(row: InvitationRow): BusinessInvitation {
+  return {
+    scope: scopeFromRow(row),
+    invitationId: row.invitation_id,
+    email: validateEmail(row.email),
+    role: roleFrom(row.role),
+    tokenDigest: row.token_digest,
+    idempotencyDigest: row.idempotency_digest,
+    createFingerprint: row.create_fingerprint,
+    revision: safeRevision(row.revision),
+    createdAt: timestamp(row.created_at),
+    expiresAt: timestamp(row.expires_at),
+    createdBySubject: row.created_by_subject,
+    ...(row.accepted_at === null ? {} : { acceptedAt: timestamp(row.accepted_at) }),
+    ...(row.accepted_by_subject === null ? {} : { acceptedBySubject: row.accepted_by_subject }),
+    ...(row.revoked_at === null ? {} : { revokedAt: timestamp(row.revoked_at) }),
+    ...(row.revoked_by_subject === null ? {} : { revokedBySubject: row.revoked_by_subject }),
+  };
+}
+
 export async function requestFromRow(
   row: RequestRow,
   cipher: PayloadCipher,
@@ -161,11 +212,12 @@ export async function requestFromRow(
     scope,
     collectionKey: row.collection_key,
     id: row.record_id,
-    profileKey: profileKeyFrom(row.profile_key),
+    profileKey: row.profile_key,
     profileVersion: row.profile_version,
     schemaVersion: row.schema_version,
     schemaDigest: row.schema_digest,
-    status: statusFrom(row.status),
+    ...originalSchemaFromRow(row.original_schema_identity),
+    ...(row.status === null ? {} : { status: statusFrom(row.status) }),
     ...(row.assignee_subject === null ? {} : { assigneeSubject: row.assignee_subject }),
     origin: {
       kind: originFrom(row.origin_kind),
@@ -205,7 +257,7 @@ export async function activityFromRow(
     recordId: row.record_id,
     revision,
     kind: activityKindFrom(row.kind),
-    status: statusFrom(row.status),
+    ...(row.status === null ? {} : { status: statusFrom(row.status) }),
     ...(row.assignee_subject === null ? {} : { assigneeSubject: row.assignee_subject }),
     occurredAt: timestamp(row.occurred_at),
     actorSubject: row.actor_subject,
@@ -213,16 +265,18 @@ export async function activityFromRow(
   };
 }
 
-function profileKeyFrom(value: string): BuiltInProfileKey {
-  if (
-    value === 'travel' ||
-    value === 'b2b_saas' ||
-    value === 'ecommerce' ||
-    value === 'restaurant'
-  ) {
-    return value;
+function definitionFromRow(
+  value: unknown,
+  profileKey: string,
+  profileVersion: number,
+): SolutionDefinitionSnapshot {
+  if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+    return structuredClone(value) as SolutionDefinitionSnapshot;
   }
-  throw new Error('stored solution profile is invalid');
+  if (!isBuiltInProfileKey(profileKey)) {
+    throw new Error('stored private installation is missing its definition snapshot');
+  }
+  return builtInDefinitionAtRelease(profileKey, profileVersion);
 }
 
 function roleFrom(value: string): BusinessRole {
@@ -263,6 +317,7 @@ function activityKindFrom(value: string): ManagedRequestActivityKind {
     value === 'assigned' ||
     value === 'status_changed' ||
     value === 'note_added' ||
+    value === 'schema_migrated' ||
     value === 'deleted' ||
     value === 'retention_expired'
   ) {
@@ -274,6 +329,33 @@ function activityKindFrom(value: string): ManagedRequestActivityKind {
 function deletionReasonFrom(value: string): 'customer_request' | 'retention_expired' {
   if (value === 'customer_request' || value === 'retention_expired') return value;
   throw new Error('stored managed request deletion reason is invalid');
+}
+
+function originalSchemaFromRow(value: unknown): {
+  originalSchema?: NonNullable<ManagedRequestRecord['originalSchema']>;
+} {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== 'object' || Array.isArray(value))
+    throw new Error('stored original schema identity is invalid');
+  const schema = value as Record<string, unknown>;
+  if (
+    typeof schema.profileVersion !== 'number' ||
+    !Number.isSafeInteger(schema.profileVersion) ||
+    schema.profileVersion < 1 ||
+    typeof schema.schemaVersion !== 'number' ||
+    !Number.isSafeInteger(schema.schemaVersion) ||
+    schema.schemaVersion < 1 ||
+    typeof schema.schemaDigest !== 'string' ||
+    !/^(?:sha256:)?[a-f0-9]{64}$/.test(schema.schemaDigest)
+  )
+    throw new Error('stored original schema identity is invalid');
+  return {
+    originalSchema: {
+      profileVersion: schema.profileVersion,
+      schemaVersion: schema.schemaVersion,
+      schemaDigest: schema.schemaDigest,
+    },
+  };
 }
 
 function safeRevision(value: string): number {

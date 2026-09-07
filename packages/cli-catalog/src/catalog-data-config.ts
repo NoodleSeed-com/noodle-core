@@ -153,10 +153,42 @@ function valueSourceFlags(sensitive: boolean): readonly FlagSpec[] {
   });
 }
 
-function configFlags(kind: 'secret' | 'variable', action: 'set' | 'read'): readonly FlagSpec[] {
+function configFlags(
+  kind: 'secret' | 'variable',
+  action: 'set' | 'read' | 'delete',
+): readonly FlagSpec[] {
   return [
     ...(action === 'set' ? valueSourceFlags(kind === 'secret') : []),
-    ...CONFIG_TARGET_FLAGS,
+    ...CONFIG_TARGET_FLAGS.map((flag) =>
+      kind === 'variable' && ['scope', 'app', 'env'].includes(flag.name)
+        ? { ...flag, conflictsWith: [...flag.conflictsWith, 'installation'] }
+        : flag,
+    ),
+    ...(kind === 'variable'
+      ? [
+          {
+            ...OPTIONAL_FLAG,
+            name: 'installation',
+            type: 'string' as const,
+            value: '<id>',
+            summary:
+              'Inspect or configure declared business settings for one installation on cloud/other runtime. Replaces app/env/scope; requires an organization and live business grant. Values use JSON input and are never printed.',
+            conflictsWith: ['scope', 'app', 'env'],
+          },
+        ]
+      : []),
+    ...(kind === 'variable' && action !== 'read'
+      ? [
+          {
+            ...OPTIONAL_FLAG,
+            name: 'expected-revision',
+            type: 'string' as const,
+            value: '<digest>',
+            summary:
+              'Require this installation settings revision. Omit to read the current revision before the atomic update; a conflict never retries the write.',
+          },
+        ]
+      : []),
     JSON_FLAG,
   ];
 }
@@ -189,9 +221,12 @@ function managedConfigSubcommands(kind: 'secret' | 'variable'): readonly Subcomm
     },
     {
       name: 'delete',
-      summary: `Delete a ${noun}.`,
+      summary:
+        kind === 'variable'
+          ? 'Delete a variable; with --installation, reset it to the declared default or unset state.'
+          : 'Delete a secret.',
       arguments: [name],
-      flags: configFlags(kind, 'read'),
+      flags: configFlags(kind, 'delete'),
       jsonOutput: { mode: 'single' },
     },
     ...(kind === 'secret'
@@ -270,7 +305,8 @@ export const CATALOG_CONFIG: readonly CommandSpec[] = [
     name: 'variables',
     section: 'account',
     helpRank: 4,
-    summary: 'Manage non-secret variables (set/list/delete/resolve), scoped to org/app/env.',
+    summary:
+      'Manage non-secret variables (set/list/delete/resolve), scoped to org/app/env or installation business settings.',
     arguments: [],
     flags: [],
     subcommands: managedConfigSubcommands('variable'),

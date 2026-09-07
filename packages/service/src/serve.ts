@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { DailyCounterStore } from '@noodle-borg/admission-limits/portable';
@@ -27,14 +28,28 @@ import { SecretBox, staticMasterKeyProvider } from '@noodle-borg/runtime';
 import { PostgresStateHandleStore } from '@noodle-borg/runtime/postgres';
 import { noopLogger } from '@noodle-borg/transport-http';
 import { ALERT_EVALUATION_INTERVAL_MS, AlertEvaluator } from './alert-evaluator.js';
+import { createApplicationConnections } from './application-connections.js';
+import { resolveApplicationRuntimeTarget } from './application-runtime-target.js';
 import { type AssetStore, InMemoryAssetStore } from './assets.js';
 import { resolveBuildInfo } from './build-info.js';
 import {
   type BusinessInformationStore,
   InMemoryBusinessInformationStore,
+  InMemorySourceIngestionStore,
+  RegistrySourceReadExecutor,
+  SourceIngestionCoordinator,
+  type SourceIngestionStore,
+  validateManagedPayload,
 } from './business-information/portable.js';
-import { PostgresBusinessInformationStore } from './business-information/postgres.js';
+import {
+  PostgresBusinessInformationStore,
+  PostgresSourceIngestionStore,
+} from './business-information/postgres.js';
+import { retentionSweepTrigger } from './business-information/retention-sweeper.js';
+import { fenceSourceStore } from './business-information/source-credential-fence.js';
 import { SecretBoxPayloadCipher } from './business-information-cipher.js';
+import { InMemoryConnectionStore, PostgresConnectionStore } from './connections/store.js';
+import type { ConnectionStore } from './connections/types.js';
 import { createDefaultControlPlaneGate } from './control-plane-auth-bootstrap.js';
 import { warnCustomerAuthAudienceQuarantine } from './customer-auth-audience-quarantine.js';
 import { createLocalDevtoolsCustomerVerifierFactory } from './customer-verifier.js';
@@ -49,8 +64,12 @@ import { createHostedMcpRequestStateManager } from './mcp-protocol-runtime.js';
 import { bootstrapServiceModules } from './modules/bootstrap.js';
 import type { ModuleHost } from './modules/host.js';
 import { resolveServiceOAuthBootstrap } from './oauth/service-bootstrap.js';
+import type { OperationEvidenceStore } from './operation-evidence.js';
+import { InMemoryOperationEvidenceStore } from './operation-evidence-memory.js';
+import { PostgresOperationEvidenceStore } from './operation-evidence-postgres.js';
 import type { ServiceOptions } from './options.js';
 import { assertPostgresStoreOwnership } from './persistence-options.js';
+import { resolveRecoveryMode, serveRecoveryQuarantine } from './recovery-quarantine.js';
 import { ServerRegistry } from './registry.js';
 import { assistantStoreOptions, createPostgresAssistantStores } from './serve-assistant-stores.js';
 import type { RunningService, ServeServiceOptions } from './serve-options.js';
@@ -67,6 +86,7 @@ import {
   closeServiceResources,
   listenHttpServer,
 } from './service-resource-cleanup.js';
+import { sourceConfigurationAuthority } from './source-configuration-authority.js';
 import { type AlertRuleStore, InMemoryAlertRuleStore } from './store/alert-rules.js';
 import { JsonFileAlertRuleStore } from './store/alert-rules-json-file.js';
 import { type AuditSink, InMemoryAuditStore } from './store/audit.js';
@@ -86,6 +106,10 @@ import { startWelcomeEmailWorker } from './welcome-email.js';
 export type { RunningService } from './serve-options.js';
 
 export async function serveService(options: ServeServiceOptions = {}): Promise<RunningService> {
+  const recoveryMode = resolveRecoveryMode(options.recoveryMode);
+  if (recoveryMode === 'quarantined') return serveRecoveryQuarantine(options);
+  if (recoveryMode === 'reopened' && options.operationEvidenceEpoch === undefined)
+    throw new Error('Reopened recovery requires an explicit operation evidence epoch');
   const buildInfo = options.buildInfo ?? resolveBuildInfo();
   const serviceConfigSource = resolveServiceConfigSource({
     ...(options.serviceConfigDir !== undefined ? { dir: options.serviceConfigDir } : {}),
@@ -150,8 +174,51 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
   let alertRuleStore: AlertRuleStore | undefined = options.alertRuleStore;
   let businessInformationStore: BusinessInformationStore | undefined =
     options.businessInformationStore;
+  let businessInformationSourceStore: SourceIngestionStore | undefined =
+    options.businessInformationSourceStore;
   const businessInformationEnabled =
     options.businessInformationEnabled ?? options.dataDir === undefined;
+  const operationEvidenceEpoch =
+    options.operationEvidenceEpoch ??
+    options.applicationConnections?.credentialEpoch ??
+    'operation-evidence-initial-v1';
+  if (
+    !/^[A-Za-z0-9_-]{16,128}$/.test(operationEvidenceEpoch) ||
+    (options.operationEvidenceIdentityKey !== undefined &&
+      Buffer.byteLength(options.operationEvidenceIdentityKey, 'utf8') < 32)
+  )
+    throw new Error('Invalid operation evidence configuration');
+  if (
+    postgresStoreRequested &&
+    businessInformationEnabled &&
+    options.businessInformationSourceIdentityKey === undefined &&
+    options.secretMasterKey === undefined
+  ) {
+    throw new Error(
+      'Postgres business information sources require a stable identity key; configure businessInformationSourceIdentityKey or NOODLE_BUSINESS_SOURCE_IDENTITY_KEY',
+    );
+  }
+  if (
+    options.applicationConnections &&
+    (options.dataDir !== undefined ||
+      !businessInformationEnabled ||
+      options.connectionRuntime !== undefined)
+  ) {
+    throw new Error(
+      'Application connections require managed application storage and exactly one service-owned runtime',
+    );
+  }
+  if (
+    options.applicationConnections &&
+    options.externalCredentialExchange &&
+    !('localProvider' in options.externalCredentialExchange)
+  ) {
+    throw new Error(
+      'Application connections cannot be combined with a remote exchange unless explicitly composed through localProvider',
+    );
+  }
+  let connectionStore: ConnectionStore | undefined;
+  let operationEvidenceStore: OperationEvidenceStore | undefined;
   let assistantStore: AssistantStore | undefined = options.assistantStore;
   let assistantAppearance: AssistantAppearanceSettingsStore | undefined =
     options.assistantAppearance;
@@ -213,13 +280,35 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
         if (secretBox === undefined) {
           throw new Error('Postgres business information requires the service key custodian');
         }
+        const payloadCipher = new SecretBoxPayloadCipher(secretBox);
         const postgresBusinessInformation = new PostgresBusinessInformationStore(
           postgresPool,
-          new SecretBoxPayloadCipher(secretBox),
+          payloadCipher,
           options.clock === undefined ? {} : { now: options.clock },
         );
         await postgresBusinessInformation.ensureSchema();
         businessInformationStore = postgresBusinessInformation;
+        const sourceIdentityKey =
+          options.businessInformationSourceIdentityKey ?? options.secretMasterKey;
+        if (businessInformationSourceStore === undefined && sourceIdentityKey !== undefined) {
+          const postgresSources = new PostgresSourceIngestionStore(postgresPool, payloadCipher, {
+            identityKey: sourceIdentityKey,
+          });
+          await postgresSources.ensureSchema();
+          businessInformationSourceStore = postgresSources;
+        }
+      }
+      if (businessInformationEnabled) {
+        if (!secretBox) throw new Error('Operation evidence requires encrypted storage');
+        const evidence = new PostgresOperationEvidenceStore(postgresPool, secretBox);
+        await evidence.ensureSchema();
+        operationEvidenceStore = evidence;
+      }
+      if (options.applicationConnections) {
+        if (!secretBox) throw new Error('Connections require encrypted storage');
+        const connections = new PostgresConnectionStore(postgresPool, secretBox);
+        await connections.ensureSchema();
+        connectionStore = connections;
       }
       const assistantStores = await createPostgresAssistantStores(postgresPool, {
         assistantStore,
@@ -260,6 +349,17 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       options.clock === undefined ? {} : { now: options.clock },
     );
   }
+  if (
+    businessInformationEnabled &&
+    businessInformationStore !== undefined &&
+    businessInformationSourceStore === undefined &&
+    pgPool === undefined
+  ) {
+    businessInformationSourceStore = new InMemorySourceIngestionStore({
+      identityKey: 'local-business-source-identity-key-v1',
+      ...(options.clock === undefined ? {} : { now: options.clock }),
+    });
+  }
 
   // Analytics write-behind buffer + Stage-A default retention (ADR 0121): capture is enqueue-only on the
   // request path; the durable stream is pruned on boot and periodically to the retention window.
@@ -290,16 +390,44 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
   const alertTimer = setInterval(() => alertEvaluator.maybeSweep(), ALERT_EVALUATION_INTERVAL_MS);
   alertTimer.unref?.();
 
+  const operationEvidence = businessInformationEnabled
+    ? {
+        store: operationEvidenceStore ?? new InMemoryOperationEvidenceStore(),
+        epoch: operationEvidenceEpoch,
+        identityKey: createHash('sha256')
+          .update('operation-evidence\0')
+          .update(
+            options.operationEvidenceIdentityKey ??
+              options.businessInformationSourceIdentityKey ??
+              options.secretMasterKey ??
+              randomBytes(32),
+          )
+          .digest('hex'),
+        ...(options.clock === undefined
+          ? {}
+          : { now: () => options.clock?.().getTime() ?? Date.now() }),
+      }
+    : undefined;
   let businessInformationTimer: NodeJS.Timeout | undefined;
+  let stopBusinessInformationSweep: (() => void) | undefined;
+  let businessInformationSourceTimer: NodeJS.Timeout | undefined;
   if (businessInformationStore !== undefined) {
-    const sweep = (): void => {
-      void businessInformationStore?.purgeExpired({ limit: 100 }).catch((error: unknown) => {
-        (options.logger ?? noopLogger).error('business_information.retention.failed', {
-          name: error instanceof Error ? error.name : 'unknown',
-          message: error instanceof Error ? error.message : String(error),
-        });
-      });
-    };
+    const sweep = retentionSweepTrigger(
+      [
+        businessInformationStore,
+        businessInformationSourceStore,
+        operationEvidence === undefined
+          ? undefined
+          : {
+              purgeExpired: async () => {
+                await operationEvidence.store.sweep(options.clock?.().getTime() ?? Date.now());
+                return 0;
+              },
+            },
+      ],
+      options.logger ?? noopLogger,
+    );
+    stopBusinessInformationSweep = sweep.close;
     sweep();
     businessInformationTimer = setInterval(sweep, 15 * 60 * 1000);
     businessInformationTimer.unref?.();
@@ -401,6 +529,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       // Noodle tokens lead temporary human-Google compatibility and the exact-subject workload gate.
       gate = createDefaultControlPlaneGate({
         options,
+        ...(oauthStore === undefined ? {} : { oauthStore }),
         controlPlaneStore,
         ...(resolvedVerifyOwnerToken === undefined
           ? {}
@@ -426,6 +555,31 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       await controlPlaneStore.createOrg({ slug: 'local', displayName: 'Local' });
     }
 
+    const connectionRuntime =
+      options.applicationConnections && businessInformationStore
+        ? createApplicationConnections({
+            ...options.applicationConnections,
+            audit: moduleHost.audit,
+            store: connectionStore ?? new InMemoryConnectionStore(),
+            installations: businessInformationStore,
+            getRegistry: () => {
+              if (!registry) throw new Error('Application registry is unavailable');
+              return registry;
+            },
+          })
+        : options.connectionRuntime;
+    const sourceAuthority = sourceConfigurationAuthority(() => {
+      if (!registry) throw new Error('Registry unavailable');
+      return registry;
+    }, connectionRuntime?.sourceCredentials);
+    if (businessInformationSourceStore)
+      businessInformationSourceStore = fenceSourceStore(
+        businessInformationSourceStore,
+        sourceAuthority,
+      );
+    const externalCredentialExchange =
+      options.externalCredentialExchange ??
+      (connectionRuntime ? { localProvider: connectionRuntime.localProvider } : undefined);
     registry = new ServerRegistry(store, secretBox, configStore, {
       customerVerifierFactory:
         options.localDevtoolsDirectFirebaseAuth === true ||
@@ -457,9 +611,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       ...(options.localDevtoolsDelegatedExchange === undefined
         ? {}
         : { localDevtoolsDelegatedExchange: options.localDevtoolsDelegatedExchange }),
-      ...(options.externalCredentialExchange === undefined
-        ? {}
-        : { externalCredentialExchange: options.externalCredentialExchange }),
+      ...(externalCredentialExchange === undefined ? {} : { externalCredentialExchange }),
       ...(googleWorkloadIdentity === undefined
         ? {}
         : {
@@ -481,6 +633,45 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
     // into eager recompile-all-on-boot (boot-time validation of every server, for a pinned/on-prem instance).
     const recovered = store && options.warmAll ? await registry.recover() : undefined;
 
+    if (businessInformationSourceStore !== undefined && businessInformationStore !== undefined) {
+      const sourceCoordinator = new SourceIngestionCoordinator({
+        store: businessInformationSourceStore,
+        executor:
+          options.businessInformationSourceExecutor ??
+          new RegistrySourceReadExecutor(
+            registry,
+            businessInformationStore,
+            (target) =>
+              resolveApplicationRuntimeTarget(
+                target,
+                undefined,
+                connectionRuntime?.readGenerations,
+              ),
+            sourceAuthority,
+          ),
+        workerId: 'service-source-ingestion',
+        validateRecord: (_binding, value) => validateManagedPayload(value),
+        ...(options.clock === undefined ? {} : { now: options.clock }),
+      });
+      const sweepSources = (): void => {
+        void drainSourceIngestion(sourceCoordinator).catch((error: unknown) => {
+          (options.logger ?? noopLogger).error('business_information.source.failed', {
+            name: error instanceof Error ? error.name : 'unknown',
+            code:
+              typeof error === 'object' &&
+              error !== null &&
+              'code' in error &&
+              typeof error.code === 'string'
+                ? error.code
+                : 'source_scan_failed',
+          });
+        });
+      };
+      sweepSources();
+      businessInformationSourceTimer = setInterval(sweepSources, 30_000);
+      businessInformationSourceTimer.unref?.();
+    }
+
     // Readiness reflects durable-store reachability. Built here so the handler never imports `pg`; a
     // file/in-memory deployment is always ready.
     const readinessProbe: () => Promise<boolean> = pgPool
@@ -498,6 +689,8 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
         telemetry,
         ...(welcomeEmailTimer === undefined ? {} : { welcomeEmailTimer }),
         ...(businessInformationTimer === undefined ? {} : { businessInformationTimer }),
+        ...(stopBusinessInformationSweep === undefined ? {} : { stopBusinessInformationSweep }),
+        ...(businessInformationSourceTimer === undefined ? {} : { businessInformationSourceTimer }),
         alertTimer,
         ...(moduleHost === undefined ? {} : { moduleHost }),
         ...(pgPool === undefined ? {} : { postgresPool: pgPool }),
@@ -509,8 +702,11 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
     void ignoredDirectReconciliationOperator;
     const handlerOptions: ServiceOptions = {
       ...handlerBaseOptions,
+      ...(operationEvidence === undefined ? {} : { operationEvidence }),
+      ...(connectionRuntime === undefined ? {} : { connectionRuntime }),
       ...(knowledge === undefined ? {} : { knowledge }),
       ...(businessInformationStore === undefined ? {} : { businessInformationStore }),
+      ...(businessInformationSourceStore === undefined ? {} : { businessInformationSourceStore }),
       businessInformationEnabled,
       ...(googleWorkloadIdentity === undefined ? {} : { googleWorkloadIdentity }),
       readinessProbe,
@@ -586,5 +782,12 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
   } catch (error) {
     await moduleHost.dispose();
     throw error;
+  }
+}
+
+async function drainSourceIngestion(coordinator: SourceIngestionCoordinator): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const result = await coordinator.runOne();
+    if (result.disposition !== 'completed') return;
   }
 }

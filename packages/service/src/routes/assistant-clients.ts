@@ -4,6 +4,7 @@ import { sendForbidden } from '../http-util.js';
 import type { TenantRef } from '../store.js';
 import type { AssistantRouteDeps } from './assistant.js';
 import { now } from './assistant-route-http.js';
+import { activeAssistantTarget } from './assistant-session-target.js';
 import { authorizeControlPlane } from './control-plane.js';
 
 export async function handleAssistantClients(
@@ -37,7 +38,7 @@ export async function handleAssistantClients(
     if (typeof name !== 'string' || name.trim().length < 1 || name.length > 80) {
       return sendJson(res, 400, { error: '"name" must be a non-empty string' });
     }
-    const target = await deps.registry.getActiveByTenant(tenant);
+    const target = await activeAssistantTarget({ registry: deps.registry }, tenant);
     const assistant = target?.served.artifact.server.assistant;
     if (!target?.deploymentId || !assistant)
       return sendJson(res, 409, { error: 'deployment has no embedded assistant' });

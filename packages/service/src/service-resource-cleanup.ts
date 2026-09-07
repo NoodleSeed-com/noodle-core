@@ -10,6 +10,8 @@ export interface ServiceResourceCleanupInput {
   readonly welcomeEmailTimer?: NodeJS.Timeout;
   readonly feedbackOperationsTimer?: NodeJS.Timeout;
   readonly businessInformationTimer?: NodeJS.Timeout;
+  readonly stopBusinessInformationSweep?: () => void;
+  readonly businessInformationSourceTimer?: NodeJS.Timeout;
   readonly alertTimer: NodeJS.Timeout;
   readonly moduleHost?: { dispose(): Promise<void> };
   readonly postgresPool?: AsyncCloseable;
@@ -20,6 +22,10 @@ export async function closeServiceResources(input: ServiceResourceCleanupInput):
   if (input.welcomeEmailTimer !== undefined) clearInterval(input.welcomeEmailTimer);
   if (input.feedbackOperationsTimer !== undefined) clearInterval(input.feedbackOperationsTimer);
   if (input.businessInformationTimer !== undefined) clearInterval(input.businessInformationTimer);
+  input.stopBusinessInformationSweep?.();
+  if (input.businessInformationSourceTimer !== undefined) {
+    clearInterval(input.businessInformationSourceTimer);
+  }
   clearInterval(input.alertTimer);
 
   const errors: unknown[] = [];

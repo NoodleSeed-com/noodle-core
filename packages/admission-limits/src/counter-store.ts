@@ -18,7 +18,7 @@ export interface CounterRequest {
    * Which window the ceiling belongs to. Solvency bounds are daily (the default); the per-address
    * fairness tier is hourly, so a visitor's accidental burst forgives itself within the same visit.
    */
-  readonly window?: 'day' | 'hour';
+  readonly window?: 'day' | 'hour' | 'minute';
 }
 
 export interface CounterOutcome {
@@ -29,6 +29,16 @@ export interface CounterOutcome {
   /** Start of the window after the one this counter belongs to. */
   readonly resetAt: Date;
 }
+
+export interface ExhaustedCounter {
+  readonly key: string;
+  readonly limit: number;
+  readonly resetAt: Date;
+}
+
+export type AtomicCounterAttemptOutcome =
+  | { readonly kind: 'consumed' | 'replayed' | 'conflict' }
+  | { readonly kind: 'refused'; readonly exhausted: readonly ExhaustedCounter[] };
 
 export interface DailyCounterStore {
   /**
@@ -68,6 +78,15 @@ export interface DailyCounterStore {
 export interface AtomicDailyCounterStore extends DailyCounterStore {
   /** Atomically consume every request, returning false without changing any row when one refuses. */
   consumeAll(requests: readonly CounterRequest[], now: Date): Promise<boolean>;
+  /**
+   * Consume an atomic batch once for one opaque logical attempt. Equal retries replay without spending;
+   * a changed fingerprint conflicts. Only successful admission creates retry evidence.
+   */
+  consumeAllOnce(
+    requests: readonly CounterRequest[],
+    attempt: { readonly key: string; readonly fingerprint: string },
+    now: Date,
+  ): Promise<AtomicCounterAttemptOutcome>;
 }
 
 /** Counters roll at UTC midnight — a fixed boundary no tenant timezone can shift. */
@@ -100,7 +119,12 @@ export function counterRow(
   now: Date,
 ): { readonly key: string; readonly day: string } {
   return {
-    key: request.window === 'hour' ? `${request.key}@${hourKey(now)}` : request.key,
+    key:
+      request.window === 'minute'
+        ? `${request.key}@${now.toISOString().slice(0, 16)}`
+        : request.window === 'hour'
+          ? `${request.key}@${hourKey(now)}`
+          : request.key,
     day: dayKey(now),
   };
 }
@@ -119,8 +143,13 @@ export function retentionCutoff(now: Date): string {
   return dayKey(new Date(now.getTime() - COUNTER_RETENTION_DAYS * 24 * 60 * 60 * 1000));
 }
 
-export function nextReset(now: Date, window: 'day' | 'hour' = 'day'): Date {
+export function nextReset(now: Date, window: 'day' | 'hour' | 'minute' = 'day'): Date {
   const next = new Date(now);
+  if (window === 'minute') {
+    next.setUTCSeconds(0, 0);
+    next.setUTCMinutes(next.getUTCMinutes() + 1);
+    return next;
+  }
   if (window === 'hour') {
     next.setUTCMinutes(0, 0, 0);
     next.setUTCHours(next.getUTCHours() + 1);

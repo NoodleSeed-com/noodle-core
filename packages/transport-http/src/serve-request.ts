@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { trustedPublicAdmission } from '@noodle-borg/admission-limits/portable';
 import type {
   AdmissionGate,
   IntentCaptureMode,
@@ -290,9 +291,17 @@ export async function serveRequest(
     }
   }
 
+  const publicAdmission = trustedPublicAdmission({
+    scope: target.deps.tenantId,
+    sourceAddress: req.socket.remoteAddress,
+    ...(protocolContext.caller?.subject === undefined
+      ? {}
+      : { subject: protocolContext.caller.subject }),
+  });
   protocolContext = {
     ...protocolContext,
     ...(auth.intentCaptureMode === 'starter-v1' ? { intentCapture: { enabled: true } } : {}),
+    ...(publicAdmission === undefined ? {} : { publicAdmission }),
     ...(auth.deploymentId !== undefined ? { deploymentId: auth.deploymentId } : {}),
     ...(auth.requestState !== undefined ? { requestState: auth.requestState } : {}),
     ...(auth.confirmationNonceLedger !== undefined

@@ -1,4 +1,5 @@
 import type { ArtifactFulfilment, RuntimeArtifact } from '@noodle-borg/compiler';
+import { resolveVariableEnvironment, validateVariableContinuation } from './business-variables.js';
 import {
   analyzeEligibleActions,
   countTrailingEligibleOperations,
@@ -56,6 +57,13 @@ export async function prepareToolForConfirmation(
   }
   const tool = artifact.tools.find((candidate) => candidate.name === toolName);
   if (!tool) return failPreparation('unknown_tool', `no tool named "${toolName}"`);
+  const variables = resolveVariableEnvironment(
+    artifact.server.variables ?? [],
+    await resolveEnv(deps),
+    toolName,
+  );
+  if (!variables.ok) return { status: 'failed', error: variables.error };
+  deps = { ...deps, env: variables.env };
   const invocationDeps = withConnectorSnapshot(deps);
   const preflightError = preflightFulfilmentSignatures(tool.fulfilment, invocationDeps.connectors);
   if (preflightError) return { status: 'failed', error: preflightError };
@@ -78,10 +86,20 @@ export async function prepareToolForConfirmation(
       'args',
     );
     if (!prepared.ok) return { status: 'failed', error: prepared.error };
-    return confirmationRequired(artifact, toolName, input, 0, {}, {}, env, {
-      prepared: prepared.action,
-      review: prepared.review,
-    });
+    return confirmationRequired(
+      artifact,
+      toolName,
+      input,
+      0,
+      {},
+      {},
+      env,
+      {
+        prepared: prepared.action,
+        review: prepared.review,
+      },
+      invocationDeps.executionBinding?.revision,
+    );
   }
   return runPreparation(artifact, toolName, tool.fulfilment, input, 0, {}, {}, env, invocationDeps);
 }
@@ -104,6 +122,15 @@ export async function resumeToolPreparation(
     return failPreparation('invalid_continuation', 'tool continuation does not match the artifact');
   }
   if (response.action !== 'accept') return { status: 'stopped', action: response.action };
+  if ((artifact.server.variables?.length ?? 0) > 0) {
+    const variables = resolveVariableEnvironment(
+      artifact.server.variables ?? [],
+      await resolveEnv(deps),
+      continuation.toolName,
+    );
+    const configurationError = validateVariableContinuation(artifact, continuation.env, variables);
+    if (configurationError) return { status: 'failed', error: configurationError };
+  }
   const validated = validateElicitationContent(
     response.content ?? {},
     continuation.pending.requestedSchema,
@@ -160,6 +187,21 @@ export async function executePreparedTool(
   }
   const tool = artifact.tools.find((candidate) => candidate.name === continuation.toolName);
   if (!tool) return failInteractive('invalid_continuation', 'continued tool is unavailable');
+  if (continuation.executionRevision !== deps.executionBinding?.revision) {
+    return failInteractive(
+      'configuration_changed',
+      'Application configuration or connection changed; request a new confirmation.',
+    );
+  }
+  if ((artifact.server.variables?.length ?? 0) > 0) {
+    const variables = resolveVariableEnvironment(
+      artifact.server.variables ?? [],
+      await resolveEnv(deps),
+      continuation.toolName,
+    );
+    const configurationError = validateVariableContinuation(artifact, continuation.env, variables);
+    if (configurationError) return { status: 'failed', error: configurationError };
+  }
   const inputError = validateAgainstSchema(
     continuation.input,
     tool.inputSchema,
@@ -301,7 +343,7 @@ async function runPreparation(
   startIndex: number,
   steps: Record<string, unknown>,
   elicited: Record<string, unknown>,
-  env: Record<string, string>,
+  env: Record<string, unknown>,
   deps: ExecuteToolDeps,
 ): Promise<ConfirmationPreparationResult> {
   try {
@@ -338,10 +380,20 @@ async function runPreparation(
             `steps.${step.id}`,
           );
         }
-        return confirmationRequired(artifact, toolName, input, index, steps, elicited, env, {
-          prepared: prepared.action,
-          review: prepared.review,
-        });
+        return confirmationRequired(
+          artifact,
+          toolName,
+          input,
+          index,
+          steps,
+          elicited,
+          env,
+          {
+            prepared: prepared.action,
+            review: prepared.review,
+          },
+          deps.executionBinding?.revision,
+        );
       }
       if (step.kind === 'map') {
         steps[step.id] = evalExprMap(step.value, scope, `steps.${step.id}`);
@@ -378,7 +430,17 @@ async function runPreparation(
         'confirmable conditional flows must resolve exactly one eligible action',
       );
     }
-    return confirmationRequired(artifact, toolName, input, flow.steps.length, steps, elicited, env);
+    return confirmationRequired(
+      artifact,
+      toolName,
+      input,
+      flow.steps.length,
+      steps,
+      elicited,
+      env,
+      undefined,
+      deps.executionBinding?.revision,
+    );
   } catch (error) {
     if (error instanceof ExpressionEvalError) {
       return failPreparation('expression_error', error.message, error.path);
@@ -393,7 +455,7 @@ async function runPreparedFlow(
   input: unknown,
   startIndex: number,
   steps: Record<string, unknown>,
-  env: Record<string, string>,
+  env: Record<string, unknown>,
   deps: ExecuteToolDeps,
   reviewedAction?: PreparedOperationAction,
 ): Promise<InteractiveExecutionResult> {

@@ -13,7 +13,7 @@ import {
   type HttpOperationPagination,
   type HttpOperationProjection,
 } from '@noodle-borg/connector-http';
-import { type Connector, evaluateValue } from '@noodle-borg/runtime';
+import { type Connector, evaluateValue, type OperationEvidence } from '@noodle-borg/runtime';
 import { collectVariablesFromHttpAuth } from './auth-variables.js';
 import type { SecretBinding } from './compile.js';
 import { addAuthBinding, toAuthScheme } from './compile-auth.js';
@@ -39,7 +39,7 @@ type RequestAst =
   | { readonly kind: 'value'; readonly node: ExprNode }
   | { readonly kind: 'map'; readonly map: Record<string, ExprNode> };
 
-const REQUEST_ROOTS: ReadonlySet<string> = new Set(['args', 'env']);
+const REQUEST_ROOTS: ReadonlySet<string> = new Set(['args', 'env', 'execution']);
 const RESPONSE_ROOTS: ReadonlySet<string> = new Set(['args', 'response']);
 const PROJECTION_ROOTS: ReadonlySet<string> = new Set(['args', 'response', 'output']);
 const PAGINATION_ROOTS: ReadonlySet<string> = RESPONSE_ROOTS;
@@ -87,6 +87,37 @@ export function compileHttpConnector(
     });
   }
 
+  if (def.http.transportAuth !== undefined) {
+    if (
+      def.http.auth !== undefined ||
+      Object.values(def.operations).some((op) => op.auth !== undefined) ||
+      routedBase
+    ) {
+      errors.push({
+        code: 'transport_auth_conflict',
+        path: `connectors.${def.id}.http.transportAuth`,
+        message:
+          'transportAuth requires a fixed/managed origin and account credential profiles, without legacy auth',
+      });
+      return;
+    }
+    const transportHeader = def.http.transportAuth.header.toLowerCase();
+    const profiles = Object.values(def.credentialProfiles ?? {});
+    if (
+      profiles.length === 0 ||
+      profiles.some(
+        (profile) => profile.kind === 'apiKey' && profile.header.toLowerCase() === transportHeader,
+      )
+    ) {
+      errors.push({
+        code: 'transport_auth_conflict',
+        path: `connectors.${def.id}.http.transportAuth`,
+        message: 'transportAuth requires account profiles with distinct credential headers',
+      });
+      return;
+    }
+  }
+
   for (const [opName, op] of Object.entries(def.operations)) {
     const base = `connectors.${def.id}.operations.${opName}`;
     if (op.type === 'action' && op.resilience?.retry !== undefined) {
@@ -126,6 +157,18 @@ export function compileHttpConnector(
           'HTTP paths take {name} placeholders (authored as ${args.name}); other ${...} expressions are not supported in a path',
       });
     }
+    if (
+      def.http.transportAuth !== undefined &&
+      Object.keys(op.headers ?? {}).some(
+        (name) => name.toLowerCase() === def.http.transportAuth?.header.toLowerCase(),
+      )
+    ) {
+      errors.push({
+        code: 'transport_auth_header_conflict',
+        path: `${base}.headers`,
+        message: 'operation headers cannot write the transport credential header',
+      });
+    }
     validateFakeShape(op, `${base}.fake`, errors);
     const signature = toSignature(op.type, op.input, op.output);
     signatures[opName] = signature;
@@ -137,6 +180,9 @@ export function compileHttpConnector(
     if (routedBase) validateCustomerEndpointAuth(op.auth, `${base}.auth`, errors);
     const responseAst = op.response
       ? compileExprMap(op.response, RESPONSE_ROOTS, `${base}.response`, errors)
+      : undefined;
+    const evidenceAst = op.evidence
+      ? compileExprMap(op.evidence, new Set(['response']), `${base}.evidence`, errors)
       : undefined;
     // Headers use the same roots as the request body (args + env), so a runtime value threaded through
     // args can be attached as dynamic, non-credential request metadata.
@@ -159,6 +205,7 @@ export function compileHttpConnector(
       pagination,
       fake,
       projection,
+      evidenceAst,
     );
     // Per-operation auth declares its own secret reference (overrides any connector-level default).
     addAuthBinding({
@@ -185,7 +232,7 @@ export function compileHttpConnector(
 
   // Connector-level default auth binds every operation that doesn't carry its own scheme.
   addAuthBinding({
-    auth: def.http.auth,
+    auth: def.http.transportAuth ?? def.http.auth,
     connectorId: def.id,
     connectorVersion: def.version,
     ...(customerEndpoint === undefined ? {} : { customerEndpoint }),
@@ -202,6 +249,9 @@ export function compileHttpConnector(
     baseUrl: def.http.baseUrl,
     ...(def.http.allowedOrigins ? { allowedOrigins: def.http.allowedOrigins } : {}),
     ...(def.http.auth ? { auth: toAuthScheme(def.http.auth) } : {}),
+    ...(def.http.transportAuth
+      ? { transportAuth: { kind: 'apiKey' as const, header: def.http.transportAuth.header } }
+      : {}),
     ...(mode === 'fake' ? { fakeMode: true } : {}),
     operations,
   };
@@ -320,10 +370,15 @@ function buildOperation(
   pagination: HttpOperationPagination | undefined,
   fake: HttpOperationFake | undefined,
   projection: HttpOperationProjection | undefined,
+  evidenceAst: Record<string, ExprNode> | undefined,
 ): HttpOperation {
   const resilience = httpResilience(op.resilience);
   return {
     method: op.method ?? 'GET',
+    requiresExecution: [
+      ...(requestAst?.kind === 'value' ? [requestAst.node] : Object.values(requestAst?.map ?? {})),
+      ...Object.values(headersAst ?? {}),
+    ].some(usesExecutionIdentity),
     path: op.path,
     ...(op.query ? { query: op.query } : {}),
     signature,
@@ -335,21 +390,56 @@ function buildOperation(
     ...(op.limits !== undefined ? { maxResponseBytes: op.limits.maxResponseBytes } : {}),
     ...(op.responseType !== undefined ? { responseType: op.responseType } : {}),
     ...(op.requestEncoding !== undefined ? { requestEncoding: op.requestEncoding } : {}),
+    ...(evidenceAst === undefined
+      ? {}
+      : {
+          evidence: (json: unknown): OperationEvidence => {
+            const value = evalMap(evidenceAst, { response: json });
+            const outcome = value.outcome;
+            if (
+              outcome !== 'completed' &&
+              outcome !== 'rejected' &&
+              outcome !== 'accepted' &&
+              outcome !== 'unknown'
+            )
+              return { outcome: 'unknown' };
+            return {
+              outcome,
+              ...(typeof value.reference === 'string' ? { reference: value.reference } : {}),
+            };
+          },
+        }),
     ...(requestAst
       ? {
-          body: (args, env) =>
+          body: (args, env, execution) =>
             requestAst.kind === 'map'
-              ? evalMap(requestAst.map, { args, env })
-              : evaluateValue(requestAst.node, { args, env }, 'request'),
+              ? evalMap(requestAst.map, { args, env, execution })
+              : evaluateValue(requestAst.node, { args, env, execution }, 'request'),
         }
       : {}),
     ...(responseAst
       ? { mapResponse: (json: unknown, args) => evalMap(responseAst, { args, response: json }) }
       : {}),
     ...(headersAst
-      ? { headers: (args, env) => toHeaderRecord(evalMap(headersAst, { args, env })) }
+      ? {
+          headers: (args, env, execution) =>
+            toHeaderRecord(evalMap(headersAst, { args, env, execution })),
+        }
       : {}),
   };
+}
+
+function usesExecutionIdentity(node: ExprNode): boolean {
+  if (node.kind === 'path') return node.root === 'execution';
+  if (node.kind === 'template')
+    return node.parts.some((part) => part.kind !== 'text' && usesExecutionIdentity(part));
+  if (node.kind === 'array') return node.items.some(usesExecutionIdentity);
+  if (node.kind === 'object')
+    return node.entries.some((entry) => usesExecutionIdentity(entry.value));
+  if (node.kind === 'coalesce')
+    return usesExecutionIdentity(node.left) || usesExecutionIdentity(node.right);
+  if (node.kind === 'function') return node.args.some(usesExecutionIdentity);
+  return false;
 }
 
 function compileProjection(

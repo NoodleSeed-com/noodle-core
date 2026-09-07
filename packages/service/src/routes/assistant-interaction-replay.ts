@@ -95,7 +95,7 @@ export async function replayOrConflict(
     const tool = assistantInteractionTool(current) ?? 'unknown_tool';
     const result = current.publicOutcome.result ?? current.publicOutcome;
     writeToolCompleted(res, current.id, tool, result, true);
-    const deployment = await sessionScopedTarget(deps.registry, session);
+    const deployment = await sessionScopedTarget(deps.registry, session, deps.resolveRuntimeTarget);
     const view = deployment
       ? assistantViewAvailableData(
           deployment.served.artifact,

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
 import {
-  ASSISTANT_INTERACTION_EXECUTING_GRACE_MS,
+  ASSISTANT_INTERACTION_EXECUTION_LIMIT_MS,
   ASSISTANT_INTERACTION_OUTCOME_RETENTION_MS,
   ASSISTANT_INTERACTION_UNKNOWN_OUTCOME,
   type AssistantConfirmationInteractionRecord,
@@ -32,7 +32,7 @@ import {
   reserveAssistantInteractionPendingSlot,
 } from './postgres-assistant-interaction-writes.js';
 
-/** Logged journal: exact private payloads during recovery grace, then bounded replay-safe outcomes. */
+/** Logged single-executor handoff: private inputs are removed atomically before dispatch. */
 export class PostgresAssistantInteractions {
   readonly #pool: Pool;
 
@@ -281,11 +281,11 @@ export class PostgresAssistantInteractions {
        SET status='failed', arguments=NULL, continuation=NULL, review=NULL,
            invocation_context=NULL,
            completed_at=$1, public_outcome=$2::jsonb, payload_scrubbed_at=$1
-       WHERE status='executing' AND claimed_at <= $3 AND payload_scrubbed_at IS NULL`,
+       WHERE status='executing' AND claimed_at <= $3`,
       [
         completedAt,
         JSON.stringify(ASSISTANT_INTERACTION_UNKNOWN_OUTCOME),
-        new Date(now.getTime() - ASSISTANT_INTERACTION_EXECUTING_GRACE_MS).toISOString(),
+        new Date(now.getTime() - ASSISTANT_INTERACTION_EXECUTION_LIMIT_MS).toISOString(),
       ],
     );
     await this.#pool.query(
@@ -316,7 +316,7 @@ export class PostgresAssistantInteractions {
       const claimed = executingInteraction(current, input.now);
       const result = await client.query<AssistantInteractionRow>(
         `UPDATE assistant_pending_tool_calls
-         SET status='executing', claimed_at=$2
+         SET status='executing', claimed_at=$2, arguments=NULL, continuation=NULL, review=NULL, invocation_context=NULL, payload_scrubbed_at=$2
          WHERE id=$1 RETURNING *`,
         [claimed.id, claimed.claimedAt],
       );
@@ -326,7 +326,7 @@ export class PostgresAssistantInteractions {
       if (persisted.status !== 'executing') {
         throw new Error('assistant interaction claim did not persist executing status');
       }
-      return { disposition: 'claimed', interaction: persisted };
+      return { disposition: 'claimed', interaction: claimed };
     });
   }
 

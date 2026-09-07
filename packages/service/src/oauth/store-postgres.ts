@@ -1,5 +1,4 @@
 import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
-import { canonicalizeAuthorizationClaimValues } from '@noodle-borg/auth';
 import type { PlatformHumanIdentityContribution } from '@noodle-borg/module';
 import type { Pool, PoolClient } from 'pg';
 import { createModuleSqlTransaction } from '../modules/context.js';
@@ -25,11 +24,20 @@ import type {
   DelegatedCredentialRecord,
   OAuthStore,
   PendingAuthorizationRecord,
-  RefreshIdentity,
   RefreshRotation,
   RefreshRotationInput,
   RefreshTokenRecord,
 } from './store.js';
+import {
+  type AuthCodeRow,
+  authCodeRowToRecord,
+  type DelegatedCredentialRow,
+  type PendingRow,
+  type RefreshRow,
+  refreshRowToRecord,
+  rowIdentity,
+  sameFamily,
+} from './store-postgres-rows.js';
 import { ensureOAuthStoreSchema } from './store-postgres-schema.js';
 
 /** Relational {@link OAuthStore} for the self-hosted authorization server (OA-2,
@@ -71,6 +79,14 @@ export class PostgresOAuthStore implements OAuthStore {
       [clientId],
     );
     return rows[0]?.client;
+  }
+
+  async getClientPurpose(clientId: string): Promise<'console' | 'portal' | 'dynamic' | undefined> {
+    const { rows } = await this.#pool.query<{ first_party_owner: 'console' | 'portal' | null }>(
+      'SELECT first_party_owner FROM oauth_clients WHERE client_id=$1',
+      [clientId],
+    );
+    return rows[0] === undefined ? undefined : (rows[0].first_party_owner ?? 'dynamic');
   }
 
   async putClient(client: OAuthClientInformationFull): Promise<OAuthClientInformationFull> {
@@ -647,148 +663,4 @@ export class PostgresOAuthStore implements OAuthStore {
       ],
     );
   }
-}
-
-interface PendingRow {
-  readonly state: string;
-  readonly client_id: string;
-  readonly redirect_uri: string;
-  readonly code_challenge: string;
-  readonly client_state: string | null;
-  readonly resource: string;
-  readonly scope: string | null;
-  readonly upstream_provider: PendingAuthorizationRecord['upstreamProvider'];
-  readonly expires_at: Date;
-}
-
-interface AuthCodeRow {
-  readonly code: string;
-  readonly client_id: string;
-  readonly code_challenge: string;
-  readonly redirect_uri: string;
-  readonly resource: string;
-  readonly owner_subject: string;
-  readonly owner_email: string | null;
-  readonly owner_locale: string | null;
-  readonly owner_time_zone: string | null;
-  readonly scope: string | null;
-  readonly roles: unknown | null;
-  readonly identity_kind: 'platform' | 'customer' | null;
-  readonly identity_provider: string | null;
-  readonly customer_issuer: string | null;
-  readonly developer_grant_id: string | null;
-  readonly auth_time: Date | null;
-  readonly upstream_expires_at: Date | null;
-  readonly expires_at: Date;
-}
-
-interface RefreshRow {
-  readonly token: string;
-  readonly client_id: string;
-  readonly owner_subject: string;
-  readonly owner_email: string | null;
-  readonly owner_locale: string | null;
-  readonly owner_time_zone: string | null;
-  readonly resource: string;
-  readonly scope: string | null;
-  readonly roles: unknown | null;
-  readonly identity_kind: 'platform' | 'customer' | null;
-  readonly identity_provider: string | null;
-  readonly customer_issuer: string | null;
-  readonly developer_grant_id: string | null;
-  readonly auth_time: Date | null;
-  readonly upstream_expires_at: Date | null;
-  readonly expires_at: Date;
-  readonly family_id: string | null;
-  readonly rotated_at: Date | null;
-  readonly superseded_by: string | null;
-}
-
-interface DelegatedCredentialRow {
-  readonly resource: string;
-  readonly provider: string;
-  readonly subject: string;
-  readonly credential: DelegatedCredentialRecord['credential'];
-  readonly updated_at: Date;
-}
-
-function refreshRowToRecord(row: RefreshRow): RefreshTokenRecord {
-  return {
-    token: row.token,
-    clientId: row.client_id,
-    ownerSubject: row.owner_subject,
-    ...(row.owner_email !== null ? { ownerEmail: row.owner_email } : {}),
-    ...(row.owner_locale !== null ? { ownerLocale: row.owner_locale } : {}),
-    ...(row.owner_time_zone !== null ? { ownerTimeZone: row.owner_time_zone } : {}),
-    resource: row.resource,
-    ...(row.scope !== null ? { scope: row.scope } : {}),
-    ...(row.roles != null ? { roles: storedRoles(row.roles) } : {}),
-    ...(row.identity_kind !== null ? { identityKind: row.identity_kind } : {}),
-    ...(row.identity_provider !== null ? { identityProvider: row.identity_provider } : {}),
-    ...(row.customer_issuer !== null ? { customerIssuer: row.customer_issuer } : {}),
-    ...(row.developer_grant_id !== null ? { developerGrantId: row.developer_grant_id } : {}),
-    ...(row.auth_time !== null ? { authTime: postgresEpochSeconds(row.auth_time) } : {}),
-    ...(row.upstream_expires_at != null
-      ? { upstreamExpiresAt: postgresEpochSeconds(row.upstream_expires_at) }
-      : {}),
-    expiresAt: postgresEpochSeconds(row.expires_at),
-    ...(row.family_id !== null ? { familyId: row.family_id } : {}),
-    ...(row.rotated_at !== null ? { rotatedAt: postgresEpochSeconds(row.rotated_at) } : {}),
-    ...(row.superseded_by !== null ? { supersededBy: row.superseded_by } : {}),
-  };
-}
-
-function rowIdentity(row: RefreshRow): RefreshIdentity {
-  return {
-    ownerSubject: row.owner_subject,
-    ...(row.owner_email !== null ? { ownerEmail: row.owner_email } : {}),
-    ...(row.owner_locale !== null ? { ownerLocale: row.owner_locale } : {}),
-    ...(row.owner_time_zone !== null ? { ownerTimeZone: row.owner_time_zone } : {}),
-    resource: row.resource,
-    ...(row.scope !== null ? { scope: row.scope } : {}),
-    ...(row.roles != null ? { roles: storedRoles(row.roles) } : {}),
-    ...(row.family_id !== null ? { familyId: row.family_id } : {}),
-    ...(row.identity_kind !== null ? { identityKind: row.identity_kind } : {}),
-    ...(row.identity_provider !== null ? { identityProvider: row.identity_provider } : {}),
-    ...(row.customer_issuer !== null ? { customerIssuer: row.customer_issuer } : {}),
-    ...(row.developer_grant_id !== null ? { developerGrantId: row.developer_grant_id } : {}),
-    ...(row.auth_time !== null ? { authTime: postgresEpochSeconds(row.auth_time) } : {}),
-    ...(row.upstream_expires_at != null
-      ? { upstreamExpiresAt: postgresEpochSeconds(row.upstream_expires_at) }
-      : {}),
-  };
-}
-
-function sameFamily(a: RefreshRow, b: RefreshRow): boolean {
-  if (a.family_id === null || b.family_id === null) return a.token === b.token;
-  return a.family_id === b.family_id;
-}
-
-function authCodeRowToRecord(row: AuthCodeRow): AuthorizationCodeRecord {
-  return {
-    code: row.code,
-    clientId: row.client_id,
-    codeChallenge: row.code_challenge,
-    redirectUri: row.redirect_uri,
-    resource: row.resource,
-    ownerSubject: row.owner_subject,
-    ...(row.owner_email !== null ? { ownerEmail: row.owner_email } : {}),
-    ...(row.owner_locale !== null ? { ownerLocale: row.owner_locale } : {}),
-    ...(row.owner_time_zone !== null ? { ownerTimeZone: row.owner_time_zone } : {}),
-    ...(row.scope !== null ? { scope: row.scope } : {}),
-    ...(row.roles != null ? { roles: storedRoles(row.roles) } : {}),
-    ...(row.identity_kind !== null ? { identityKind: row.identity_kind } : {}),
-    ...(row.identity_provider !== null ? { identityProvider: row.identity_provider } : {}),
-    ...(row.customer_issuer !== null ? { customerIssuer: row.customer_issuer } : {}),
-    ...(row.developer_grant_id !== null ? { developerGrantId: row.developer_grant_id } : {}),
-    ...(row.auth_time !== null ? { authTime: postgresEpochSeconds(row.auth_time) } : {}),
-    ...(row.upstream_expires_at != null
-      ? { upstreamExpiresAt: postgresEpochSeconds(row.upstream_expires_at) }
-      : {}),
-    expiresAt: postgresEpochSeconds(row.expires_at),
-  };
-}
-
-function storedRoles(value: unknown): readonly string[] {
-  return canonicalizeAuthorizationClaimValues(value, 'role');
 }

@@ -1,6 +1,7 @@
 import type { RuntimeArtifact } from '@noodle-borg/compiler';
+import { resolveVariableEnvironment } from './business-variables.js';
 import { canonicalizeContext } from './context-bounds.js';
-import { type ExecuteDeps, runFulfilment, validateAgainstSchema } from './execute.js';
+import { type ExecuteDeps, resolveEnv, runFulfilment, validateAgainstSchema } from './execute.js';
 import type { ExecutionResult } from './result.js';
 import { splitResultMeta } from './result-meta.js';
 
@@ -24,6 +25,11 @@ export async function executeAmbientContext(
   }
   const ambient = artifact.server.context?.ambient;
   if (ambient === undefined) return { ok: true, output: undefined };
+  const variables = resolveVariableEnvironment(
+    artifact.server.variables ?? [],
+    await resolveEnv(deps),
+  );
+  if (!variables.ok) return variables;
 
   const providerContext =
     deps.context === undefined
@@ -34,6 +40,7 @@ export async function executeAmbientContext(
         };
   const providerDeps: ExecuteDeps = {
     ...deps,
+    env: variables.env,
     ...(providerContext !== undefined ? { context: providerContext } : {}),
   };
   const result = await runFulfilment(

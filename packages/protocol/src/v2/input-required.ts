@@ -23,6 +23,7 @@ export function toolRequestStateBinding(
   context: ProtocolRequestContext,
   toolName: string,
   toolArguments: unknown,
+  executionRevision?: string,
 ): RequestStateBinding {
   return {
     deploymentId: context.deploymentId ?? `local:${artifact.server.name}`,
@@ -31,6 +32,7 @@ export function toolRequestStateBinding(
     target: toolName,
     principal: requestStatePrincipal(context),
     argumentDigest: digestMcpArguments(toolArguments),
+    ...(executionRevision === undefined ? {} : { executionRevision }),
   };
 }
 

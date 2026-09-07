@@ -38,8 +38,10 @@ let http: Server;
 let base: string;
 let embedId: string;
 let counters: { consume: ReturnType<typeof vi.fn>; peek: ReturnType<typeof vi.fn>; durable: true };
+let businessNotice: { displayName: string; privacyUrl: string; supportUrl: string } | undefined;
 
 beforeEach(async () => {
+  businessNotice = undefined;
   const embeds = new InMemoryPublicEmbedStore();
   embedId = (await embeds.ensure({ ...TENANT, surfaceMode: 'public', now: NOW })).embedId;
   const appearance = new InMemoryAssistantAppearanceSettingsStore();
@@ -67,6 +69,10 @@ beforeEach(async () => {
         Promise.resolve({ deploymentId: 'dep_1', served: { artifact: ARTIFACT, deps: {} } }),
     },
     clock: () => NOW,
+    resolveRuntimeTarget: async (target: import('@noodle-borg/transport-http').ServedTarget) => ({
+      ...target,
+      ...(businessNotice ? { businessNotice } : {}),
+    }),
   } as unknown as AssistantRouteDeps;
   http = createServer((req, res) => {
     void handlePublicAssistantConfiguration(req, res, embedId, deps).catch((error: unknown) => {
@@ -85,6 +91,23 @@ afterEach(async () => {
 });
 
 describe('public assistant configuration route', () => {
+  it('projects installation identity, linked privacy and complete support text before the first session is minted', async () => {
+    businessNotice = {
+      displayName: 'Receiving company',
+      privacyUrl: 'https://recipient.example/privacy',
+      supportUrl: 'mailto:help@recipient.example',
+    };
+    const response = await fetch(base, { headers: { origin: ORIGIN } });
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result.configuration.branding.name).toBe(businessNotice.displayName);
+    expect(result.configuration.assistant.privacyUrl).toBe(businessNotice.privacyUrl);
+    expect(result.configuration.assistant.labels.welcomeMessage).toContain(
+      businessNotice.supportUrl,
+    );
+    expect(result.configuration).not.toHaveProperty('businessNotice');
+    expect(counters.consume).not.toHaveBeenCalled();
+  });
   it('returns only effective browser appearance to an allowed origin without spending admission', async () => {
     const response = await fetch(base, { headers: { origin: ORIGIN } });
     expect(response.status).toBe(200);

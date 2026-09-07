@@ -10,13 +10,13 @@ export function isVariable(value: string): boolean {
 
 export function resolveManagedString(
   configured: string,
-  env: Readonly<Record<string, string>>,
+  env: Readonly<Record<string, unknown>>,
 ): string {
   const match = VARIABLE.exec(configured);
   if (match === null) return configured;
   const name = match[1] as string;
   const value = env[name];
-  if (value === undefined || value.length === 0) {
+  if (typeof value !== 'string' || value.length === 0) {
     throw new ConnectorInvocationError(`managed variable "${name}" is unavailable`, {
       category: 'invalid_response',
       retryable: false,
@@ -63,7 +63,7 @@ export function parsedEndpoint(value: string): URL {
 
 export function configuredOrigins(
   configured: readonly string[],
-  env: Readonly<Record<string, string>>,
+  env: Readonly<Record<string, unknown>>,
 ): ReadonlySet<string> {
   const origins = new Set<string>();
   for (const entry of configured) {

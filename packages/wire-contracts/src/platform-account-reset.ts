@@ -76,6 +76,7 @@ export const PlatformAccountResetBlockerCodeSchema = z.enum([
   'synthetic_or_customer_identity',
   'personal_workspace_mismatch',
   'ownership_ambiguous',
+  'business_custody_requires_recovery',
   'shared_org_owner_required',
   'release_mismatch',
   'generation_mismatch',

@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import {
-  clientAddressBucket,
-  type DailyCounterStore,
+import type {
+  DailyCounterStore,
+  PublicAdmissionSigningKeys,
+  PublicRecordAdmissionLimits,
 } from '@noodle-borg/admission-limits/portable';
 import type { ControlPlaneIdentity, DeployAuthGate } from '@noodle-borg/control-plane/portable';
 import { readJsonBody, sendJson } from '@noodle-borg/transport-http';
@@ -13,44 +13,85 @@ import {
   ManagedRecordMutationRequestSchema,
   ManagedRecordStatusSchema,
   SolutionInstallationCreateRequestSchema,
+  SolutionInstallationIntakeRequestSchema,
 } from '@noodle-borg/wire-contracts';
+import {
+  admitBusinessMutation,
+  admitBusinessTarget,
+  authorizeBusinessApi,
+} from '../business-api-admission.js';
 import {
   BUILT_IN_SOLUTION_PROFILES,
   type BusinessInformationStore,
   type BusinessPermission,
   businessGrantAllows,
-  CursorValidationError,
   type InstallationScope,
-  type JsonObject,
+  type InstalledCollectionDefinition,
+  MANAGED_SOLUTION_PROFILE_KEYS,
   type ManagedRequestOperation,
   PayloadValidationError,
+  type PrivateDefinitionSelector,
+  type SolutionDefinitionSnapshot,
   type SolutionInstallation,
-  validateProfilePayload,
+  type SourceIngestionStore,
+  validateCollectionEnabled,
 } from '../business-information/portable.js';
+import type { BusinessOnboarding } from '../business-onboarding.js';
 import { sendForbidden } from '../http-util.js';
-import type { ControlPlaneStore } from '../store.js';
-import type {
-  PublicSolutionIntakeRef,
-  SolutionInstallationRef,
-} from './business-information-paths.js';
+import type { SolutionInstallationActivator } from '../solution-installation-activation.js';
+import type { AuditSink } from '../store/audit.js';
+import type { ConfigStore, ControlPlaneStore } from '../store.js';
 import {
-  activityToWire,
+  loadExternalRecord,
+  sendExternalRecordPage,
+  sourceBindingKey,
+  unsupportedExternalOperation,
+} from './business-information-external.js';
+import {
+  resolveInstallDefinition,
+  stableInstallationId,
+} from './business-information-installation.js';
+import type { SolutionInstallationRef } from './business-information-paths.js';
+import { createNativeRecord } from './business-information-record-create.js';
+import { cursorRequest, sendNativeRecordActivity } from './business-information-record-reads.js';
+import {
+  expectedRevision,
+  mutationPermission,
+  parseNativeRecordQuery,
+  parseBusinessPaging as parsePaging,
+  requestIdempotencyKey,
+} from './business-information-request.js';
+import {
+  collectionToWire,
+  externalRecordToWire,
   grantToWire,
   installationToWire,
   profileToWire,
+  recordDetailToWire,
   recordToWire,
 } from './business-information-wire.js';
-import { authorizeControlPlane } from './control-plane.js';
 import { canManageMembers } from './org-admin.js';
 
 export interface BusinessInformationRouteDeps {
+  readonly businessOnboarding?: BusinessOnboarding;
+  readonly activateInstallation?: SolutionInstallationActivator;
+  readonly configStore?: ConfigStore;
   readonly store: BusinessInformationStore;
   readonly gate: DeployAuthGate;
   readonly controlPlane: ControlPlaneStore;
   readonly maxBody: number;
   readonly publicCounters: DailyCounterStore;
+  readonly publicAdmissionKeys?: PublicAdmissionSigningKeys;
+  readonly publicAdmissionLimits?: Partial<PublicRecordAdmissionLimits>;
+  readonly audit?: AuditSink;
   readonly trustProxy: boolean;
+  readonly publicIntakeEnabled?: boolean;
   readonly now?: () => Date;
+  readonly resolvePrivateDefinition?: (
+    selector: PrivateDefinitionSelector,
+  ) => Promise<SolutionDefinitionSnapshot | undefined>;
+  readonly sourceStore?: SourceIngestionStore;
+  readonly runSourceIngestion?: () => Promise<void>;
 }
 
 export function handleSolutionCatalog(req: IncomingMessage, res: ServerResponse): void {
@@ -60,7 +101,11 @@ export function handleSolutionCatalog(req: IncomingMessage, res: ServerResponse)
   }
   sendJson(res, 200, {
     ok: true,
-    data: { profiles: Object.values(BUILT_IN_SOLUTION_PROFILES).map(profileToWire) },
+    data: {
+      profiles: MANAGED_SOLUTION_PROFILE_KEYS.map((key) =>
+        profileToWire(BUILT_IN_SOLUTION_PROFILES[key]),
+      ),
+    },
   });
 }
 
@@ -76,11 +121,22 @@ export async function handleSolutionInstallations(
     if (!(await canManageMembers(deps.controlPlane, ref.org, identity))) {
       return sendForbidden(res, 'organization owner required');
     }
+    if (!(await admitBusinessTarget(res, ref))) return;
     const body = await readJsonBody(req, deps.maxBody);
     if (!body.ok) return sendJson(res, body.status, { error: body.error });
     const parsed = SolutionInstallationCreateRequestSchema.safeParse(body.value);
     if (!parsed.success) return invalid(res, parsed.error);
-    const profile = BUILT_IN_SOLUTION_PROFILES[parsed.data.profileId];
+    const definition = await resolveInstallDefinition(
+      parsed.data.definition,
+      ref.org,
+      deps.resolvePrivateDefinition,
+    );
+    if (definition === undefined) {
+      return sendJson(res, 404, {
+        error: 'solution definition is unavailable',
+        code: 'definition_unavailable',
+      });
+    }
     const installationId = stableInstallationId(
       ref.org,
       parsed.data.appSlug,
@@ -93,8 +149,10 @@ export async function handleSolutionInstallations(
         env: parsed.data.environment,
         installationId,
       },
-      profileKey: parsed.data.profileId,
-      managedCollections: profile.collections.map((collection) => collection.key),
+      ...(parsed.data.definition.kind === 'managed'
+        ? { profileKey: parsed.data.definition.profileId }
+        : { definition }),
+      managedCollections: definition.collections.map((collection) => collection.key),
       retentionDays: parsed.data.retentionDays,
       actorSubject: identity.subject,
       actorEmail: identity.email,
@@ -109,10 +167,35 @@ export async function handleSolutionInstallations(
     if (grant === undefined || grant.revokedAt !== undefined) {
       return sendForbidden(res, 'business grant required');
     }
+    if (
+      parsed.data.businessNotice &&
+      !(await deps.store.getBusinessNotice(result.installation.scope))
+    ) {
+      await deps.store.setBusinessNotice({
+        scope: result.installation.scope,
+        expectedRevision: 0,
+        notice: parsed.data.businessNotice,
+        actorSubject: identity.subject,
+      });
+    }
+    const activated = await deps.activateInstallation?.({
+      installation: result.installation,
+      actor: identity,
+    });
+    if (activated === undefined || !activated.ok) {
+      return sendJson(res, activated?.status ?? 503, {
+        ok: false,
+        code: activated?.code ?? 'installation_activation_unavailable',
+        error:
+          activated?.message ??
+          'The installation is saved, but application activation is unavailable. Retry installation when the service is ready.',
+        installationId: result.installation.scope.installationId,
+      });
+    }
     return sendJson(res, result.disposition === 'created' ? 201 : 200, {
       ok: true,
       data: {
-        installation: installationToWire(result.installation, profile, grant.role),
+        installation: installationToWire(result.installation, grant.role),
       },
     });
   }
@@ -128,15 +211,12 @@ export async function handleSolutionInstallations(
         permitted.push({ installation, role: grant.role });
       }
     }
+    if (permitted.length > 0 && !(await admitBusinessTarget(res, ref))) return;
     return sendJson(res, 200, {
       ok: true,
       data: {
         installations: permitted.map(({ installation, role }) =>
-          installationToWire(
-            installation,
-            BUILT_IN_SOLUTION_PROFILES[installation.profileKey],
-            role,
-          ),
+          installationToWire(installation, role),
         ),
       },
     });
@@ -147,12 +227,33 @@ export async function handleSolutionInstallations(
     return sendJson(res, 200, {
       ok: true,
       data: {
-        installation: installationToWire(
-          authorized.installation,
-          BUILT_IN_SOLUTION_PROFILES[authorized.installation.profileKey],
-          authorized.grant.role,
-        ),
+        installation: installationToWire(authorized.installation, authorized.grant.role),
       },
+    });
+  }
+  if (req.method === 'PATCH' && ref.installationId !== undefined) {
+    const authorized = await requireInstallationPermission(
+      res,
+      ref,
+      identity,
+      'installation:administer',
+      deps,
+    );
+    if (authorized === undefined) return;
+    const body = await readJsonBody(req, deps.maxBody);
+    if (!body.ok) return sendJson(res, body.status, { error: body.error });
+    const parsed = SolutionInstallationIntakeRequestSchema.safeParse(body.value);
+    if (!parsed.success) return invalid(res, parsed.error);
+    const result = await deps.store.setIntakeState({
+      scope: authorized.scope,
+      expectedRevision: parsed.data.expectedRevision,
+      active: parsed.data.active,
+      actorSubject: identity.subject,
+    });
+    if (!result.ok) return mutationFailure(res, result);
+    return sendJson(res, 200, {
+      ok: true,
+      data: { installation: installationToWire(result.installation, authorized.grant.role) },
     });
   }
   return methodNotAllowed(res);
@@ -170,9 +271,7 @@ export async function handleBusinessGrants(
   if (authorized === undefined) return;
   const { scope } = authorized.installation;
   if (req.method === 'GET' && ref.subject === undefined) {
-    const grants = (await deps.store.listGrants(scope)).filter(
-      (grant) => grant.revokedAt === undefined,
-    );
+    const grants = await deps.store.listGrants(scope);
     return sendJson(res, 200, { ok: true, data: { grants: grants.map(grantToWire) } });
   }
   if (req.method === 'POST' && ref.subject === undefined) {
@@ -233,16 +332,19 @@ export async function handleManagedRecords(
       deps,
     );
     if (authorized === undefined) return;
-    if (!collectionEnabled(res, authorized.installation, collection)) return;
-    const activities = await deps.store.listActivity(
+    const definition = enabledCollection(res, authorized.installation, collection);
+    if (definition === undefined) return;
+    if (definition.authority.authority === 'external') {
+      return sendJson(res, 200, { ok: true, data: { activities: [] } });
+    }
+    return sendNativeRecordActivity(
+      res,
+      url,
       authorized.installation.scope,
       collection,
       ref.recordId,
+      deps.store,
     );
-    return sendJson(res, 200, {
-      ok: true,
-      data: { activities: activities.map(activityToWire) },
-    });
   }
   if (ref.action === 'export' && req.method === 'GET') {
     const authorized = await requireInstallationPermission(
@@ -253,9 +355,19 @@ export async function handleManagedRecords(
       deps,
     );
     if (authorized === undefined) return;
-    if (!collectionEnabled(res, authorized.installation, collection)) return;
+    const definition = enabledCollection(res, authorized.installation, collection);
+    if (definition === undefined) return;
     const paging = parsePaging(url, 500);
     if (!paging.ok) return sendJson(res, 400, { error: paging.error });
+    if (definition.authority.authority === 'external') {
+      return sendExternalRecordPage(
+        res,
+        authorized.installation,
+        definition,
+        { ...paging.value, limit: paging.value.limit ?? 500 },
+        deps,
+      );
+    }
     const page = await cursorRequest(res, () =>
       deps.store.exportRequests({
         scope: authorized.installation.scope,
@@ -268,7 +380,10 @@ export async function handleManagedRecords(
     return sendJson(res, 200, {
       ok: true,
       data: {
-        records: page.records.map(recordToWire),
+        records: page.records.map((record) => ({
+          ...recordToWire(record),
+          ...(record.content ? { notes: record.content.notes } : {}),
+        })),
         ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
       },
     });
@@ -282,9 +397,20 @@ export async function handleManagedRecords(
       deps,
     );
     if (authorized === undefined) return;
-    if (!collectionEnabled(res, authorized.installation, collection)) return;
+    const definition = enabledCollection(res, authorized.installation, collection);
+    if (definition === undefined) return;
     const paging = parsePaging(url, 100);
     if (!paging.ok) return sendJson(res, 400, { error: paging.error });
+    const query = parseNativeRecordQuery(url);
+    if (!query.ok) return sendJson(res, 400, { error: query.error, code: 'invalid_query' });
+    if (definition.authority.authority === 'external') {
+      if (Object.keys(query.value).length > 0)
+        return sendJson(res, 400, {
+          error: 'Field and date queries currently require a native collection.',
+          code: 'invalid_query',
+        });
+      return sendExternalRecordPage(res, authorized.installation, definition, paging.value, deps);
+    }
     const statusValue = url.searchParams.get('status');
     const status =
       statusValue === null ? undefined : ManagedRecordStatusSchema.safeParse(statusValue);
@@ -296,6 +422,7 @@ export async function handleManagedRecords(
         scope: authorized.installation.scope,
         collectionKey: collection,
         ...paging.value,
+        ...query.value,
         ...(status === undefined ? {} : { status: status.data }),
         ...(assigneeSubject === undefined ? {} : { assigneeSubject }),
         includeDeleted: url.searchParams.get('includeDeleted') === 'true',
@@ -319,7 +446,11 @@ export async function handleManagedRecords(
       deps,
     );
     if (authorized === undefined) return;
-    if (!collectionEnabled(res, authorized.installation, collection)) return;
+    const definition = enabledCollection(res, authorized.installation, collection);
+    if (definition === undefined) return;
+    if (definition.authority.authority === 'external') {
+      return unsupportedExternalOperation(res, 'create');
+    }
     const idempotencyKey = requestIdempotencyKey(req);
     if (idempotencyKey === undefined) {
       return sendJson(res, 400, { error: 'Idempotency-Key header is required (1-128 characters)' });
@@ -328,17 +459,23 @@ export async function handleManagedRecords(
     if (!body.ok) return sendJson(res, body.status, { error: body.error });
     const parsed = ManagedRecordCreateRequestSchema.safeParse(body.value);
     if (!parsed.success) return invalid(res, parsed.error);
-    const payload = profilePayload(res, authorized.installation, collection, parsed.data.payload);
-    if (payload === undefined) return;
-    const result = await deps.store.createRequest({
-      scope: authorized.installation.scope,
-      collectionKey: collection,
+    const result = await createNativeRecord(res, deps, {
+      installation: authorized.installation,
+      collection,
       idempotencyKey,
-      payload,
+      payload: parsed.data.payload,
       origin: { kind: 'portal' },
       actorSubject: identity.subject,
+      admit: () => admitBusinessMutation(res, authorized.scope),
     });
+    if (result === undefined) return;
     if (result.disposition === 'conflict') return idempotencyConflict(res);
+    if (result.disposition === 'paused') {
+      return sendJson(res, 503, {
+        error: 'Record creation requires an active application.',
+        code: 'application_unavailable',
+      });
+    }
     return sendJson(res, result.disposition === 'created' ? 201 : 200, {
       ok: true,
       data: { record: recordToWire(result.record) },
@@ -353,14 +490,36 @@ export async function handleManagedRecords(
       deps,
     );
     if (authorized === undefined) return;
-    if (!collectionEnabled(res, authorized.installation, collection)) return;
+    const definition = enabledCollection(res, authorized.installation, collection);
+    if (definition === undefined) return;
+    if (definition.authority.authority === 'external') {
+      const loaded = await loadExternalRecord(
+        authorized.installation,
+        definition,
+        ref.recordId,
+        deps,
+      );
+      if (loaded === undefined)
+        return sendJson(res, 503, { error: 'collection source unavailable' });
+      if (loaded.record === undefined) return sendJson(res, 404, { error: 'record not found' });
+      return sendJson(res, 200, {
+        ok: true,
+        data: {
+          record: externalRecordToWire(loaded.record, loaded.binding),
+          collection: collectionToWire(definition),
+        },
+      });
+    }
     const record = await deps.store.getRequest(
       authorized.installation.scope,
       collection,
       ref.recordId,
     );
     if (record === undefined) return sendJson(res, 404, { error: 'record not found' });
-    return sendJson(res, 200, { ok: true, data: { record: recordToWire(record) } });
+    return sendJson(res, 200, {
+      ok: true,
+      data: recordDetailToWire(authorized.installation, record),
+    });
   }
   if (ref.recordId !== undefined && req.method === 'PATCH') {
     const body = await readJsonBody(req, deps.maxBody);
@@ -370,21 +529,29 @@ export async function handleManagedRecords(
     const permission = mutationPermission(parsed.data.operation);
     const authorized = await requireInstallationPermission(res, ref, identity, permission, deps);
     if (authorized === undefined) return;
-    if (!collectionEnabled(res, authorized.installation, collection)) return;
+    const definition = enabledCollection(res, authorized.installation, collection);
+    if (definition === undefined) return;
+    if (definition.authority.authority === 'external') {
+      return unsupportedExternalOperation(res, parsed.data.operation);
+    }
+    if (parsed.data.operation === 'migrate-schema') {
+      const result = await deps.store.migrateLegacyRequest({
+        scope: authorized.installation.scope,
+        collectionKey: collection,
+        id: ref.recordId,
+        expectedRevision: parsed.data.expectedRevision,
+        actorSubject: identity.subject,
+      });
+      if (!result.ok) return mutationFailure(res, result);
+      return sendJson(res, 200, { ok: true, data: { record: recordToWire(result.record) } });
+    }
     let operation: ManagedRequestOperation;
     if (parsed.data.operation === 'update') {
-      const current = await deps.store.getRequest(
-        authorized.installation.scope,
-        collection,
-        ref.recordId,
-      );
-      if (current?.content === undefined) return sendJson(res, 404, { error: 'record not found' });
-      const payload = profilePayload(res, authorized.installation, collection, {
-        ...current.content.payload,
-        ...parsed.data.patch,
-      });
-      if (payload === undefined) return;
-      operation = { kind: 'update', payload };
+      operation = {
+        kind: 'update',
+        payload: parsed.data.patch,
+        ...(parsed.data.unset ? { unset: parsed.data.unset } : {}),
+      };
     } else if (parsed.data.operation === 'assign') {
       if (parsed.data.assigneeSubject !== null) {
         const assigneeGrant = await deps.store.getGrant(
@@ -411,14 +578,22 @@ export async function handleManagedRecords(
     } else {
       operation = { kind: 'add_note', note: parsed.data.note };
     }
-    const result = await deps.store.mutateRequest({
-      scope: authorized.installation.scope,
-      collectionKey: collection,
-      id: ref.recordId,
-      expectedRevision: parsed.data.expectedRevision,
-      actorSubject: identity.subject,
-      operation,
-    });
+    let result: Awaited<ReturnType<BusinessInformationStore['mutateRequest']>>;
+    try {
+      result = await deps.store.mutateRequest({
+        scope: authorized.installation.scope,
+        collectionKey: collection,
+        id: ref.recordId,
+        expectedRevision: parsed.data.expectedRevision,
+        actorSubject: identity.subject,
+        operation,
+      });
+    } catch (error) {
+      if (error instanceof PayloadValidationError) {
+        return sendJson(res, 400, { error: error.message, code: error.code });
+      }
+      throw error;
+    }
     if (!result.ok) return mutationFailure(res, result);
     return sendJson(res, 200, { ok: true, data: { record: recordToWire(result.record) } });
   }
@@ -431,12 +606,48 @@ export async function handleManagedRecords(
       deps,
     );
     if (authorized === undefined) return;
-    if (!collectionEnabled(res, authorized.installation, collection)) return;
+    const definition = enabledCollection(res, authorized.installation, collection);
+    if (definition === undefined) return;
     const body = await readJsonBody(req, deps.maxBody);
     if (!body.ok) return sendJson(res, body.status, { error: body.error });
     const revision = expectedRevision(body.value);
     if (revision === undefined) {
       return sendJson(res, 400, { error: 'expectedRevision must be a positive integer' });
+    }
+    if (definition.authority.authority === 'external') {
+      const loaded = await loadExternalRecord(
+        authorized.installation,
+        definition,
+        ref.recordId,
+        deps,
+      );
+      if (loaded === undefined)
+        return sendJson(res, 503, { error: 'collection source unavailable' });
+      if (loaded.record === undefined) return sendJson(res, 404, { error: 'record not found' });
+      const { record } = loaded;
+      if (record.revision !== revision) {
+        return sendJson(res, 409, {
+          error: 'record revision conflict',
+          code: 'revision_conflict',
+          currentRevision: record.revision,
+        });
+      }
+      await deps.sourceStore?.suppressExternalRecord({
+        ...sourceBindingKey(authorized.installation, definition),
+        sourceId: record.source.id,
+        reason: 'customer_request',
+        now: now(deps),
+      });
+      const deletedAt = now(deps).toISOString();
+      return sendJson(res, 200, {
+        ok: true,
+        data: {
+          recordId: record.id,
+          authority: 'external',
+          disposition: 'suppressed',
+          deletedAt,
+        },
+      });
     }
     const result = await deps.store.deleteRequest({
       scope: authorized.installation.scope,
@@ -449,83 +660,31 @@ export async function handleManagedRecords(
     if (!result.ok) return mutationFailure(res, result);
     return sendJson(res, 200, {
       ok: true,
-      data: { recordId: result.record.id, deletedAt: result.record.deletedAt },
-    });
-  }
-  return methodNotAllowed(res);
-}
-
-export async function handlePublicSolutionIntake(
-  req: IncomingMessage,
-  res: ServerResponse,
-  ref: PublicSolutionIntakeRef,
-  deps: BusinessInformationRouteDeps,
-): Promise<void> {
-  const installation = await deps.store.resolveInstallationByPublicId(ref.publicId);
-  if (installation === undefined) return sendJson(res, 404, { error: 'solution not found' });
-  const profile = BUILT_IN_SOLUTION_PROFILES[installation.profileKey];
-  if (req.method === 'GET' && ref.collection === undefined) {
-    const wire = profileToWire(profile);
-    return sendJson(res, 200, {
-      ok: true,
       data: {
-        publicId: installation.publicId,
-        title: wire.title,
-        description: wire.description,
-        collection: wire.collection,
+        recordId: result.record.id,
+        authority: 'native',
+        disposition: 'deleted',
+        deletedAt: result.record.deletedAt,
       },
     });
   }
-  if (req.method === 'POST' && ref.collection !== undefined) {
-    if (!collectionEnabled(res, installation, ref.collection)) return;
-    const quota = await consumePublicIntakeQuota(req, ref.publicId, deps);
-    if (!quota.allowed) {
-      res.setHeader(
-        'retry-after',
-        String(Math.max(1, Math.ceil((quota.resetAt.getTime() - now(deps).getTime()) / 1000))),
-      );
-      return sendJson(res, 429, { error: 'public intake limit exceeded', code: 'quota_exceeded' });
-    }
-    const idempotencyKey = requestIdempotencyKey(req);
-    if (idempotencyKey === undefined) {
-      return sendJson(res, 400, { error: 'Idempotency-Key header is required (1-128 characters)' });
-    }
-    const body = await readJsonBody(req, deps.maxBody);
-    if (!body.ok) return sendJson(res, body.status, { error: body.error });
-    const parsed = ManagedRecordCreateRequestSchema.safeParse(body.value);
-    if (!parsed.success) return invalid(res, parsed.error);
-    const payload = profilePayload(res, installation, ref.collection, parsed.data.payload);
-    if (payload === undefined) return;
-    const result = await deps.store.createRequest({
-      scope: installation.scope,
-      collectionKey: ref.collection,
-      idempotencyKey,
-      payload,
-      origin: { kind: 'embedded', reference: 'public-intake' },
-      actorSubject: 'anonymous',
-    });
-    if (result.disposition === 'conflict') return idempotencyConflict(res);
-    return sendJson(res, result.disposition === 'created' ? 201 : 200, {
-      ok: true,
-      data: { recordId: result.record.id, receivedAt: result.record.createdAt },
-    });
-  }
   return methodNotAllowed(res);
 }
 
-async function requireIdentity(
+export async function requireIdentity(
   req: IncomingMessage,
   res: ServerResponse,
   deps: BusinessInformationRouteDeps,
 ): Promise<ControlPlaneIdentity | false> {
-  return authorizeControlPlane(req, res, deps.gate, { requireIdentity: true });
+  return authorizeBusinessApi(req, res, deps);
 }
 
-async function requireInstallationGrant(
+export async function requireInstallationGrant(
   res: ServerResponse,
   ref: SolutionInstallationRef,
   identity: ControlPlaneIdentity,
   deps: BusinessInformationRouteDeps,
+  permission?: BusinessPermission,
 ): Promise<
   | {
       installation: SolutionInstallation;
@@ -545,72 +704,32 @@ async function requireInstallationGrant(
     sendForbidden(res, 'business grant required');
     return undefined;
   }
+  if (permission && !businessGrantAllows(grant, permission)) {
+    sendForbidden(res, `business permission required: ${permission}`);
+    return undefined;
+  }
+  if (!(await admitBusinessTarget(res, installation.scope))) return undefined;
   return { installation, scope: installation.scope, grant };
 }
 
-async function requireInstallationPermission(
+export async function requireInstallationPermission(
   res: ServerResponse,
   ref: SolutionInstallationRef,
   identity: ControlPlaneIdentity,
   permission: BusinessPermission,
   deps: BusinessInformationRouteDeps,
-): Promise<{ installation: SolutionInstallation; scope: InstallationScope } | undefined> {
-  const authorized = await requireInstallationGrant(res, ref, identity, deps);
-  if (authorized === undefined) return undefined;
-  if (!businessGrantAllows(authorized.grant, permission)) {
-    sendForbidden(res, `business permission required: ${permission}`);
-    return undefined;
-  }
-  return authorized;
+): ReturnType<typeof requireInstallationGrant> {
+  return requireInstallationGrant(res, ref, identity, deps, permission);
 }
 
-function stableInstallationId(org: string, app: string, env: string): string {
-  return `ins-${createHash('sha256').update(`${org}\0${app}\0${env}`).digest('hex').slice(0, 24)}`;
-}
-
-function requestIdempotencyKey(req: IncomingMessage): string | undefined {
-  const value = req.headers['idempotency-key'];
-  if (typeof value !== 'string' || value.length < 1 || value.length > 128) return undefined;
-  return value;
-}
-
-function expectedRevision(value: unknown): number | undefined {
-  if (value === null || typeof value !== 'object') return undefined;
-  const revision = (value as { expectedRevision?: unknown }).expectedRevision;
-  return typeof revision === 'number' && Number.isInteger(revision) && revision > 0
-    ? revision
-    : undefined;
-}
-
-function parsePaging(
-  url: URL,
-  maximum: number,
-): { ok: true; value: { cursor?: string; limit?: number } } | { ok: false; error: string } {
-  const cursor = url.searchParams.get('cursor') ?? undefined;
-  const rawLimit = url.searchParams.get('limit');
-  if (rawLimit === null) return { ok: true, value: cursor === undefined ? {} : { cursor } };
-  const limit = Number(rawLimit);
-  if (!Number.isInteger(limit) || limit < 1 || limit > maximum) {
-    return { ok: false, error: `limit must be an integer from 1 to ${maximum}` };
-  }
-  return { ok: true, value: { ...(cursor === undefined ? {} : { cursor }), limit } };
-}
-
-function mutationPermission(operation: string): BusinessPermission {
-  if (operation === 'assign') return 'records:assign';
-  if (operation === 'set-status') return 'records:status';
-  if (operation === 'add-note') return 'records:note';
-  return 'records:update';
-}
-
-function mutationFailure(
+export function mutationFailure(
   res: ServerResponse,
   result: { readonly reason: string; readonly currentRevision: number },
 ): void {
   const status =
     result.reason === 'not_found'
       ? 404
-      : result.reason === 'conflict' || result.reason === 'last_administrator'
+      : ['conflict', 'last_administrator', 'application_unavailable'].includes(result.reason)
         ? 409
         : 422;
   sendJson(res, status, {
@@ -620,84 +739,36 @@ function mutationFailure(
   });
 }
 
-function collectionEnabled(
+export function enabledCollection(
   res: ServerResponse,
   installation: SolutionInstallation,
   collection: string,
-): boolean {
-  if (installation.managedCollections.includes(collection)) return true;
-  sendJson(res, 404, { error: 'collection not found' });
-  return false;
-}
-
-function profilePayload(
-  res: ServerResponse,
-  installation: SolutionInstallation,
-  collection: string,
-  value: unknown,
-): JsonObject | undefined {
+): InstalledCollectionDefinition | undefined {
   try {
-    return validateProfilePayload(installation.profileKey, collection, value);
-  } catch (error) {
-    if (!(error instanceof PayloadValidationError)) throw error;
-    sendJson(res, 400, { error: error.message, code: error.code });
+    return validateCollectionEnabled(installation, collection);
+  } catch {
+    sendJson(res, 404, { error: 'collection not found' });
     return undefined;
   }
 }
 
-async function cursorRequest<T>(
-  res: ServerResponse,
-  request: () => Promise<T>,
-): Promise<T | undefined> {
-  try {
-    return await request();
-  } catch (error) {
-    if (!(error instanceof CursorValidationError)) throw error;
-    sendJson(res, 400, { error: 'cursor is invalid', code: 'invalid_cursor' });
-    return undefined;
-  }
-}
-
-async function consumePublicIntakeQuota(
-  req: IncomingMessage,
-  publicId: string,
-  deps: BusinessInformationRouteDeps,
-) {
-  const timestamp = now(deps);
-  const address = deps.trustProxy
-    ? typeof req.headers['x-forwarded-for'] === 'string'
-      ? req.headers['x-forwarded-for']
-      : undefined
-    : req.socket.remoteAddress;
-  const bucket = clientAddressBucket(address);
-  if (bucket !== undefined) {
-    const addressOutcome = await deps.publicCounters.consume(
-      { key: `solution-intake:address:${publicId}:${bucket}`, limit: 60, window: 'hour' },
-      timestamp,
-    );
-    if (!addressOutcome.allowed) return addressOutcome;
-  }
-  return deps.publicCounters.consume(
-    { key: `solution-intake:surface:${publicId}`, limit: 10_000, window: 'day' },
-    timestamp,
-  );
-}
-
-function now(deps: BusinessInformationRouteDeps): Date {
+export function now(deps: BusinessInformationRouteDeps): Date {
   return deps.now?.() ?? new Date();
 }
 
-function invalid(res: ServerResponse, error: Parameters<typeof formatWireError>[0]): void {
+export function invalid(res: ServerResponse, error: Parameters<typeof formatWireError>[0]): void {
   sendJson(res, 400, { error: formatWireError(error) });
 }
 
-function idempotencyConflict(res: ServerResponse): void {
+export function idempotencyConflict(res: ServerResponse): void {
   sendJson(res, 409, {
     error: 'the idempotency key was already used with different content',
     code: 'idempotency_conflict',
   });
 }
 
-function methodNotAllowed(res: ServerResponse): void {
+export function methodNotAllowed(res: ServerResponse): void {
   sendJson(res, 405, { error: 'method not allowed' });
 }
+
+export { createNativeRecord } from './business-information-record-create.js';

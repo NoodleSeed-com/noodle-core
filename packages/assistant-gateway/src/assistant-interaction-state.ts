@@ -3,8 +3,8 @@ import { isCredentialShapedAssistantText } from './assistant-sensitive-values.js
 
 export const DEFAULT_MAX_PENDING_INTERACTIONS_PER_SESSION = 8;
 export const ASSISTANT_INTERACTION_OUTCOME_RETENTION_MS = 24 * 60 * 60 * 1000;
-/** Recovery grace for an in-flight action before its outcome becomes unknowable and payload is scrubbed. */
-export const ASSISTANT_INTERACTION_EXECUTING_GRACE_MS = 60 * 60 * 1000;
+/** Enforced maximum for one accepted flow; individual connector actions keep their shorter bounds. */
+export const ASSISTANT_INTERACTION_EXECUTION_LIMIT_MS = 120_000;
 
 export type AssistantInteractionKind = 'confirmation' | 'input';
 export type AssistantInteractionStatus =
@@ -47,7 +47,7 @@ interface AssistantInteractionCommon {
   readonly deploymentId: string;
   /** Immutable proposal-time snapshot reused when the interaction resumes. */
   readonly context?: InvocationContext;
-  /** Set when a terminal interaction's exact private payload has been removed. */
+  /** Set when an interaction's exact private payload has left durable custody. */
   readonly payloadScrubbedAt?: string;
   readonly createdAt: string;
   readonly expiresAt: string;
@@ -381,8 +381,7 @@ export function shouldExpireStrandedExecutingInteraction(
 ): interaction is AssistantInteractionRecord & AssistantExecutingInteractionState {
   return (
     interaction.status === 'executing' &&
-    interaction.payloadScrubbedAt === undefined &&
-    Date.parse(interaction.claimedAt) + ASSISTANT_INTERACTION_EXECUTING_GRACE_MS <= now.getTime()
+    Date.parse(interaction.claimedAt) + ASSISTANT_INTERACTION_EXECUTION_LIMIT_MS <= now.getTime()
   );
 }
 
@@ -401,33 +400,43 @@ export function expireStrandedExecutingInteraction(
     AssistantFailedInteractionState;
 }
 
-/** Retain only replay-safe public state once no execution path needs the exact payload. */
+/** Exact inputs leave durable custody when handed to the single executor, before connector I/O. */
+export function scrubExecutingInteraction(
+  interaction: AssistantInteractionRecord & AssistantExecutingInteractionState,
+): AssistantInteractionRecord & AssistantExecutingInteractionState {
+  const scrubbed = scrubInteractionPayload(interaction, interaction.claimedAt);
+  if (scrubbed.status !== 'executing') throw new Error('interaction status changed during scrub');
+  return scrubbed;
+}
 function scrubTerminalInteraction(
   interaction: AssistantInteractionRecord & AssistantTerminalInteractionState,
 ): AssistantInteractionRecord & AssistantTerminalInteractionState {
+  const scrubbed = scrubInteractionPayload(interaction, interaction.completedAt);
+  if (!isTerminalInteraction(scrubbed)) throw new Error('interaction status changed during scrub');
+  return scrubbed;
+}
+function scrubInteractionPayload(
+  interaction: AssistantInteractionRecord,
+  instant: string,
+): AssistantInteractionRecord {
   if (interaction.kind === 'confirmation') {
     const {
       context: _context,
-      payloadScrubbedAt: _payloadScrubbedAt,
       continuation: _continuation,
       review: _review,
-      ...withoutPrivatePayload
+      ...withoutPrivate
     } = interaction;
     return cloneInteraction({
-      ...withoutPrivatePayload,
+      ...withoutPrivate,
       arguments: null,
-      payloadScrubbedAt: interaction.completedAt,
+      payloadScrubbedAt: instant,
     });
   }
-  const {
-    context: _context,
-    payloadScrubbedAt: _payloadScrubbedAt,
-    ...withoutContext
-  } = interaction;
+  const { context: _context, ...withoutContext } = interaction;
   return cloneInteraction({
     ...withoutContext,
     continuation: null,
-    payloadScrubbedAt: interaction.completedAt,
+    payloadScrubbedAt: instant,
   });
 }
 

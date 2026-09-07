@@ -8,6 +8,9 @@ import {
   formatWireError,
   RevealSecretResponseSchema,
 } from '@noodle-borg/wire-contracts';
+import { ApplicationSettings, SettingsError } from '../application-settings.js';
+import { resolveSettingsTargets } from '../application-settings-targets.js';
+import type { BusinessInformationStore } from '../business-information/contracts.js';
 import {
   type EffectiveConfigResponse,
   projectEffectiveConfig,
@@ -31,6 +34,7 @@ export async function handleConfigValues(
   ref: ConfigRouteRef,
   audit: AuditSink,
   developerGrants?: DeveloperGrantStore,
+  installations?: BusinessInformationStore,
 ): Promise<void> {
   const identity = await authorizeControlPlane(req, res, gate, {
     requireIdentity: true,
@@ -82,14 +86,21 @@ export async function handleConfigValues(
       return sendJson(res, 400, { error: formatWireError(parsed.error) });
     }
     try {
-      const value = await configStore.setConfigValue({
+      const input = {
         kind: ref.kind,
         scope: ref.scope,
         name: ref.name,
         value: parsed.data.value,
         ...(identity !== undefined ? { updatedBySubject: identity.subject } : {}),
         ...(identity?.email !== undefined ? { updatedByEmail: identity.email } : {}),
-      });
+      };
+      const value =
+        ref.kind === 'secret'
+          ? await configStore.setConfigValue(input)
+          : await new ApplicationSettings(configStore).writeTechnical(
+              () => resolveSettingsTargets(registry, ref.scope, installations),
+              input,
+            );
       // Durable audit: config name + scope + actor only — the value is NEVER recorded.
       await emitConfigAudit(audit, `config.${ref.kind}.set`, ref, identity);
       return sendJson(res, 200, { ok: true, value });
@@ -98,7 +109,24 @@ export async function handleConfigValues(
     }
   }
   if (req.method === 'DELETE' && ref.name !== undefined) {
-    await configStore.deleteConfigValue(ref.kind, ref.scope, ref.name);
+    try {
+      if (ref.kind === 'secret') await configStore.deleteConfigValue(ref.kind, ref.scope, ref.name);
+      else
+        await new ApplicationSettings(configStore).writeTechnical(
+          () => resolveSettingsTargets(registry, ref.scope, installations),
+          {
+            kind: ref.kind,
+            scope: ref.scope,
+            name: ref.name,
+          },
+        );
+    } catch (error) {
+      if (!(error instanceof SettingsError)) throw error;
+      return sendJson(res, error.code === 'settings_unavailable' ? 503 : 400, {
+        code: error.code,
+        error: error.message,
+      });
+    }
     await emitConfigAudit(audit, `config.${ref.kind}.deleted`, ref, identity);
     res.writeHead(204);
     res.end();

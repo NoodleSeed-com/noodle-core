@@ -19,13 +19,13 @@ describe('acme-bistro example', () => {
     expect(text).toContain('create_checkout');
   });
 
-  it('declares reusable guest-request record intent without generating a submit tool', async () => {
+  it('declares guest records and explicitly authors the native submission tool', async () => {
     const manifest = await app.toManifest();
     expect(manifest.server.collections).toEqual([
       expect.objectContaining({ name: 'guest_requests', schemaVersion: 1 }),
     ]);
-    expect(manifest.tools).not.toContainEqual(
-      expect.objectContaining({ name: 'submit_guest_requests' }),
-    );
+    expect(
+      manifest.tools.find((tool) => tool.name === 'submit_guest_request')?.fulfilment.steps,
+    ).toMatchObject([{ use: 'records.submit_record' }]);
   });
 });

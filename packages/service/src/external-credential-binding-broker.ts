@@ -1,3 +1,4 @@
+import { externalCredentialExchangeResponseSchema } from '@noodle-borg/external-credential-provider';
 import {
   type CredentialRequest,
   CredentialUnavailableError,
@@ -7,6 +8,7 @@ import {
 import type { AllowedCredentialBinding } from './credential-binding-index.js';
 import { routeBoundCredentialKey } from './credential-route-key.js';
 import {
+  type BoundExternalCredentialExchangeOptions,
   type ExternalCredentialExchangeOptions,
   exchangeExternalCredential,
   resolveExternalCredentialProviderConfig,
@@ -28,7 +30,7 @@ export class ExternalCredentialBindingBroker {
   readonly #inflight = new Map<string, Promise<DownstreamCredential>>();
 
   constructor(
-    readonly options: ExternalCredentialExchangeOptions,
+    readonly options: BoundExternalCredentialExchangeOptions,
     readonly now: () => number,
   ) {}
 
@@ -42,6 +44,24 @@ export class ExternalCredentialBindingBroker {
     ) {
       throw new CredentialUnavailableError('credential_not_configured');
     }
+    if ('localProvider' in this.options) {
+      try {
+        const value = externalCredentialExchangeResponseSchema.parse(
+          await this.options.localProvider.getCredential({
+            tenantId: this.options.tenant,
+            deploymentId: this.options.deployment,
+            descriptor: allowed.descriptor,
+            ...(request.expectedConnectionGeneration === undefined
+              ? {}
+              : { expectedConnectionGeneration: request.expectedConnectionGeneration }),
+          }),
+        );
+        return { token: value.access_token };
+      } catch {
+        throw new CredentialUnavailableError('credential_exchange_failed');
+      }
+    }
+    const options = this.options;
     const pinOrVerify = resolveSubjectPinCallable(this.options.subjectPins);
     if (pinOrVerify === undefined) {
       throw new CredentialUnavailableError('credential_not_configured');
@@ -86,7 +106,7 @@ export class ExternalCredentialBindingBroker {
       let exchanged: Awaited<ReturnType<typeof exchangeExternalCredential>>;
       try {
         exchanged = await exchangeExternalCredential({
-          options: this.options,
+          options,
           descriptor: allowed.descriptor,
           config,
           nowMs: this.now(),

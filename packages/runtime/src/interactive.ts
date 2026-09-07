@@ -1,4 +1,5 @@
 import type { ArtifactFulfilment, RuntimeArtifact } from '@noodle-borg/compiler';
+import { resolveVariableEnvironment, validateVariableContinuation } from './business-variables.js';
 import { preflightFulfilmentCustomerRoutes } from './customer-routing.js';
 import { validateElicitationContent } from './elicitation-response.js';
 import { ExpressionEvalError, evaluateCondition } from './eval/evaluate.js';
@@ -36,6 +37,13 @@ export async function executeToolInteractive(
   }
   const tool = artifact.tools.find((candidate) => candidate.name === toolName);
   if (!tool) return interactiveFail('unknown_tool', `no tool named "${toolName}"`);
+  const variables = resolveVariableEnvironment(
+    artifact.server.variables ?? [],
+    await resolveEnv(deps),
+    toolName,
+  );
+  if (!variables.ok) return { status: 'failed', error: variables.error };
+  deps = { ...deps, env: variables.env };
   if (tool.fulfilment.kind !== 'flow' || !tool.fulfilment.steps.some((s) => s.kind === 'elicit')) {
     return toInteractive(
       await runFulfilment(tool.fulfilment, input, toolName, deps, deps.beforeDispatch),
@@ -60,6 +68,15 @@ export async function resumeTool(
     return interactiveFail('invalid_continuation', 'tool continuation does not match the artifact');
   }
   if (response.action !== 'accept') return { status: 'stopped', action: response.action };
+  if ((artifact.server.variables?.length ?? 0) > 0) {
+    const variables = resolveVariableEnvironment(
+      artifact.server.variables ?? [],
+      await resolveEnv(deps),
+      continuation.toolName,
+    );
+    const configurationError = validateVariableContinuation(artifact, continuation.env, variables);
+    if (configurationError) return { status: 'failed', error: configurationError };
+  }
   const validated = validateElicitationContent(
     response.content ?? {},
     continuation.pending.requestedSchema,
@@ -99,7 +116,7 @@ async function runInteractiveFlow(
   startIndex: number,
   steps: Record<string, unknown>,
   resultMetas: Record<string, unknown>[],
-  env: Record<string, string>,
+  env: Record<string, unknown>,
   deps: ExecuteToolDeps,
 ): Promise<InteractiveExecutionResult> {
   const policy = deps.policy ?? new AllowAllPolicy();

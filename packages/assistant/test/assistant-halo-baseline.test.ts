@@ -45,6 +45,12 @@ describe('Halo assistant baseline', () => {
     expect(ASSISTANT_ELEMENT_STYLES).toContain(
       'width: var(--_ns-assistant-launcher-collapsed-width, max-content)',
     );
+    expect(ASSISTANT_ELEMENT_STYLES).toContain(
+      'width: var(--ns-assistant-collapsed-launcher-width, var(--_ns-assistant-launcher-collapsed-width, max-content))',
+    );
+    expect(ASSISTANT_ELEMENT_STYLES).toContain(
+      'display: var(--ns-assistant-collapsed-launcher-label-display, block)',
+    );
     expect(ASSISTANT_ELEMENT_STYLES).toMatch(/:host \{[^}]*box-sizing: border-box/);
   });
 

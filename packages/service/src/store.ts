@@ -28,6 +28,7 @@ export type {
 export {
   type ConfigScope,
   type ConfigStore,
+  type ConfigValueInput,
   type ConfigValueMetadata,
   InMemoryConfigStore,
   type ManagedConfigKind,
@@ -419,6 +420,8 @@ export interface ArtifactStore {
   ): Promise<{ readonly apps: readonly AppSummary[]; readonly truncated: boolean }>;
   /** One app's {@link AppSummary}; `undefined` when the app has no records and no anchor. */
   getApp(org: string, app: string): Promise<AppSummary | undefined>;
+  /** Authoritative app incarnation identity, independent of display summaries. */
+  getAppGeneration(org: string, app: string): Promise<string | undefined>;
   /**
    * The `envs` resource: one {@link EnvSummary} per environment for `app`, production first and then
    * alphabetically (see {@link summarizeEnvs}). Archived envs are excluded unless `includeArchived`.

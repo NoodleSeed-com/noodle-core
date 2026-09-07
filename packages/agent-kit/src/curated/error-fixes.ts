@@ -93,6 +93,10 @@ export const ERROR_FIXES: Record<string, string> = {
     'Compile from the project root (`noodle validate`/`noodle dev`) so declared knowledge documents can be read and hashed.',
   invalid_managed_collection:
     'Fix the `managedCollection()` declaration: use a bounded, closed Zod object without credential, payment-card, government-identity, health, or biometric field names.',
+  invalid_variable_declaration:
+    'Fix the typed `variable()` declaration: use a bounded closed schema, a matching JSON default, plain Portal metadata, existing requiredFor tool names, and one consistent definition per key.',
+  invalid_managed_collection_source:
+    'Bind the declared source connector and select read-only scan operations whose closed normalized envelopes use the collection record schema exactly.',
   unknown_connector_alias:
     'The tool calls a connector alias not declared in `use`/`provides`; add it or fix the alias (see `suggestions`).',
   connector_not_in_catalog:

@@ -203,7 +203,29 @@ export interface ModuleContributionsV1 {
   readonly dispose?: ModuleDispose;
 }
 
+/** Verified current authority; absence must not synthesize a commercial tier. */
+export interface ActivityHistoryAllowance {
+  readonly maximumDays: number;
+  readonly defaultDays: number;
+  readonly revision: string;
+  /** Read-only scenarios; this is not evidence that a plan change is selected or scheduled. */
+  readonly preview?: {
+    readonly asOf: string;
+    readonly paidPeriodEnd: string;
+    readonly scenarios: readonly {
+      readonly id: string;
+      readonly label: string;
+      readonly maximumDays: number;
+    }[];
+  };
+}
+export type ResolveActivityHistoryAllowance = (
+  org: string,
+  options?: { readonly includePreview: true },
+) => Promise<ActivityHistoryAllowance | undefined>;
+
 export interface ModuleContributions extends ModuleContributionsV1 {
+  readonly resolveActivityHistoryAllowance?: ResolveActivityHistoryAllowance;
   readonly assetStore?: AssetStore;
   readonly deploymentAutomation?: DeploymentAutomationAuthorizer;
   readonly platformHumanIdentity?: PlatformHumanIdentityContribution;

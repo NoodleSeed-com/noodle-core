@@ -14,6 +14,7 @@ const LEGACY_INTERACTION_ARGUMENT = '__noodleInteraction';
 export type RequestStateMethod = 'tools/call' | 'resources/read' | 'prompts/get';
 
 export interface RequestStateBinding {
+  readonly executionRevision?: string;
   readonly deploymentId: string;
   readonly serverVersion: string;
   readonly method: RequestStateMethod;
@@ -204,7 +205,14 @@ function assertPayload(value: unknown, maxRounds: number): asserts value is Seal
 }
 
 function assertBinding(actual: RequestStateBinding, expected: RequestStateBinding): void {
-  for (const key of ['deploymentId', 'serverVersion', 'method', 'target', 'principal'] as const) {
+  for (const key of [
+    'deploymentId',
+    'serverVersion',
+    'method',
+    'target',
+    'principal',
+    'executionRevision',
+  ] as const) {
     if (actual[key] !== expected[key]) {
       throw new RequestStateError('request_state_binding_mismatch');
     }
@@ -224,7 +232,9 @@ function isBinding(value: unknown): value is RequestStateBinding {
       value.method === 'prompts/get') &&
     typeof value.target === 'string' &&
     typeof value.principal === 'string' &&
-    typeof value.argumentDigest === 'string'
+    typeof value.argumentDigest === 'string' &&
+    (value.executionRevision === undefined ||
+      (typeof value.executionRevision === 'string' && value.executionRevision.length <= 256))
   );
 }
 

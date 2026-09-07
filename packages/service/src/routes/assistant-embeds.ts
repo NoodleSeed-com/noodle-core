@@ -12,6 +12,7 @@ import { sendForbidden } from '../http-util.js';
 import type { TenantRef } from '../store.js';
 import type { AssistantRouteDeps } from './assistant.js';
 import { now } from './assistant-route-http.js';
+import { activeAssistantTarget } from './assistant-session-target.js';
 import { authorizeControlPlane } from './control-plane.js';
 
 /**
@@ -64,6 +65,11 @@ export async function handleAssistantEmbeds(
     const budget = parsePublicEmbedBudget(body.value);
     if (!budget.ok) return sendJson(res, 400, { error: budget.error });
 
+    const owned = (await embeds.list(tenant)).some(
+      (record) => record.embedId === embedId && record.revokedAt === undefined,
+    );
+    if (!owned) return sendJson(res, 404, { error: 'embed not found' });
+
     const updated = await embeds.setBudget(embedId, budget.value, now(deps));
     // 404 here rather than the mint route's 403: this caller has already proven org membership, so
     // telling them an id of theirs does not exist is information they are entitled to.
@@ -85,13 +91,15 @@ async function view(
   deps: AssistantRouteDeps,
   counters: NonNullable<AssistantRouteDeps['admissionCounters']>,
 ): Promise<AssistantEmbedOperatorView> {
-  const target = await deps.registry.getActiveByTenant(tenant);
+  const target = await activeAssistantTarget({ registry: deps.registry }, tenant);
   const at = now(deps);
   // The same bounds admission resolves, not the bare defaults: a sponsored surface enforces the
   // hosted envelope, and reporting the unsponsored one told an operator a number nothing honours.
   const deploymentId = target?.deploymentId ?? '';
-  const bounds = (await deps.managedModelResolver?.resolve({ tenant, deploymentId }))
-    ?.publicAdmission;
+  const bounds =
+    target?.served.artifact.server.assistant?.model?.kind === 'noodle-managed'
+      ? (await deps.managedModelResolver?.resolve({ tenant, deploymentId }))?.publicAdmission
+      : undefined;
   return assistantEmbedOperatorView({
     record,
     surface: publicSurfaceOf(target?.served.artifact.server.assistant),

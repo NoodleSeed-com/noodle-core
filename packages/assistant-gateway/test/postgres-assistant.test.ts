@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  ASSISTANT_INTERACTION_EXECUTING_GRACE_MS,
+  ASSISTANT_INTERACTION_EXECUTION_LIMIT_MS,
   ASSISTANT_INTERACTION_OUTCOME_RETENTION_MS,
   AssistantInteractionCapacityError,
   type AssistantSessionRecord,
@@ -549,6 +549,44 @@ describePostgres('Postgres assistant store', () => {
     expect(rejected[0]?.reason).toBeInstanceOf(AssistantInteractionCapacityError);
   });
 
+  it('removes private inputs atomically before returning the sole execution claim', async () => {
+    const session = await createSession();
+    const pending = await store.createInteraction({
+      kind: 'confirmation',
+      sessionId: session.session.id,
+      deploymentId: session.session.deploymentId,
+      tool: 'write_once',
+      arguments: { note: 'private-once' },
+      continuation: { private: 'private-once' },
+      review: { private: 'private-once' },
+      createdAt: now.toISOString(),
+      expiresAt: new Date(now.getTime() + 60_000).toISOString(),
+    });
+    const scope = {
+      id: pending.id,
+      sessionId: pending.sessionId,
+      deploymentId: pending.deploymentId,
+      now,
+    };
+    const claim = await store.claimInteraction(scope);
+    expect(claim).toMatchObject({
+      disposition: 'claimed',
+      interaction: { arguments: { note: 'private-once' } },
+    });
+    const { rows } = await pool.query(
+      'SELECT arguments,continuation,review,invocation_context,payload_scrubbed_at FROM assistant_pending_tool_calls WHERE id=$1',
+      [pending.id],
+    );
+    expect(rows[0]).toMatchObject({
+      arguments: null,
+      continuation: null,
+      review: null,
+      invocation_context: null,
+    });
+    expect(rows[0]?.payload_scrubbed_at).toBeTruthy();
+    expect(JSON.stringify(await store.getInteraction(scope))).not.toContain('private-once');
+  });
+
   it('expires stranded executions into scrubbed, bounded unknown-outcome tombstones', async () => {
     const session = await createSession();
     const context = {
@@ -600,7 +638,7 @@ describePostgres('Postgres assistant store', () => {
       ),
     );
 
-    const scrubbedAt = new Date(now.getTime() + ASSISTANT_INTERACTION_EXECUTING_GRACE_MS);
+    const scrubbedAt = new Date(now.getTime() + ASSISTANT_INTERACTION_EXECUTION_LIMIT_MS);
     await expect(
       store.getInteraction({
         id: confirmation.id,

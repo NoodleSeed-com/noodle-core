@@ -29,7 +29,7 @@ export async function handleAssistantTranscript(
   const session = await authenticateSession(req, res, deps);
   if (!session) return;
   applyBrowserCors(req, res, session.origin);
-  const target = await sessionScopedTarget(deps.registry, session);
+  const target = await sessionScopedTarget(deps.registry, session, deps.resolveRuntimeTarget, req);
   const latestView =
     target && session.latestView
       ? assistantViewAvailableData(

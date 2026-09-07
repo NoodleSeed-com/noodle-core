@@ -26,6 +26,11 @@ export {
   type DownstreamCredential,
 } from './broker/types.js';
 export {
+  resolveVariableEnvironment,
+  type VariableEnvironmentResult,
+  validateVariableContinuation,
+} from './business-variables.js';
+export {
   executePreparedTool,
   prepareToolForConfirmation,
   resumeToolPreparation,
@@ -89,6 +94,11 @@ export {
   type ManagedOriginResolutionResult,
   resolveManagedOrigins,
 } from './managed-origins.js';
+export type {
+  OperationEvidence,
+  OperationEvidenceIntent,
+  OperationEvidencePort,
+} from './operation-evidence.js';
 export { AllowAllPolicy } from './policy/allow-all.js';
 export type { PolicyContext, PolicyDecision, PolicyGate } from './policy/types.js';
 export {

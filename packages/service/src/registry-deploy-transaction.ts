@@ -15,7 +15,27 @@ import {
 } from './registry-helpers.js';
 import { idempotentDeploymentId, mintDeploymentId } from './registry-targets.js';
 import type { DeployError, DeployOptions, RunDeployResult } from './registry-types.js';
-import type { ArtifactStore, DeployRecord, TenantRef } from './store.js';
+import type { ArtifactStore, ConfigStore, DeployRecord, TenantRef } from './store.js';
+
+/** Serialize candidate validation/activation with hierarchical configuration writers. */
+export async function withDeploymentConfiguration<T extends { readonly ok: boolean }>(
+  config: ConfigStore,
+  org: string,
+  work: () => Promise<T>,
+): Promise<T> {
+  if (!config.transactConfig) return work();
+  let result: T | undefined;
+  try {
+    return await config.transactConfig(org, async () => {
+      result = await work();
+      return result;
+    });
+  } catch (error) {
+    // A nested activation rejection has rolled back; preserve its already mapped public diagnostic.
+    if (result?.ok === false) return result;
+    throw error;
+  }
+}
 
 export async function preflightRegistryDeploy(input: {
   readonly options: DeployOptions;

@@ -53,8 +53,13 @@
  *
  * `0.17.0` (Managed collection declaration): additive — Core v2 reusable managed-record schema intent
  * may be projected under `server.managedCollections`; lifecycle and operator state remain separate.
+ *
+ * `0.18.0` (Collection authority): additive — every newly compiled managed collection identifies native
+ * authority or exact resolved read-only connector operations for an external replica.
+ *
+ * `0.19.0` (Business settings): optional typed managed-variable declarations and definition digests.
  */
-export const ARTIFACT_SCHEMA_VERSION = '0.17.0';
+export const ARTIFACT_SCHEMA_VERSION = '0.19.0';
 
 /** mimeType for an MCP Apps UI resource (SEP-1865). Widgets are served under this profile. */
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app';

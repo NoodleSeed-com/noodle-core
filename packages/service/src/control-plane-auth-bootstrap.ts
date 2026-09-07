@@ -8,13 +8,16 @@ import {
 import type { PlatformPrincipalResolver } from '@noodle-borg/module';
 import type { OwnerTokenVerifier } from '@noodle-borg/transport-http';
 import { GoogleOAuthVerifier } from './auth/google-token-verifier.js';
+import { restrictPortalControlPlane } from './auth/portal-control-plane-policy.js';
 import { normalizeOAuthResource } from './http-util.js';
+import type { OAuthStore } from './oauth/store.js';
 import type { ServeServiceOptions } from './serve-options.js';
 import type { ControlPlaneStore } from './store.js';
 
 /** Compose the temporary human/workload Google gates behind the canonical Noodle-token gate. */
 export function createDefaultControlPlaneGate(input: {
   readonly options: ServeServiceOptions;
+  readonly oauthStore?: Pick<OAuthStore, 'getClientPurpose'>;
   readonly verifyOwnerToken?: OwnerTokenVerifier;
   readonly authServerIssuer?: string;
   readonly controlPlaneStore: ControlPlaneStore;
@@ -37,26 +40,30 @@ export function createDefaultControlPlaneGate(input: {
     const allowedEmailDomain =
       options.controlPlaneAllowedEmailDomain ?? options.oauth?.allowedEmailDomain;
     gates.push(
-      new NoodleOAuthControlPlaneGate({
-        verifier: async (token, audience) =>
-          (await input.verifyOwnerToken?.(token, audience))?.caller ?? null,
-        audience: [
-          normalizeOAuthResource(options.publicBaseUrl ?? input.authServerIssuer),
-          `${input.authServerIssuer}/developer/mcp`,
-          `${input.authServerIssuer}/developer/cli`,
-          // Exchange-minted assistant tokens (ADR 0218): grant-bound, so never super-admin.
-          `${input.authServerIssuer}/developer/assistant`,
-        ],
-        admins: options.controlPlaneAdmins ?? [],
-        signupMode: options.controlPlaneSignupMode ?? 'restricted',
-        signupAuthorizer: input.controlPlaneStore,
-        deniedSignupDomains: options.deniedSignupDomains ?? [],
-        deniedSignupSubjects: options.deniedSignupSubjects ?? [],
-        ...(input.platformPrincipalResolver === undefined
-          ? {}
-          : { platformPrincipalResolver: input.platformPrincipalResolver }),
-        ...(allowedEmailDomain !== undefined ? { allowedEmailDomain } : {}),
-      }),
+      restrictPortalControlPlane(
+        new NoodleOAuthControlPlaneGate({
+          verifier: async (token, audience) =>
+            (await input.verifyOwnerToken?.(token, audience))?.caller ?? null,
+          audience: [
+            normalizeOAuthResource(options.publicBaseUrl ?? input.authServerIssuer),
+            `${input.authServerIssuer}/developer/mcp`,
+            `${input.authServerIssuer}/developer/cli`,
+            // Exchange-minted assistant tokens (ADR 0218): grant-bound, so never super-admin.
+            `${input.authServerIssuer}/developer/assistant`,
+          ],
+          admins: options.controlPlaneAdmins ?? [],
+          signupMode: options.controlPlaneSignupMode ?? 'restricted',
+          signupAuthorizer: input.controlPlaneStore,
+          deniedSignupDomains: options.deniedSignupDomains ?? [],
+          deniedSignupSubjects: options.deniedSignupSubjects ?? [],
+          ...(input.platformPrincipalResolver === undefined
+            ? {}
+            : { platformPrincipalResolver: input.platformPrincipalResolver }),
+          ...(allowedEmailDomain !== undefined ? { allowedEmailDomain } : {}),
+        }),
+        input.oauthStore,
+        options.oauth?.controlPlaneExchange?.clientId,
+      ),
     );
   }
   if (options.googleClientId !== undefined) {

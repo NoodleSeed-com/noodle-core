@@ -19,9 +19,25 @@ export async function respondDeploymentActivationError(
   error: unknown,
   context: DeploymentActivationRejectionContext,
 ): Promise<boolean> {
-  if (!(error instanceof DeploymentActivationError)) return false;
+  const rejected = await deploymentActivationRejection(error, context);
+  if (rejected === undefined) return false;
+  sendJson(res, rejected.status, rejected.body);
+  return true;
+}
+
+export async function deploymentActivationRejection(
+  error: unknown,
+  context: DeploymentActivationRejectionContext,
+): Promise<
+  | {
+      readonly status: 409 | 503;
+      readonly body: { readonly ok: false; readonly code: string; readonly error: string };
+    }
+  | undefined
+> {
+  if (!(error instanceof DeploymentActivationError)) return undefined;
   const response = deploymentActivationResponse(error.code);
-  if (response === undefined) return false;
+  if (response === undefined) return undefined;
   await context.audit.emit({
     eventType: context.eventType,
     org: context.org,
@@ -33,8 +49,10 @@ export async function respondDeploymentActivationError(
     ...(context.actorSubject !== undefined ? { actorSubject: context.actorSubject } : {}),
     ...(context.actorEmail !== undefined ? { actorEmail: context.actorEmail } : {}),
   });
-  sendJson(res, response.status, { ok: false, code: error.code, error: response.message });
-  return true;
+  return {
+    status: response.status,
+    body: { ok: false, code: error.code, error: response.message },
+  };
 }
 
 function deploymentActivationResponse(

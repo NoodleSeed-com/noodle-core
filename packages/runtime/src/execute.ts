@@ -1,5 +1,6 @@
 import type { ArtifactFulfilment, RuntimeArtifact } from '@noodle-borg/compiler';
 import type { CredentialBroker } from './broker/types.js';
+import { resolveVariableEnvironment } from './business-variables.js';
 import type {
   CallerIdentity,
   ConnectorCallHost,
@@ -11,6 +12,7 @@ import type { FrozenCustomerRoutes } from './customer-routing.js';
 import { preflightFulfilmentCustomerRoutes } from './customer-routing.js';
 import { type EvalScope, ExpressionEvalError, evaluateCondition } from './eval/evaluate.js';
 import type { InvocationContext } from './invocation-context.js';
+import type { OperationEvidencePort } from './operation-evidence.js';
 import { createHost, fail, runOperation } from './operation-execution.js';
 import { evalExprMap } from './operation-validation.js';
 import { AllowAllPolicy } from './policy/allow-all.js';
@@ -47,18 +49,29 @@ export interface ExecuteDeps {
   readonly connectors: ConnectorRegistry;
   readonly broker: CredentialBroker;
   readonly policy?: PolicyGate;
-  readonly env?: Record<string, string> | (() => Promise<Record<string, string>>);
+  readonly env?: Record<string, unknown> | (() => Promise<Record<string, unknown>>);
   readonly caller?: CallerIdentity;
+  /** Transport-owned admission attribution; absent network means public native writes must refuse. */
+  readonly publicAdmission?: { readonly network: string; readonly visitor?: string };
   /** Verified customer IdP issuer, kept outside caller/expression scope for credential isolation. */
   readonly customerIssuer?: string;
   /** Request-local validated customer connector routes, kept separate from caller/expression scope. */
   readonly customerRoutes?: FrozenCustomerRoutes;
   readonly tenantId?: string;
   readonly deploymentId?: string;
+  /** Trusted adapter invocation/confirmation identity; never read from tool input or expression scope. */
+  readonly invocationId?: string;
+  readonly operationEvidence?: OperationEvidencePort;
+  /** Hosting snapshot: operator configuration and original connected-account generations. */
+  readonly executionBinding?: {
+    readonly revision: string;
+    readonly connections: Readonly<Record<string, string>>;
+  };
   /** Immutable facts resolved once for this invocation and exposed only through `${context...}`. */
   readonly context?: InvocationContext;
   readonly trace?: ExecutionTraceSink;
-  readonly signal?: AbortSignal; // Protocol-owned cancellation, never a request payload field.
+  /** Host-owned cancellation; TimeoutError denotes a hard execution deadline. Never caller payload. */
+  readonly signal?: AbortSignal;
   /** Deployment-bound knowledge search (ADR 0202); absent means no knowledge tools serve. */
   readonly knowledgeSearch?: KnowledgeSearchPort;
 }
@@ -121,8 +134,19 @@ export async function executeTool(
 
   const tool = artifact.tools.find((t) => t.name === toolName);
   if (!tool) return fail('unknown_tool', `no tool named "${toolName}"`);
-
-  return runFulfilment(tool.fulfilment, input, toolName, deps, deps.beforeDispatch);
+  const variables = resolveVariableEnvironment(
+    artifact.server.variables ?? [],
+    await resolveEnv(deps),
+    toolName,
+  );
+  if (!variables.ok) return variables;
+  return runFulfilment(
+    tool.fulfilment,
+    input,
+    toolName,
+    { ...deps, env: variables.env },
+    deps.beforeDispatch,
+  );
 }
 
 /**
@@ -143,8 +167,12 @@ export async function executeResource(
 
   const resource = artifact.resources?.find((r) => r.name === resourceName);
   if (!resource) return fail('unknown_resource', `no resource named "${resourceName}"`);
-
-  return runFulfilment(resource.fulfilment, input, resourceName, deps);
+  const variables = resolveVariableEnvironment(
+    artifact.server.variables ?? [],
+    await resolveEnv(deps),
+  );
+  if (!variables.ok) return variables;
+  return runFulfilment(resource.fulfilment, input, resourceName, { ...deps, env: variables.env });
 }
 
 /**
@@ -164,8 +192,12 @@ export async function executePrompt(
 
   const prompt = artifact.prompts?.find((p) => p.name === promptName);
   if (!prompt) return fail('unknown_prompt', `no prompt named "${promptName}"`);
-
-  return runFulfilment(prompt.fulfilment, args, promptName, deps);
+  const variables = resolveVariableEnvironment(
+    artifact.server.variables ?? [],
+    await resolveEnv(deps),
+  );
+  if (!variables.ok) return variables;
+  return runFulfilment(prompt.fulfilment, args, promptName, { ...deps, env: variables.env });
 }
 
 /**
@@ -225,7 +257,7 @@ export async function runFulfilment(
 async function runFlow(
   flow: FlowFulfilment,
   input: unknown,
-  env: Record<string, string>,
+  env: Record<string, unknown>,
   toolName: string,
   deps: ExecuteDeps,
   policy: PolicyGate,
@@ -285,7 +317,7 @@ async function runFlow(
 export function scopeFor(
   input: unknown,
   steps: Record<string, unknown>,
-  env: Record<string, string>,
+  env: Record<string, unknown>,
   deps: ExecuteDeps,
 ): EvalScope {
   // An anonymous caller is a real principal with an opaque, deployment-scoped subject — not a person.
@@ -302,7 +334,7 @@ export function scopeFor(
 }
 
 /** @internal Shared with the suspension-aware flow executor. */
-export async function resolveEnv(deps: ExecuteDeps): Promise<Record<string, string>> {
+export async function resolveEnv(deps: ExecuteDeps): Promise<Record<string, unknown>> {
   if (deps.env === undefined) return {};
   return typeof deps.env === 'function' ? deps.env() : deps.env;
 }

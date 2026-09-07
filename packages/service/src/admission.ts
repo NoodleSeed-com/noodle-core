@@ -1,7 +1,8 @@
+import { PUBLIC_RECORD_ADMISSION_DEFAULTS } from '@noodle-borg/admission-limits/portable';
 import type { AdmissionGate } from '@noodle-borg/transport-http';
 import type { AuditSink } from './store/audit.js';
 
-const ANONYMOUS_CONSUMER_LIMIT = 60;
+const ANONYMOUS_CONSUMER_LIMIT = PUBLIC_RECORD_ADMISSION_DEFAULTS.networkPerHour;
 const ANONYMOUS_CONSUMER_WINDOW_MS = 60 * 60 * 1000;
 
 export function createAdmissionGate(

@@ -47,7 +47,7 @@ export async function handleAssistantSuggestions(
   }
   if (claim.disposition !== 'generate') return writeEmptySuggestions(res, session.origin);
 
-  const target = await sessionScopedTarget(deps.registry, session);
+  const target = await sessionScopedTarget(deps.registry, session, deps.resolveRuntimeTarget, req);
   if (!target) {
     await deps.store.failInitialSuggestions(session.id);
     return writeEmptySuggestions(res, session.origin);

@@ -16,11 +16,16 @@ import {
   type TenantRouteRef,
 } from '@noodle-borg/transport-http';
 import { AnonymousConsumerLimiter, createAdmissionGate } from './admission.js';
+import { ApplicationActivity } from './application-activity.js';
+import { createApplicationServingRuntime } from './application-runtime-target.js';
 import { createArchivePreflight } from './archive-preflight.js';
 import { ArchiveSweeper, resolveArchiveRetentionDays } from './archive-sweeper.js';
 import { serveLocalAsset } from './assets.js';
 import { resolveBuildInfo, serviceInfoPayload } from './build-info.js';
-import { InMemoryBusinessInformationStore } from './business-information/portable.js';
+import {
+  createBusinessInformationRuntime,
+  resolvePrivateInstallationDefinition,
+} from './business-information-runtime.js';
 import { serviceCapabilityReport } from './capabilities.js';
 import { rejectIncompatibleCli } from './client-compatibility.js';
 import { createDataPlaneMembershipAuthorizer } from './data-plane-membership.js';
@@ -39,6 +44,7 @@ import {
   createObservabilityStores,
 } from './observability-runtime.js';
 import type { ServiceOptions } from './options.js';
+import { createRecoveryQuarantineHandler, resolveRecoveryMode } from './recovery-quarantine.js';
 import type { ServerRegistry } from './registry.js';
 import { handleAccessUpdate } from './routes/access.js';
 import { dispatchAlertRoutes } from './routes/alerts-dispatch.js';
@@ -83,7 +89,6 @@ import { dispatchResourceReads } from './routes/resource-read-dispatch.js';
 import { handleRollback } from './routes/rollback.js';
 import { createServicePrincipalDispatcher } from './routes/service-principals-dispatch.js';
 import { servicePrincipalDataPlaneHooks } from './service-principal-data-plane.js';
-import { BUILTIN_STATE_CATALOG_CONNECTOR } from './state-catalog.js';
 import { InMemoryAlertRuleStore } from './store/alert-rules.js';
 import { type AuditSink, StdoutAuditSink } from './store/audit.js';
 
@@ -95,6 +100,8 @@ export function createServiceHandler(
   registry: ServerRegistry,
   options: ServiceOptions = {},
 ): (req: IncomingMessage, res: ServerResponse) => void {
+  if (resolveRecoveryMode(options.recoveryMode) === 'quarantined')
+    return createRecoveryQuarantineHandler(options);
   const logger = options.logger ?? noopLogger;
   const tls = options.tls ?? {};
   const buildInfo = options.buildInfo ?? resolveBuildInfo();
@@ -109,12 +116,8 @@ export function createServiceHandler(
     options.assistantAppearance ?? new InMemoryAssistantAppearanceSettingsStore();
   const anonymousLimiter = new AnonymousConsumerLimiter();
   const publicCounters = options.admissionCounters ?? new InMemoryDailyCounterStore();
-  const businessInformationStore =
-    options.businessInformationStore ??
-    (options.businessInformationEnabled === false
-      ? undefined
-      : new InMemoryBusinessInformationStore());
-  registry.setPlatformConnectors({ catalog: [BUILTIN_STATE_CATALOG_CONNECTOR], connectors: [] });
+  const { businessInformationStore, businessInformationSourceStore, sourceCoordinator } =
+    createBusinessInformationRuntime(registry, options, publicCounters);
   const moduleProviders = createServiceModuleProviders({
     options,
     auditMirror: new StdoutAuditSink(logger),
@@ -125,7 +128,11 @@ export function createServiceHandler(
     ),
   });
   const moduleHost = moduleProviders.host;
-  const providerOptions = moduleProviders.options;
+  businessInformationStore?.configurePrincipalAuthority(moduleHost.platformHumanIdentity);
+  const providerOptions = {
+    ...moduleProviders.options,
+    ...(businessInformationStore ? { businessInformationStore } : {}),
+  };
   const verifyOwnerToken = moduleProviders.verifyOwnerToken;
   const capabilityReport = serviceCapabilityReport(moduleHost);
   registry.setServiceCapabilities(capabilityReport.capabilities);
@@ -134,47 +141,64 @@ export function createServiceHandler(
   const { publicTenantRouting } = mcp.mcpRoutingOptions(options, controlPlane);
   const resolveEndpointOptions = (org: string) =>
     mcp.endpointUrlOptionsForOrg(options, controlPlane, org);
+  const activity =
+    options.operationEvidence === undefined
+      ? undefined
+      : new ApplicationActivity({
+          ...options.operationEvidence,
+          allowance: async (org, request) =>
+            moduleHost.resolveActivityHistoryAllowance?.(org, request),
+        });
   const withIntentMode = createIntentTargetResolver(intentSettings, intentPreviewOrgs);
-  const router = createMcpRouter(async (id) => withIntentMode(await registry.getServing(id)), {
-    logger,
-    tls,
-    protocolMode: options.mcpProtocolMode ?? 'dual',
-    ...(options.mcpRequestState === undefined ? {} : { requestState: options.mcpRequestState }),
-    ...(options.mcpConfirmationNonceLedger === undefined
-      ? {}
-      : { confirmationNonceLedger: options.mcpConfirmationNonceLedger }),
-    resolveInvocationContext: createMcpInvocationContextResolver(options.clock),
-    ...servicePrincipalDataPlaneHooks(moduleHost.toolDispatch, activeAudit, logger),
-    ...(options.oauthClientCredentialsReady ? { oauthClientCredentialsReady: true } : {}),
-    ...(options.captureRequestEvent !== undefined
-      ? { captureRequestEvent: options.captureRequestEvent }
-      : {}),
-    ...(options.captureIntentEvent !== undefined
-      ? { captureIntentEvent: options.captureIntentEvent }
-      : {}),
-    ...(verifyOwnerToken !== undefined ? { verifyOwnerToken } : {}),
-    // Without a hosted identity contribution, self-host keeps the pre-existing claim-based domain check.
-    authorizeDataPlaneIdentity:
-      moduleHost.dataPlaneAuthorizer ??
-      createDataPlaneMembershipAuthorizer({
-        controlPlane,
-        audit,
-        logger,
-        ...(moduleHost.platformHumanIdentity?.principalResolver !== undefined
-          ? { verifiedEmails: moduleHost.platformHumanIdentity.principalResolver }
-          : {}),
-      }),
-    admissionGate: moduleHost.admissionGate,
-    ...(publicTenantRouting !== undefined ? { publicTenantRouting } : {}),
-    tenantLookup: async (ref: TenantRouteRef) =>
-      withIntentMode(
-        ref.serverVersion === undefined
-          ? await registry.getActiveByTenant(ref)
-          : await registry.getActiveByTenantVersion(ref, ref.serverVersion),
-        ref,
-      ),
-    tenantPreflight: createArchivePreflight(registry),
-  });
+  const { activateInstallation, resolveRuntimeTarget, businessOnboarding } =
+    createApplicationServingRuntime(registry, providerOptions, controlPlane, audit, activity);
+  const runtimeTarget = async (target: Awaited<ReturnType<ServerRegistry['getServing']>>) =>
+    target === undefined ? undefined : resolveRuntimeTarget(target);
+  const router = createMcpRouter(
+    async (id) => withIntentMode(await runtimeTarget(await registry.getServing(id))),
+    {
+      logger,
+      tls,
+      protocolMode: options.mcpProtocolMode ?? 'dual',
+      ...(options.mcpRequestState === undefined ? {} : { requestState: options.mcpRequestState }),
+      ...(options.mcpConfirmationNonceLedger === undefined
+        ? {}
+        : { confirmationNonceLedger: options.mcpConfirmationNonceLedger }),
+      resolveInvocationContext: createMcpInvocationContextResolver(options.clock),
+      ...servicePrincipalDataPlaneHooks(moduleHost.toolDispatch, activeAudit, logger),
+      ...(options.oauthClientCredentialsReady ? { oauthClientCredentialsReady: true } : {}),
+      ...(options.captureRequestEvent !== undefined
+        ? { captureRequestEvent: options.captureRequestEvent }
+        : {}),
+      ...(options.captureIntentEvent !== undefined
+        ? { captureIntentEvent: options.captureIntentEvent }
+        : {}),
+      ...(verifyOwnerToken !== undefined ? { verifyOwnerToken } : {}),
+      // Without a hosted identity contribution, self-host keeps the pre-existing claim-based domain check.
+      authorizeDataPlaneIdentity:
+        moduleHost.dataPlaneAuthorizer ??
+        createDataPlaneMembershipAuthorizer({
+          controlPlane,
+          audit,
+          logger,
+          ...(moduleHost.platformHumanIdentity?.principalResolver !== undefined
+            ? { verifiedEmails: moduleHost.platformHumanIdentity.principalResolver }
+            : {}),
+        }),
+      admissionGate: moduleHost.admissionGate,
+      ...(publicTenantRouting !== undefined ? { publicTenantRouting } : {}),
+      tenantLookup: async (ref: TenantRouteRef) =>
+        withIntentMode(
+          await runtimeTarget(
+            ref.serverVersion === undefined
+              ? await registry.getActiveByTenant(ref)
+              : await registry.getActiveByTenantVersion(ref, ref.serverVersion),
+          ),
+          ref,
+        ),
+      tenantPreflight: createArchivePreflight(registry),
+    },
+  );
   const maxBody = options.maxBodyBytes ?? DEFAULT_MAX_BODY;
   const knowledgeRouteDeps = wireServiceKnowledge(
     registry,
@@ -335,11 +359,42 @@ export function createServiceHandler(
       options.businessInformationEnabled !== false &&
       dispatchBusinessInformationRoutes(req, res, url, {
         store: businessInformationStore,
+        ...(businessOnboarding ? { businessOnboarding } : {}),
+        activateInstallation,
+        ...(activity === undefined ? {} : { activity }),
+        ...(options.connectionRuntime === undefined
+          ? {}
+          : {
+              connections: options.connectionRuntime.connections,
+              resolveConnectionTargets: options.connectionRuntime.resolveConnectionTargets,
+            }),
+        configStore,
+        registry,
+        resolveEndpointBase: (request) => options.publicBaseUrl ?? baseFromRequest(request, tls),
+        resolveEndpointUrlOptions: resolveEndpointOptions,
+        ...(options.publicEmbeds === undefined ? {} : { publicEmbeds: options.publicEmbeds }),
+        admissionCounters: publicCounters,
+        ...(options.admissionEnvelope === undefined
+          ? {}
+          : { admissionEnvelope: options.admissionEnvelope }),
+        ...(options.managedAssistantModelResolver === undefined
+          ? {}
+          : { managedModelResolver: options.managedAssistantModelResolver }),
         gate,
         controlPlane,
         maxBody,
         publicCounters,
+        audit: activeAudit,
         trustProxy: tls.trustProxy === true,
+        publicIntakeEnabled: options.businessInformationPublicIntakeEnabled !== false,
+        resolvePrivateDefinition: (selector) =>
+          resolvePrivateInstallationDefinition(registry, selector),
+        ...(businessInformationSourceStore === undefined
+          ? {}
+          : { sourceStore: businessInformationSourceStore }),
+        ...(sourceCoordinator === undefined
+          ? {}
+          : { runSourceIngestion: async () => void (await sourceCoordinator.runOne()) }),
         ...(options.clock === undefined ? {} : { now: options.clock }),
         logger,
         tls,
@@ -352,6 +407,7 @@ export function createServiceHandler(
     if (
       dispatchAssistantRoutes(req, res, url, {
         registry,
+        resolveRuntimeTarget,
         store: assistantStore,
         appearance: assistantAppearance,
         ...(options.publicEmbeds !== undefined ? { publicEmbeds: options.publicEmbeds } : {}),
@@ -516,6 +572,9 @@ export function createServiceHandler(
         controlPlane,
         configStore,
         registry,
+        ...(businessInformationStore === undefined
+          ? {}
+          : { installations: businessInformationStore }),
         maxBody,
         audit,
         ...(options.developerGrantStore !== undefined

@@ -1,6 +1,6 @@
 import type { DelegatedExchangeOptions } from './delegated-token-exchange.js';
 import type {
-  ExternalCredentialExchangeOptions,
+  BoundExternalCredentialExchangeOptions,
   ExternalCredentialExchangeRuntimeOptions,
 } from './external-credential-exchange.js';
 import type {
@@ -22,7 +22,7 @@ export function deploymentCredentialBrokerOptions(input: {
   readonly deploymentId: string | undefined;
 }): {
   readonly delegatedExchange?: DelegatedExchangeOptions;
-  readonly externalCredentialExchange?: ExternalCredentialExchangeOptions;
+  readonly externalCredentialExchange?: BoundExternalCredentialExchangeOptions;
   readonly googleWorkloadIdentity?: GoogleWorkloadIdentityOptions;
 } {
   if (input.deploymentId === undefined) return {};

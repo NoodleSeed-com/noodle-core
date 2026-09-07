@@ -13,6 +13,7 @@ export * from './catalog-data-hosted-observability.js';
 export * from './catalog-data-local-authoring.js';
 export * from './catalog-data-platform-auth.js';
 export * from './catalog-data-policy.js';
+export * from './catalog-data-solutions.js';
 export * from './catalog-data-tenant-admin.js';
 export * from './catalog-data-tenant-resources.js';
 export * from './catalog-types.js';

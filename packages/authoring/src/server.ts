@@ -9,10 +9,17 @@ import {
   type DistributionMetadataV1,
   projectDistributionMetadata,
 } from './distribution.js';
+import { manifestAssistant, manifestShell } from './server-presentation.js';
 
 export { annotations } from './annotations.js';
 
-import { type ConfigRef, isConfigRef, serializeVariableRef } from './config.js';
+import {
+  type ConfigRef,
+  type DeclaredVariableRef,
+  isConfigRef,
+  manifestVariables,
+  serializeVariableRef,
+} from './config.js';
 import { toManifestConnectorRef } from './connections.js';
 import { type ConnectorCatalogDoc, type ConnectorRef, validateCatalog } from './connectors.js';
 import { manifestContext, type ServerContextOptions } from './context.js';
@@ -41,6 +48,8 @@ export interface StateHandleOptions {
 }
 
 export interface ServerOptions {
+  /** Typed managed configuration; only explicit Portal metadata exposes business settings. */
+  readonly variables?: readonly DeclaredVariableRef[];
   readonly title: string;
   readonly version: string;
   /** One host-neutral guide for agents using this product's complete MCP surface. */
@@ -608,7 +617,8 @@ class ServerBuilder implements ServerDefinition {
         ...(this.options.knowledge && this.options.knowledge.length > 0
           ? { knowledge: this.options.knowledge.map(manifestKnowledge) }
           : {}),
-        ...collections.manifestCollections(this.options.collections),
+        ...collections.manifestCollections(this.options.collections, this.connectors),
+        ...manifestVariables(this.options.variables),
         ...(this.options.branding ? { branding: this.options.branding } : {}),
         ...(this.options.shell ? { shell: manifestShell(this.options.shell) } : {}),
       },
@@ -713,60 +723,6 @@ class ServerBuilder implements ServerDefinition {
     return validateCatalog({ connectors });
   }
 }
-
-function manifestShell(
-  shell: NonNullable<ServerOptions['shell']>,
-): NonNullable<Manifest['server']['shell']> {
-  return {
-    ...(shell.displayMode !== undefined ? { displayMode: shell.displayMode } : {}),
-    ...(shell.header !== undefined
-      ? {
-          header: {
-            ...(shell.header.title !== undefined ? { title: shell.header.title } : {}),
-            ...(shell.header.subtitle !== undefined ? { subtitle: shell.header.subtitle } : {}),
-          },
-        }
-      : {}),
-    ...(shell.navigation !== undefined
-      ? {
-          navigation: {
-            variant: shell.navigation.variant,
-            items: shell.navigation.items.map((item) => ({ ...item })),
-          },
-        }
-      : {}),
-    ...(shell.persistentActions !== undefined
-      ? {
-          persistentActions: shell.persistentActions.map((action) => ({
-            ...action,
-          })),
-        }
-      : {}),
-  };
-}
-
-function manifestAssistant(
-  assistant: EmbeddedAssistantConfig,
-): NonNullable<Manifest['server']['assistant']> {
-  const { suggestedPrompts, ...configuration } = assistant;
-  // `structuredClone()` creates ordinary mutable arrays at runtime, but its TypeScript return type
-  // preserves the author's readonly input modifiers. Normalize that type at the manifest boundary so
-  // nested presentation lists (header actions, heading segments, and features) match the generated
-  // mutable manifest type without weakening the public authoring API.
-  const clonedConfiguration = structuredClone(configuration) as DeepMutable<typeof configuration>;
-  return {
-    ...clonedConfiguration,
-    model: { ...configuration.model },
-    allowedOrigins: [...configuration.allowedOrigins],
-    ...(suggestedPrompts ? { suggestedPrompts: [...suggestedPrompts] } : {}),
-  };
-}
-
-type DeepMutable<T> = T extends readonly (infer Item)[]
-  ? DeepMutable<Item>[]
-  : T extends object
-    ? { -readonly [Key in keyof T]: DeepMutable<T[Key]> }
-    : T;
 
 /**
  * Derive a prompt's argument descriptors. A Zod object's shape becomes one descriptor per key (its

@@ -56,6 +56,8 @@ export interface DeployRow {
 }
 
 export interface ConfigRow {
+  readonly generation?: string;
+  readonly value_origin?: 'default' | null;
   readonly kind: ManagedConfigKind;
   readonly scope_level: string;
   readonly org_slug: string;
@@ -206,17 +208,22 @@ function rowToMetadata(row: DeploySummaryRow): DeploymentMetadata {
 }
 
 export function configRowToMetadata(row: ConfigRow): ConfigValueMetadata {
-  return {
-    kind: validateConfigKind(row.kind),
-    scope: rowToScope(row),
-    name: row.name,
-    updatedAt: new Date(row.updated_at).toISOString(),
-    ...(row.updated_by_subject !== null ? { updatedBySubject: row.updated_by_subject } : {}),
-    ...(row.updated_by_email !== null ? { updatedByEmail: row.updated_by_email } : {}),
-    ...(row.kind === 'variable' && row.variable_value !== null
-      ? { value: row.variable_value }
-      : {}),
-  };
+  return Object.defineProperty(
+    {
+      kind: validateConfigKind(row.kind),
+      scope: rowToScope(row),
+      name: row.name,
+      ...(row.value_origin === 'default' ? { valueOrigin: 'default' as const } : {}),
+      updatedAt: new Date(row.updated_at).toISOString(),
+      ...(row.updated_by_subject !== null ? { updatedBySubject: row.updated_by_subject } : {}),
+      ...(row.updated_by_email !== null ? { updatedByEmail: row.updated_by_email } : {}),
+      ...(row.kind === 'variable' && row.variable_value !== null
+        ? { value: row.variable_value }
+        : {}),
+    },
+    'generation',
+    { value: row.generation },
+  );
 }
 
 export function validateConfigKind(kind: ManagedConfigKind): ManagedConfigKind {

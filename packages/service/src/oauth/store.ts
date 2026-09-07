@@ -184,6 +184,8 @@ export interface DelegatedCredentialLookup {
 export interface OAuthStore extends DeviceAuthorizationStore {
   /** Dynamic client registration (RFC 7591): persist + read the SDK-generated client info. */
   getClient(clientId: string): Promise<OAuthClientInformationFull | undefined>;
+  /** Durable server-owned purpose; absent registration is distinct from a known dynamic client. */
+  getClientPurpose(clientId: string): Promise<'console' | 'portal' | 'dynamic' | undefined>;
   putClient(client: OAuthClientInformationFull): Promise<OAuthClientInformationFull>;
   /** Atomically reserves or reconciles a server-owned client without taking over a DCR registration. */
   putFirstPartyClient(
@@ -284,6 +286,13 @@ export class InMemoryOAuthStore implements OAuthStore {
 
   getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
     return Promise.resolve(this.#clients.get(clientId));
+  }
+
+  getClientPurpose(clientId: string): Promise<'console' | 'portal' | 'dynamic' | undefined> {
+    return Promise.resolve(
+      this.#firstPartyClientOwners.get(clientId) ??
+        (this.#clients.has(clientId) ? 'dynamic' : undefined),
+    );
   }
 
   putClient(client: OAuthClientInformationFull): Promise<OAuthClientInformationFull> {

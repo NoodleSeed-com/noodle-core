@@ -121,10 +121,26 @@ export interface ExternalCredentialExchangeOptions {
   readonly timeoutSignal?: (timeoutMs: number) => AbortSignal;
 }
 
-export type ExternalCredentialExchangeRuntimeOptions = Pick<
-  ExternalCredentialExchangeOptions,
-  'issuer' | 'signer' | 'providers' | 'subjectPins'
->;
+/** In-process portable authority; the same compiled binding is still enforced by ManagedConfigBroker. */
+export interface LocalExternalCredentialProvider {
+  getCredential(input: {
+    readonly tenantId: string;
+    readonly deploymentId: string;
+    readonly descriptor: CredentialBindingDescriptor;
+    readonly expectedConnectionGeneration?: string;
+  }): Promise<ExternalCredentialExchangeResponse>;
+}
+export interface LocalExternalCredentialExchangeOptions {
+  readonly tenant: string;
+  readonly deployment: string;
+  readonly localProvider: LocalExternalCredentialProvider;
+}
+export type BoundExternalCredentialExchangeOptions =
+  | ExternalCredentialExchangeOptions
+  | LocalExternalCredentialExchangeOptions;
+export type ExternalCredentialExchangeRuntimeOptions =
+  | Pick<ExternalCredentialExchangeOptions, 'issuer' | 'signer' | 'providers' | 'subjectPins'>
+  | Pick<LocalExternalCredentialExchangeOptions, 'localProvider'>;
 
 export async function resolveExternalCredentialProviderConfig(
   options: ExternalCredentialExchangeOptions,

@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { ensureMcpSubdomainClaimSchema } from './postgres-mcp-subdomain-schema.js';
+import { ensureOrganizationAgreementSchema } from './postgres-organization-agreements.js';
 
 /** Idempotent organization, membership, signup, and onboarding persistence schema. */
 export async function ensureOrganizationSchema(pool: Pool): Promise<void> {
@@ -88,4 +89,5 @@ export async function ensureOrganizationSchema(pool: Pool): Promise<void> {
       ON org_invitations (org_slug, email, expires_at)
     `);
   await ensureMcpSubdomainClaimSchema(pool);
+  await ensureOrganizationAgreementSchema(pool);
 }

@@ -37,8 +37,15 @@ import type {
   TlsPosture,
 } from '@noodle-borg/transport-http';
 import type { JSONWebKeySet } from 'jose';
+import type { ApplicationActivityOptions } from './application-activity.js';
 import type { BuildInfo } from './build-info.js';
-import type { BusinessInformationStore } from './business-information/portable.js';
+import type {
+  BusinessInformationStore,
+  SourceIngestionStore,
+  SourceReadExecutor,
+} from './business-information/portable.js';
+import type { BusinessOnboardingOptions } from './business-onboarding.js';
+import type { ApplicationConnections } from './connections/types.js';
 import type { GoogleWorkloadIdentityStore } from './google-workload-identity-store.js';
 import type { DeveloperGrantStore } from './oauth/developer-grant.js';
 import type { ServicePrincipalRuntime } from './oauth/service-principal-store.js';
@@ -49,10 +56,22 @@ import type { ConfigStore, ControlPlaneStore } from './store.js';
 import type { InvitationEmailSender, WelcomeEmailSender } from './welcome-email.js';
 
 export interface ServiceOptions {
+  /** Deployment-owned agreement authority. Hosted composition supplies an empty policy until documents are approved. */
+  readonly businessOnboarding?: BusinessOnboardingOptions;
+  /** Internal durable execution evidence composition; allowance comes from an operator-selected module. */
+  readonly operationEvidence?: Omit<ApplicationActivityOptions, 'allowance'>;
+  /** Internal handler injection; service boot composes portable account custody. */
+  readonly connectionRuntime?: ApplicationConnections;
   /** Installation-scoped business records and grants. Hosted boot injects the encrypted Postgres store. */
   readonly businessInformationStore?: BusinessInformationStore;
+  /** Generic read-only replica persistence for externally authoritative application collections. */
+  readonly businessInformationSourceStore?: SourceIngestionStore;
+  /** Executes only the normalized read contract declared by an installed collection source. */
+  readonly businessInformationSourceExecutor?: SourceReadExecutor;
   /** Explicitly disables managed-record routes when the selected persistence profile cannot own them. */
   readonly businessInformationEnabled?: boolean;
+  /** Fleet incident switch for anonymous solution intake; authenticated record work stays available. */
+  readonly businessInformationPublicIntakeEnabled?: boolean;
   /** Handler/test injection for ADR 0225; {@link serveService} supplies it only from its Postgres pool. */
   readonly appPurgeReconciliationOperator?: AppPurgeReconciliationOperator;
   /** Mount the authenticated, grant-scoped Noodle developer MCP at `/developer/mcp`. */
@@ -163,6 +182,8 @@ export interface ServiceOptions {
    * (liveness) never calls this.
    */
   readonly readinessProbe?: () => Promise<boolean>;
+  /** Deployment-owned whole-candidate restore isolation; never an application/operator database setting. */
+  readonly recoveryMode?: import('./recovery-quarantine.js').RecoveryMode;
   /**
    * Verify an owner access token for `owner-only` deployments (OA-1). Threaded to the MCP router's
    * front-door. When absent, owner-only endpoints fail closed (`401`).

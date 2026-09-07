@@ -67,11 +67,13 @@ describe('commands --json public wire contract', () => {
 
     expect(envelope.data.commands).toHaveLength(63);
     const paths = leafPaths(envelope.data.commands);
-    expect(paths).toHaveLength(228);
+    expect(paths).toHaveLength(255);
     expect(paths).toContain('deploy');
     expect(paths).toContain('deploy preflight');
     expect(paths).toContain('service app-purge preview');
     expect(paths).toContain('service app-purge apply');
+    expect(paths).toContain('solutions pause');
+    expect(paths).toContain('solutions resume');
     expect(paths).toContain('assistant appearance show');
     expect(paths).toContain('assistant appearance apply');
     expect(paths).toContain('assistant appearance reset');
@@ -103,6 +105,25 @@ describe('commands --json public wire contract', () => {
     expect(paths).toContain('orgs openai-challenge clear');
     expect(paths).toContain('solutions catalog');
     expect(paths).toContain('solutions records export');
+    expect(paths).toContain('solutions sources refresh');
+    expect(paths).toEqual(
+      expect.arrayContaining([
+        'solutions installation-options',
+        'solutions agreement get',
+        'solutions agreement accept',
+        'solutions notice get',
+        'solutions notice set',
+        'billing catalog status',
+        'billing catalog activate',
+        'solutions activity list',
+        'solutions activity settings get',
+        'solutions activity settings set',
+        'solutions connections list',
+        'solutions connections connect',
+        'solutions connections disconnect',
+        'solutions records migrate-schema',
+      ]),
+    );
     expect(paths.filter((path) => path.startsWith('platform-auth account-reset'))).toEqual([
       'platform-auth account-reset preview',
       'platform-auth account-reset status',

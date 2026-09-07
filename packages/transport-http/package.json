@@ -23,6 +23,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@noodle-borg/admission-limits": "workspace:*",
     "@noodle-borg/module": "workspace:*",
     "@noodle-borg/protocol": "workspace:*"
   },

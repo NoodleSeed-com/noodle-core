@@ -259,6 +259,11 @@ describe('did-you-mean for unknown commands', () => {
     expect(await run(['apps', 'lsit'], {}, home)).toBe(2);
     expect(stderr()).toContain('list');
   });
+
+  it('suggests generic solution source controls from the canonical catalog', async () => {
+    expect(await run(['solutions', 'soruces'], {}, home)).toBe(2);
+    expect(stderr()).toContain('sources');
+  });
 });
 
 describe('usage()', () => {

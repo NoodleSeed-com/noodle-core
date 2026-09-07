@@ -32,6 +32,7 @@ import { isInteractive } from '../prompts.js';
 import { relativeTime } from '../relative-time.js';
 import { type Column, renderTable, type TableOptions } from '../table.js';
 import { findDeployProjectRoot } from './deploy-target.js';
+import { runInstallationVariables } from './installation-variables.js';
 import { EXIT, printJsonFailure, printJsonOk } from './output.js';
 import { DIM_GRAY, stdoutTableOptions } from './resource-shared.js';
 import { missingLogin, parseCommandFlags, printCliFailure, usage } from './shared.js';
@@ -51,6 +52,19 @@ export async function runConfigValues(
   const ambiguousTarget = ambiguousRuntimeFailure(kind, args);
   if (ambiguousTarget !== undefined) return ambiguousTarget;
   const runtime = args.runtime ?? config.defaultRuntime ?? 'local';
+  if (tail.includes('--installation') || tail.includes('--expected-revision')) {
+    return runInstallationVariables({
+      kind,
+      action,
+      name,
+      args,
+      runtime,
+      org: args.org ?? config.defaultOrg,
+      env,
+      home,
+      readValue: () => configInputValue(args, env),
+    });
+  }
   const localProjectRoot = findDeployProjectRoot() ?? process.cwd();
   const localTargetResolution =
     runtime === 'local'
@@ -268,6 +282,10 @@ function configScopeLabel(scope: ConfigScope): string {
 }
 
 function parseConfigArgs(rest: readonly string[]): {
+  readonly installation?: string;
+  readonly expectedRevision?: string;
+  readonly parseError?: string;
+  readonly positional?: readonly string[];
   readonly runtime?: 'local' | 'cloud' | 'other';
   readonly scope?: 'org' | 'app' | 'env';
   readonly org?: string;
@@ -294,6 +312,8 @@ function parseConfigArgs(rest: readonly string[]): {
       '--from-file': 'fromFile',
       '--service': 'service',
       '--auth-token': 'authToken',
+      '--installation': 'installation',
+      '--expected-revision': 'expectedRevision',
     },
     booleans: {
       '--from-stdin': 'fromStdin',

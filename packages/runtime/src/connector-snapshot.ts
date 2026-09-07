@@ -28,6 +28,7 @@ export function withConnectorSnapshot(deps: ExecuteToolDeps): ExecuteToolDeps {
         return undefined;
       }
       const signatures = new Map<string, OperationSignature | undefined>();
+      const executionBounds = new Map<string, number | undefined>();
       const snapshot: Connector = {
         id: connector.id,
         version: connector.version,
@@ -39,6 +40,11 @@ export function withConnectorSnapshot(deps: ExecuteToolDeps): ExecuteToolDeps {
             signatures.set(operation, captured);
           }
           return signatures.get(operation);
+        },
+        executionBoundMs(operation) {
+          if (!executionBounds.has(operation))
+            executionBounds.set(operation, connector.executionBoundMs?.(operation));
+          return executionBounds.get(operation);
         },
         invoke(call) {
           return connector.invoke(call);

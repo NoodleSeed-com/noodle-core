@@ -1,10 +1,12 @@
 import {
+  type AtomicCounterAttemptOutcome,
   type AtomicDailyCounterStore,
   type CounterOutcome,
   type CounterRequest,
   counterRow,
   type DailyCounterStore,
   dayKey,
+  type ExhaustedCounter,
   nextReset,
   retentionCutoff,
 } from './counter-store.js';
@@ -19,6 +21,7 @@ import {
 export class InMemoryDailyCounterStore implements DailyCounterStore, AtomicDailyCounterStore {
   readonly durable = false;
   readonly #used = new Map<string, number>();
+  readonly #receipts = new Map<string, string>();
 
   async consume(request: CounterRequest, now: Date): Promise<CounterOutcome> {
     const row = counterRow(request, now);
@@ -34,6 +37,26 @@ export class InMemoryDailyCounterStore implements DailyCounterStore, AtomicDaily
   }
 
   async consumeAll(requests: readonly CounterRequest[], now: Date): Promise<boolean> {
+    return this.#consumeAll(requests, now).length === 0;
+  }
+
+  async consumeAllOnce(
+    requests: readonly CounterRequest[],
+    attempt: { readonly key: string; readonly fingerprint: string },
+    now: Date,
+  ): Promise<AtomicCounterAttemptOutcome> {
+    const receipt = counterRow({ key: attempt.key }, now);
+    const receiptKey = `${receipt.day}:${receipt.key}`;
+    const existing = this.#receipts.get(receiptKey);
+    if (existing !== undefined)
+      return { kind: existing === attempt.fingerprint ? 'replayed' : 'conflict' };
+    const exhausted = this.#consumeAll(requests, now);
+    if (exhausted.length > 0) return { kind: 'refused', exhausted };
+    this.#receipts.set(receiptKey, attempt.fingerprint);
+    return { kind: 'consumed' };
+  }
+
+  #consumeAll(requests: readonly CounterRequest[], now: Date): readonly ExhaustedCounter[] {
     const batch = requests.map((request) => {
       const row = counterRow(request, now);
       return {
@@ -45,14 +68,21 @@ export class InMemoryDailyCounterStore implements DailyCounterStore, AtomicDaily
     if (new Set(batch.map((entry) => entry.key)).size !== batch.length) {
       throw new Error('atomic counter requests must have distinct row identities');
     }
+    const exhausted: ExhaustedCounter[] = [];
     for (const entry of batch) {
       const used = this.#used.get(entry.key) ?? 0;
-      if (entry.request.limit <= 0 || used + entry.amount > entry.request.limit) return false;
+      if (entry.request.limit <= 0 || used + entry.amount > entry.request.limit)
+        exhausted.push({
+          key: entry.request.key,
+          limit: entry.request.limit,
+          resetAt: nextReset(now, entry.request.window),
+        });
     }
+    if (exhausted.length > 0) return exhausted;
     for (const entry of batch) {
       this.#used.set(entry.key, (this.#used.get(entry.key) ?? 0) + entry.amount);
     }
-    return true;
+    return [];
   }
 
   async prune(now: Date): Promise<number> {
@@ -63,6 +93,12 @@ export class InMemoryDailyCounterStore implements DailyCounterStore, AtomicDaily
     for (const key of this.#used.keys()) {
       if ((key.split(':')[0] ?? '') < cutoff) {
         this.#used.delete(key);
+        removed += 1;
+      }
+    }
+    for (const key of this.#receipts.keys()) {
+      if ((key.split(':')[0] ?? '') < cutoff) {
+        this.#receipts.delete(key);
         removed += 1;
       }
     }

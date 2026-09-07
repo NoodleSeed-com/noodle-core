@@ -66,6 +66,17 @@ export {
   type PreparedPackagedAsset,
   prepareLocalAssets,
 } from './assets.js';
+export {
+  type ArtifactVariableDeclaration,
+  compileVariableDeclarations,
+  MAX_VARIABLE_DECLARATIONS,
+  MAX_VARIABLE_SCHEMA_BYTES,
+  MAX_VARIABLE_SCHEMA_DEPTH,
+  MAX_VARIABLE_VALUE_BYTES,
+  type VariableDeclarationManifest,
+  validateVariableDeclaration,
+  variableDeclarationManifestSchema,
+} from './business-variables.js';
 export { InMemoryCatalog } from './catalog/in-memory.js';
 export { isLegacyFieldMap, normalizeOperationIoSchema } from './catalog/io-schema.js';
 export { computeSignatureHash } from './catalog/signature.js';
@@ -96,6 +107,11 @@ export {
 } from './customer-endpoint.js';
 export type { CompileError, CompileErrorCode, CompileResult } from './errors.js';
 export { computeConnectionConfigRevision } from './fulfilment-emit.js';
+export {
+  type ManagedCollectionControls,
+  projectManagedCollectionControls,
+  validateManagedCollectionControls,
+} from './managed-collection-controls.js';
 export {
   MAX_MANAGED_COLLECTION_DESCRIPTION_LENGTH,
   MAX_MANAGED_COLLECTION_NAME_LENGTH,
@@ -135,6 +151,12 @@ export {
 } from './manifest/schema-refs.js';
 export { anonymousBehavior } from './manifest/website-projection.js';
 export { type SniffedImage, sniffImageBytes } from './mime-sniffing.js';
+export {
+  BUILTIN_RECORD_CATALOG_CONNECTOR,
+  RECORD_CONNECTOR_ID,
+  RECORD_CONNECTOR_VERSION,
+  RECORD_OPERATION_SIGNATURES,
+} from './native-record-operations.js';
 export { manifestJsonSchema } from './schema-export.js';
 export {
   MAX_COMPILED_WIDGET_HTML_BYTES,

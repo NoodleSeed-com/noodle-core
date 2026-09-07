@@ -81,6 +81,22 @@ describe('executeTool', () => {
     expect(calls[0]?.env).toEqual({ REGION: 'us' });
   });
 
+  it('carries trusted admission attribution privately without adding it to business arguments', async () => {
+    const { connector, calls } = recordingConnector();
+    const publicAdmission = { network: 'network-digest', visitor: 'visitor-digest' };
+    const result = await executeTool(
+      resolved(),
+      'get_order',
+      { order_id: 'A1', publicAdmission: { network: 'forged' } },
+      { ...deps(connector), publicAdmission },
+    );
+    expect(result.ok).toBe(true);
+    expect(calls[0]?.publicAdmission).toEqual(publicAdmission);
+    expect(calls[0]?.args).toEqual({ id: 'A1' });
+    expect(calls[0]?.env).not.toHaveProperty('publicAdmission');
+    expect(JSON.stringify(result)).not.toContain('network-digest');
+  });
+
   it('preserves connector result metadata through flow output mapping', async () => {
     const projectedSignature: OperationSignature = {
       type: 'read',

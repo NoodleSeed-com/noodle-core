@@ -61,6 +61,7 @@ import {
   assistantResumeTurnRequestSchema,
   assistantSessionResponseSchema,
 } from '@noodle-borg/wire-contracts';
+import type { RuntimeTargetResolver } from '../application-runtime-target.js';
 import { sendForbidden, sendUnauthorized } from '../http-util.js';
 import type { ServerRegistry } from '../registry.js';
 import type { AuditSink } from '../store/audit.js';
@@ -79,7 +80,7 @@ import {
   handleAssistantPreflight,
   now,
 } from './assistant-route-http.js';
-import { sessionScopedTarget } from './assistant-session-target.js';
+import { activeAssistantTarget, sessionScopedTarget } from './assistant-session-target.js';
 import { authorizeControlPlane } from './control-plane.js';
 
 export { applyBrowserCors, authenticateSession, handleAssistantPreflight, now };
@@ -88,6 +89,7 @@ const SESSION_ABSOLUTE_MS = 2 * 60 * 60 * 1000;
 
 export interface AssistantRouteDeps {
   readonly registry: ServerRegistry;
+  readonly resolveRuntimeTarget?: RuntimeTargetResolver;
   readonly store: AssistantStore;
   /**
    * Public-surface ports. Both absent means this deployment serves authenticated embeds only, and the
@@ -189,7 +191,7 @@ export async function handleAssistantSession(
   // Clients are tenant-bound: sessions follow the tenant's ACTIVE deployment, and the origin
   // allowlist is read from the live artifact, so `noodle deploy` alone updates a live embed.
   // client.deploymentId/allowedOrigins remain as created-against audit data.
-  const target = await deps.registry.getActiveByTenant(client.tenant);
+  const target = await activeAssistantTarget(deps, client.tenant);
   const assistant = target?.served.artifact.server.assistant;
   if (!target?.deploymentId || !assistant)
     return sendJson(res, 409, { error: 'assistant deployment is unavailable' });
@@ -238,6 +240,7 @@ export async function handleAssistantSession(
       client.tenant,
       deps.appearance,
       surfaceBinding.kind === 'pre-surfaces' ? undefined : surfaceBinding.kind,
+      target.businessNotice,
     )
   ).effective;
   const roles = canonicalizeAuthorizationClaimValues(parsed.user.roles, 'role');
@@ -354,9 +357,9 @@ export async function handleAssistantTurn(
   if (!body.ok) return sendJson(res, body.status, { error: body.error });
   // Admission tier 3, hashed here for the same reason the mint hashes it: no raw address may reach the
   // decision, a counter key, or an audit payload.
-  const addressBucket = clientAddressBucket(
-    typeof req.headers['x-forwarded-for'] === 'string' ? req.headers['x-forwarded-for'] : undefined,
-  );
+  const target = await sessionScopedTarget(deps.registry, session, deps.resolveRuntimeTarget, req);
+  if (!target) return sendJson(res, 409, { error: 'assistant deployment is unavailable' });
+  const addressBucket = clientAddressBucket(req.socket.remoteAddress);
   let turn: AssistantMessageTurnRequest | undefined;
   let message: string;
   let resumedTool: string | undefined;
@@ -415,15 +418,13 @@ export async function handleAssistantTurn(
     if (message.trim().length === 0) {
       return sendJson(res, 400, { error: '"message" must be a non-empty string' });
     }
-    // Admission before any metered work (ADR 0201 §8): ahead of the deployment read and well ahead
-    // of the model, so a refused turn costs the customer nothing.
+    // Resolve live authority first: a paused application or removed origin spends no turn allowance.
+    // Admission still precedes every model request and business operation.
     const refusal = await refusePublicTurn(deps, session, message, addressBucket);
     if (refusal) return refuseTurn(deps, res, session, refusal, usageStartedAt);
     // The visitor typed first: any pending post-sign-in resume is moot, and must not fire later.
     if (session.pendingResume) await deps.store.consumePendingResume(session.id);
   }
-  const target = await sessionScopedTarget(deps.registry, session);
-  if (!target) return sendJson(res, 409, { error: 'assistant deployment is unavailable' });
   if (
     resumedTool !== undefined &&
     !target.served.artifact.tools.some((tool) => tool.name === resumedTool)
@@ -558,7 +559,7 @@ export async function handleAssistantAppRequest(
   ) {
     return sendJson(res, 400, { error: 'invalid MCP App request' });
   }
-  const target = await sessionScopedTarget(deps.registry, session);
+  const target = await sessionScopedTarget(deps.registry, session, deps.resolveRuntimeTarget, req);
   if (!target) return sendJson(res, 409, { error: 'assistant deployment is unavailable' });
   const method = body.value.method;
   const params = body.value.params;

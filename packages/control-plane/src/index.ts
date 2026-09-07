@@ -50,6 +50,16 @@ export {
   resolveMcpSubdomainTenant,
 } from './mcp-subdomain-claims.js';
 export {
+  type AcceptOrganizationAgreementInput,
+  type AgreementDocument,
+  type AgreementDocuments,
+  agreementDocumentDigest,
+  type OrganizationAgreementAcceptance,
+  OrganizationAgreementError,
+  type OrganizationAgreementStore,
+  validateAgreementDocuments,
+} from './organization-agreements.js';
+export {
   domainFromEmail,
   domainKey,
   memberKey,
@@ -69,6 +79,10 @@ export {
   type PostgresMcpSubdomainMutationOptions,
   resolveActiveMcpSubdomainRow,
 } from './postgres-mcp-subdomain-claims.js';
+export {
+  acceptOrganizationAgreementRow,
+  getOrganizationAgreementRow,
+} from './postgres-organization-agreements.js';
 export {
   addOrgDomainRow,
   addOrgMemberRow,

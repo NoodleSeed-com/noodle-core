@@ -43,7 +43,9 @@ export {
 export {
   type ConfigRef,
   type ConfigRefKind,
+  type DeclaredVariableRef,
   secret,
+  type VariableOptions,
   variable,
 } from './config.js';
 export {
@@ -122,6 +124,7 @@ export {
 export {
   type ManagedCollectionDeclaration,
   type ManagedCollectionInput,
+  type ManagedCollectionSource,
   managedCollection,
 } from './managed-collection.js';
 export { noodlePlatform, noodlePlatformCatalog } from './platform.js';

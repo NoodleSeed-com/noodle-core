@@ -13,7 +13,12 @@ const digests = {
   website: `sha256:${'c'.repeat(64)}`,
   docs: `sha256:${'d'.repeat(64)}`,
   console: `sha256:${'e'.repeat(64)}`,
+  portal: `sha256:${'f'.repeat(64)}`,
+  calendarAdapter: `sha256:${'9'.repeat(64)}`,
 };
+const legacyDigests = Object.fromEntries(
+  Object.entries(digests).filter(([name]) => !['portal', 'calendarAdapter'].includes(name)),
+);
 
 const packages = {
   '@noodleseed/one': {
@@ -105,7 +110,7 @@ describe('system release manifests', () => {
         releaseId: 'r41',
         gitSha: '0'.repeat(40),
         createdAt: '2026-07-11T00:00:00.000Z',
-        images: digests,
+        images: legacyDigests,
         packages: {
           '@noodleseed/one': '0.33.0',
           '@noodleseed/agent-kit': '0.20.0',
@@ -113,7 +118,11 @@ describe('system release manifests', () => {
         },
         previousReleaseId: null,
       },
-      imageUpdates: { website: `sha256:${'f'.repeat(64)}` },
+      imageUpdates: {
+        website: `sha256:${'9'.repeat(64)}`,
+        portal: digests.portal,
+        calendarAdapter: digests.calendarAdapter,
+      },
       packages,
       pluginMarketplace,
       copilotPlugin,
@@ -121,12 +130,12 @@ describe('system release manifests', () => {
     });
 
     expect(candidate.releaseId).toBeNull();
-    expect(candidate.schemaVersion).toBe(6);
+    expect(candidate.schemaVersion).toBe(7);
     expect(candidate.pluginMarketplace).toEqual(pluginMarketplace);
     expect(candidate.copilotPlugin).toEqual(copilotPlugin);
     expect(candidate.previousReleaseId).toBe('r41');
     expect(candidate.images.service).toBe(digests.service);
-    expect(candidate.images.website).toBe(`sha256:${'f'.repeat(64)}`);
+    expect(candidate.images.website).toBe(`sha256:${'9'.repeat(64)}`);
     expect(candidate.compatibility['@noodleseed/one']).toEqual(['0.33.0', '0.34.0']);
   });
 
@@ -222,7 +231,7 @@ describe('system release manifests', () => {
       releaseId: 'r41',
       gitSha: '1'.repeat(40),
       createdAt: '2026-07-12T00:00:00.000Z',
-      images: digests,
+      images: legacyDigests,
       packages: {
         ...packages,
         '@noodleseed/one': { ...packages['@noodleseed/one'], version: '00.34.0', tag: 'v00.34.0' },
@@ -271,7 +280,7 @@ describe('system release manifests', () => {
       releaseId: 'r41',
       gitSha: '1'.repeat(40),
       createdAt: '2026-07-12T00:00:00.000Z',
-      images: digests,
+      images: legacyDigests,
       previousReleaseId: null,
     };
     const {
@@ -311,7 +320,7 @@ describe('system release manifests', () => {
       releaseId: 'r41',
       gitSha: '1'.repeat(40),
       createdAt: '2026-07-12T00:00:00.000Z',
-      images: digests,
+      images: legacyDigests,
       packages,
       compatibility: Object.fromEntries(
         Object.entries(packages).map(([name, entry]) => [name, [entry.version]]),
@@ -324,7 +333,7 @@ describe('system release manifests', () => {
         gitSha: '1'.repeat(40),
         createdAt: '2026-07-12T00:00:00.000Z',
         previous: legacy,
-        imageUpdates: {},
+        imageUpdates: { portal: digests.portal, calendarAdapter: digests.calendarAdapter },
         packages,
         npmArtifactReportBytes,
       }),
@@ -335,7 +344,7 @@ describe('system release manifests', () => {
         gitSha: '1'.repeat(40),
         createdAt: '2026-07-12T00:00:00.000Z',
         previous: legacy,
-        imageUpdates: {},
+        imageUpdates: { portal: digests.portal, calendarAdapter: digests.calendarAdapter },
         packages,
         pluginMarketplace,
         npmArtifactReportBytes,
@@ -358,7 +367,12 @@ describe('system release manifests', () => {
     const legacyPlugin = { ...finalized.pluginMarketplace };
     delete legacyPlugin.contentHash;
     delete legacyPlugin.agentKitVersion;
-    const legacyBase = { ...finalized, schemaVersion: 4, pluginMarketplace: legacyPlugin };
+    const legacyBase = {
+      ...finalized,
+      schemaVersion: 4,
+      images: legacyDigests,
+      pluginMarketplace: legacyPlugin,
+    };
     const {
       manifestChecksum: _checksum,
       copilotPlugin: _copilotPlugin,
@@ -534,7 +548,7 @@ describe('system release manifests', () => {
     ).toThrow(/treeHash/i);
   });
 
-  it('preserves fixed producer-order checksum fixtures for schemas v4, v5, and v6', () => {
+  it('preserves fixed producer-order checksum fixtures for historical schemas v4 through v6', () => {
     const compatibility = Object.fromEntries(
       Object.entries(packages).map(([name, entry]) => [name, [entry.version]]),
     );
@@ -542,7 +556,7 @@ describe('system release manifests', () => {
       releaseId: null,
       gitSha: '1'.repeat(40),
       createdAt: '2026-07-12T00:00:00.000Z',
-      images: digests,
+      images: legacyDigests,
       packages,
     };
     const {
@@ -571,17 +585,18 @@ describe('system release manifests', () => {
       },
       'r77',
     );
+    const current = createCandidateManifest({
+      gitSha: common.gitSha,
+      createdAt: common.createdAt,
+      previous: null,
+      imageUpdates: digests,
+      packages,
+      pluginMarketplace,
+      copilotPlugin,
+      npmArtifactReportBytes,
+    });
     const v6 = finalizeReleaseManifest(
-      createCandidateManifest({
-        gitSha: common.gitSha,
-        createdAt: common.createdAt,
-        previous: null,
-        imageUpdates: digests,
-        packages,
-        pluginMarketplace,
-        copilotPlugin,
-        npmArtifactReportBytes,
-      }),
+      { ...current, schemaVersion: 6, images: legacyDigests },
       'r77',
     );
     expect([v4.manifestChecksum, v5.manifestChecksum, v6.manifestChecksum]).toEqual([

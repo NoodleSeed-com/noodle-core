@@ -2,6 +2,7 @@ import type { CapabilityName } from '@noodle-borg/capabilities';
 import type { RollbackResult } from '@noodle-borg/control-plane/portable';
 import type { ServedArtifact } from '@noodle-borg/protocol';
 import type { OwnerTokenVerifier } from '@noodle-borg/transport-http';
+import { withDeploymentConfiguration } from './registry-deploy-transaction.js';
 import { deploymentOwnerSubject, missingCapabilityErrors } from './registry-helpers.js';
 import { activateInMemory, type RegistryStateView } from './registry-state.js';
 import {
@@ -12,7 +13,7 @@ import {
   tryServedTargetFor,
 } from './registry-targets.js';
 import type { DeployError } from './registry-types.js';
-import type { DeployRecord, TenantAuthConfig, TenantRef } from './store.js';
+import type { ConfigStore, DeployRecord, TenantAuthConfig, TenantRef } from './store.js';
 
 type CompilePersistedRecord = (record: DeployRecord) => Promise<
   | {
@@ -33,13 +34,15 @@ type CustomerAuthConflictGuard = (
  * a successful artifact rollback reselects every knowledge revision the target pinned.
  */
 export async function rollbackWithMappedErrors(input: {
+  readonly configStore: ConfigStore;
+  readonly org: string;
   readonly run: () => Promise<RollbackResult>;
   readonly pairKnowledge: () => Promise<void>;
   readonly isAudienceConflict: (error: unknown) => boolean;
   readonly isDeploymentLocked: (error: unknown) => error is Error;
 }): Promise<RollbackResult> {
   try {
-    const result = await input.run();
+    const result = await withDeploymentConfiguration(input.configStore, input.org, input.run);
     if (result.ok) await input.pairKnowledge();
     return result;
   } catch (error) {

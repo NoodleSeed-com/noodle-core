@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import type { EnvSummary, ProductionEnvironmentChange } from '../store.js';
 import { validateSlug } from '../store.js';
 import {
@@ -28,7 +28,7 @@ function toAnchor(row: EnvAnchorRow): EnvAnchor {
 }
 
 async function appEnvAnchors(
-  pool: Pool,
+  pool: Pool | PoolClient,
   org: string,
   app: string,
 ): Promise<{
@@ -50,7 +50,7 @@ async function appEnvAnchors(
 }
 
 export async function listEnvironmentsRows(
-  pool: Pool,
+  pool: Pool | PoolClient,
   org: string,
   app: string,
   opts: { readonly includeArchived?: boolean },
@@ -70,7 +70,7 @@ export async function listEnvironmentsRows(
 }
 
 export async function getEnvironmentRow(
-  pool: Pool,
+  pool: Pool | PoolClient,
   org: string,
   app: string,
   env: string,

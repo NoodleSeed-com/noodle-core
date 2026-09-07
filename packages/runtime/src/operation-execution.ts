@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from 'node:crypto';
 import type { ExprMap, OperationSignature, ResolvedOperationRef } from '@noodle-borg/compiler';
 import { sanitizeConnectorFailureDetails } from './connector/failure-details.js';
 import { type ConnectorCallHost, isConnectorInvocationError } from './connector/types.js';
@@ -9,6 +10,7 @@ import {
 import { type EvalScope, ExpressionEvalError } from './eval/evaluate.js';
 import type { ExecuteDeps } from './execute.js';
 import { acquireOperationCredential } from './operation-credential.js';
+import { withOperationEvidence } from './operation-evidence.js';
 import { checkSignature, evalExprMap, validateAgainstSchema } from './operation-validation.js';
 import type { PolicyContext, PolicyGate } from './policy/types.js';
 import { samePreparedAction } from './prepared-action-match.js';
@@ -20,7 +22,12 @@ import type {
 } from './result.js';
 import { splitResultMeta } from './result-meta.js';
 import { cloneRoutedOutput } from './routed-output-guard.js';
-import { admitToolDispatch, type ToolDispatchHook } from './tool-dispatch.js';
+import {
+  admitToolDispatch,
+  admittedExecutionSignal,
+  executionCancellation,
+  type ToolDispatchHook,
+} from './tool-dispatch.js';
 
 /**
  * Run one connector operation end to end: resolve the connector, verify the signature has not
@@ -36,7 +43,7 @@ export async function runOperation(
   deps: ExecuteDeps,
   policy: PolicyGate,
   host: ConnectorCallHost,
-  env: Record<string, string>,
+  env: Record<string, unknown>,
   argsPath: string,
   outputPath: string,
   reviewedAction?: PreparedOperationAction,
@@ -189,11 +196,13 @@ async function invokeOperation(
   deps: ExecuteDeps,
   policy: PolicyGate,
   host: ConnectorCallHost,
-  env: Record<string, string>,
+  env: Record<string, unknown>,
   argsPath: string,
   outputPath: string,
   beforeDispatch?: ToolDispatchHook,
 ): Promise<ExecutionResult> {
+  const initialCancellation = executionCancellation(deps.signal, beforeDispatch);
+  if (initialCancellation) return { ok: false, error: initialCancellation };
   const callKey = operationKey(ref);
   if (hostCallStack(host).includes(callKey)) {
     return fail(
@@ -203,6 +212,7 @@ async function invokeOperation(
     );
   }
   hostCallStack(host).push(callKey);
+  let disposeSignal: (() => void) | undefined;
   try {
     const connector = deps.connectors.resolve(ref);
     if (!connector) {
@@ -233,6 +243,8 @@ async function invokeOperation(
       return fail('policy_error', 'policy before hook failed');
     }
     if (!decision.allow) return fail('policy_denied', decision.reason);
+    const cancellation = executionCancellation(deps.signal, beforeDispatch);
+    if (cancellation) return { ok: false, error: cancellation };
 
     const acquired = await acquireOperationCredential(ref, deps, customerRoute);
     if (!acquired.ok) return { ok: false, error: acquired.error };
@@ -247,95 +259,148 @@ async function invokeOperation(
     const admissionError = await admitToolDispatch(beforeDispatch, { toolName });
     if (admissionError !== null) return { ok: false, error: admissionError };
 
-    let output: unknown;
-    try {
-      output = await connector.invoke({
-        operation: ref.operation,
-        args: connectorArgs,
-        env,
-        ...(deps.signal === undefined ? {} : { signal: deps.signal }),
-        credential,
-        ...(ref.credentialBinding === undefined
+    const admitted = admittedExecutionSignal(deps.signal);
+    disposeSignal = admitted.dispose;
+    const execution = operationIdentity(host, deps, toolName, ref, argsPath);
+    const executionBoundMs = connector.executionBoundMs?.(ref.operation);
+    const deadline =
+      executionBoundMs === undefined ? undefined : AbortSignal.timeout(executionBoundMs);
+    const signal =
+      deadline === undefined
+        ? admitted.signal
+        : admitted.signal === undefined
+          ? deadline
+          : AbortSignal.any([deadline, admitted.signal]);
+    return await withOperationEvidence(
+      sig.type === 'action' ? deps.operationEvidence : undefined,
+      {
+        id: execution.id,
+        tool: toolName,
+        operation: ref,
+        arguments: connectorArgs,
+        ...(deps.caller === undefined ? {} : { caller: deps.caller }),
+        ...(deps.executionBinding === undefined
           ? {}
-          : { credentialPresentation: ref.credentialBinding.presentation }),
-        ...(deps.caller !== undefined ? { caller: deps.caller } : {}),
-        ...(customerRoute === undefined ? {} : { route: customerRoute }),
-        host,
-        ...(deps.trace === undefined ? {} : { trace: deps.trace }),
-      });
-    } catch (error) {
-      const hostCall = hostCallErrorSnapshot(error);
-      if (hostCall !== undefined) {
-        return fail(hostCall.code, hostCall.message, hostCall.path);
-      }
-      if (isConnectorInvocationError(error)) {
-        const failureDetails = sanitizeConnectorFailureDetails(error, {
-          includeResponseExcerpt: customerRoute === undefined,
-        });
-        deps.trace?.record({
-          kind: 'connector',
-          connectorId: ref.connectorId,
-          connectorVersion: ref.connectorVersion,
-          operation: ref.operation,
-          ...failureDetails,
-        });
-        // Attribution keeps the sanitized classification (never the excerpt) so analytics can name
-        // the failing connector/operation/stage while the wire result stays generic (#1309).
-        const status = statusClass(failureDetails.status);
-        return fail('connector_error', `connector failed for operation "${ref.operation}"`, {
-          ...(failureDetails.category === undefined ? {} : { reason: failureDetails.category }),
-          connector: {
-            connectorId: ref.connectorId,
-            connectorVersion: ref.connectorVersion,
+          : { executionRevision: deps.executionBinding.revision }),
+        ...(executionBoundMs === undefined ? {} : { executionBoundMs }),
+      },
+      async (reportOutcome) => {
+        let output: unknown;
+        try {
+          if (signal?.aborted)
+            return fail(
+              'execution_cancelled',
+              'Execution deadline elapsed before connector dispatch.',
+            );
+          output = await connector.invoke({
             operation: ref.operation,
-            ...(failureDetails.category === undefined ? {} : { category: failureDetails.category }),
-            ...(status === undefined ? {} : { statusClass: status }),
-            ...(failureDetails.attempts === undefined ? {} : { attempts: failureDetails.attempts }),
-            ...(failureDetails.retryable === undefined
+            execution,
+            reportOutcome,
+            ...(deps.publicAdmission === undefined
               ? {}
-              : { retryable: failureDetails.retryable }),
-          },
-        });
-      }
-      // Normalize connector failures; never surface backend internals or credentials.
-      return fail('connector_error', `connector failed for operation "${ref.operation}"`, {
-        connector: {
-          connectorId: ref.connectorId,
-          connectorVersion: ref.connectorVersion,
-          operation: ref.operation,
-        },
-      });
-    }
+              : { publicAdmission: deps.publicAdmission }),
+            args: connectorArgs,
+            env,
+            ...(signal === undefined ? {} : { signal }),
+            credential,
+            acquireTransportCredential: async () => {
+              const { credentialBinding: _accountBinding, ...transportRef } = ref;
+              const transport = await acquireOperationCredential(transportRef, deps, customerRoute);
+              if (!transport.ok) throw new Error('Independent transport credential unavailable');
+              return transport.credential;
+            },
+            ...(ref.credentialBinding === undefined
+              ? {}
+              : { credentialPresentation: ref.credentialBinding.presentation }),
+            ...(deps.caller !== undefined ? { caller: deps.caller } : {}),
+            ...(customerRoute === undefined ? {} : { route: customerRoute }),
+            host,
+            ...(deps.trace === undefined ? {} : { trace: deps.trace }),
+          });
+        } catch (error) {
+          const hostCall = hostCallErrorSnapshot(error);
+          if (hostCall !== undefined) {
+            return fail(hostCall.code, hostCall.message, hostCall.path);
+          }
+          if (isConnectorInvocationError(error)) {
+            const failureDetails = sanitizeConnectorFailureDetails(error, {
+              includeResponseExcerpt: customerRoute === undefined,
+            });
+            deps.trace?.record({
+              kind: 'connector',
+              connectorId: ref.connectorId,
+              connectorVersion: ref.connectorVersion,
+              operation: ref.operation,
+              ...failureDetails,
+            });
+            // Attribution keeps the sanitized classification (never the excerpt) so analytics can name
+            // the failing connector/operation/stage while the wire result stays generic (#1309).
+            const status = statusClass(failureDetails.status);
+            const reason =
+              failureDetails.status === 401 || failureDetails.status === 403
+                ? 'upstream_authentication_lost'
+                : failureDetails.category;
+            return fail('connector_error', `connector failed for operation "${ref.operation}"`, {
+              ...(reason === undefined ? {} : { reason }),
+              connector: {
+                connectorId: ref.connectorId,
+                connectorVersion: ref.connectorVersion,
+                operation: ref.operation,
+                ...(failureDetails.category === undefined
+                  ? {}
+                  : { category: failureDetails.category }),
+                ...(status === undefined ? {} : { statusClass: status }),
+                ...(failureDetails.attempts === undefined
+                  ? {}
+                  : { attempts: failureDetails.attempts }),
+                ...(failureDetails.retryable === undefined
+                  ? {}
+                  : { retryable: failureDetails.retryable }),
+              },
+            });
+          }
+          // Normalize connector failures; never surface backend internals or credentials.
+          return fail('connector_error', `connector failed for operation "${ref.operation}"`, {
+            connector: {
+              connectorId: ref.connectorId,
+              connectorVersion: ref.connectorVersion,
+              operation: ref.operation,
+            },
+          });
+        }
 
-    if (customerRoute !== undefined) {
-      const cloned = cloneRoutedOutput(output, customerRoute.baseUrl);
-      if (!cloned.ok) {
-        return fail('connector_error', `connector failed for operation "${ref.operation}"`);
-      }
-      output = cloned.value;
-    }
+        if (customerRoute !== undefined) {
+          const cloned = cloneRoutedOutput(output, customerRoute.baseUrl);
+          if (!cloned.ok) {
+            return fail('connector_error', `connector failed for operation "${ref.operation}"`);
+          }
+          output = cloned.value;
+        }
 
-    let redacted: unknown;
-    try {
-      redacted = await policy.after(context, output);
-    } catch {
-      return fail('policy_error', 'policy after hook failed');
-    }
+        let redacted: unknown;
+        try {
+          redacted = await policy.after(context, output);
+        } catch {
+          return fail('policy_error', 'policy after hook failed');
+        }
 
-    // Projection metadata is a reserved runtime envelope, not part of the connector's visible output
-    // contract. Validate the visible value deeply while preserving policy-processed metadata for the
-    // flow/result projection channel.
-    const outputError = validateAgainstSchema(
-      splitResultMeta(redacted).visible,
-      sig.output,
-      outputPath,
-      'output_invalid',
-      'output field',
+        // Projection metadata is a reserved runtime envelope, not part of the connector's visible output
+        // contract. Validate the visible value deeply while preserving policy-processed metadata for the
+        // flow/result projection channel.
+        const outputError = validateAgainstSchema(
+          splitResultMeta(redacted).visible,
+          sig.output,
+          outputPath,
+          'output_invalid',
+          'output field',
+        );
+        if (outputError) return { ok: false, error: outputError };
+
+        return { ok: true, output: redacted };
+      },
     );
-    if (outputError) return { ok: false, error: outputError };
-
-    return { ok: true, output: redacted };
   } finally {
+    disposeSignal?.();
     hostCallStack(host).pop();
   }
 }
@@ -345,12 +410,13 @@ export function createHost(
   toolName: string,
   deps: ExecuteDeps,
   policy: PolicyGate,
-  env: Record<string, string>,
+  env: Record<string, unknown>,
   callStack: string[],
   beforeDispatch?: ToolDispatchHook,
 ): ConnectorCallHost {
-  const host: ConnectorCallHost & { readonly [CALL_STACK]: string[] } = {
+  const host: RuntimeHost = {
     [CALL_STACK]: callStack,
+    [INVOCATION]: { id: deps.invocationId ?? randomUUID(), occurrences: new Map() },
     async callOperation(ref, args, path) {
       const connector = deps.connectors.resolve(ref);
       if (!connector) throw new HostCallError('connector_unavailable', 'connector unavailable');
@@ -392,6 +458,35 @@ export function createHost(
 }
 
 const CALL_STACK = Symbol('noodle.connectorCallStack');
+const INVOCATION = Symbol('noodle.connectorInvocation');
+
+type RuntimeHost = ConnectorCallHost & {
+  readonly [CALL_STACK]: string[];
+  readonly [INVOCATION]: { readonly id: string; readonly occurrences: Map<string, number> };
+};
+
+function operationIdentity(
+  host: ConnectorCallHost,
+  deps: ExecuteDeps,
+  tool: string,
+  ref: ResolvedOperationRef,
+  path: string,
+): Readonly<{ id: string }> {
+  const invocation = (host as RuntimeHost)[INVOCATION];
+  const location = JSON.stringify([hostCallStack(host), path]);
+  const occurrence = invocation.occurrences.get(location) ?? 0;
+  invocation.occurrences.set(location, occurrence + 1);
+  const binding = [
+    invocation.id,
+    deps.tenantId,
+    deps.deploymentId,
+    tool,
+    operationKey(ref),
+    location,
+    occurrence,
+  ];
+  return Object.freeze({ id: createHash('sha256').update(JSON.stringify(binding)).digest('hex') });
+}
 
 function operationKey(ref: ResolvedOperationRef): string {
   return JSON.stringify([ref.connectorId, ref.connectorVersion, ref.operation]);

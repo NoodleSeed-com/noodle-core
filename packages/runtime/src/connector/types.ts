@@ -5,6 +5,7 @@ import type {
 } from '@noodle-borg/compiler';
 import type { DownstreamCredential } from '../broker/types.js';
 import type { CustomerConnectorRoute } from '../customer-routing.js';
+import type { OperationEvidence } from '../operation-evidence.js';
 
 /** Verified caller claims that may be threaded into first-party connector operations. */
 export interface CallerIdentity {
@@ -131,10 +132,16 @@ export interface ConnectorCallHost {
 /** A single connector-operation invocation, fully resolved and credentialed by the runtime. */
 export interface ConnectorCall {
   readonly operation: string;
+  /** Runtime-generated, deployment/step-bound identity. Not a business input or recovery authority. */
+  readonly execution?: Readonly<{ readonly id: string }>;
+  /** Connector/application-classified evidence; never infer completion from a transport status alone. */
+  readonly reportOutcome?: (evidence: OperationEvidence) => void;
+  /** Trusted request attribution for native public writes; never an argument or expression value. */
+  readonly publicAdmission?: { readonly network: string; readonly visitor?: string };
   /** Evaluated, validated arguments. */
   readonly args: Readonly<Record<string, unknown>>;
   /** Managed variables resolved for the deployment scope. */
-  readonly env?: Readonly<Record<string, string>>;
+  readonly env?: Readonly<Record<string, unknown>>;
   /** Request-scoped cancellation; connectors should propagate it to outbound work. */
   readonly signal?: AbortSignal;
   /**
@@ -144,6 +151,8 @@ export interface ConnectorCall {
   readonly credential: DownstreamCredential;
   /** Binding-selected presentation; when present it overrides connector-level legacy auth config. */
   readonly credentialPresentation?: CredentialProfile;
+  /** Lazy deployment credential for an explicitly declared independent transport; called only after egress validation. */
+  readonly acquireTransportCredential?: () => Promise<DownstreamCredential>;
   /** Verified caller claims, when the access mode intentionally exposes them to execution. */
   readonly caller?: CallerIdentity;
   /** Full request-local route supplied only to the connector that needs it. */
@@ -168,6 +177,8 @@ export interface Connector {
   readonly version: string;
   /** The operation's signature, used for signature-drift verification and argument/output checks. */
   signature(operation: string): OperationSignature | undefined;
+  /** Maximum action execution duration owned by this connector; excludes confirmation/model time. */
+  executionBoundMs?(operation: string): number | undefined;
   /** Invoke the operation. May reject; the runtime normalizes the failure (no secret leakage). */
   invoke(call: ConnectorCall): Promise<unknown>;
 }

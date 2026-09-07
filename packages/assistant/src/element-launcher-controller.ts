@@ -69,6 +69,10 @@ export class AssistantElementLauncherController {
     input.placeholder = appearance.labels.launcherPlaceholder;
     input.setAttribute('aria-label', appearance.labels.launcherPlaceholder);
     trigger.setAttribute('aria-label', appearance.labels.open);
+    trigger.setAttribute(
+      'aria-controls',
+      this.#requiresPanel() ? 'assistant-panel' : 'assistant-launcher-form',
+    );
     queryRequired<HTMLButtonElement>(root, '.launcher-send').setAttribute(
       'aria-label',
       appearance.labels.send,
@@ -152,8 +156,19 @@ export class AssistantElementLauncherController {
     }
   }
 
+  #requiresPanel(): boolean {
+    const appearance = this.#appearance();
+    // Introductory content and legal destinations must be visible before the first submission.
+    return (
+      !this.#host.hasAttribute('data-presentation-ready') ||
+      appearance.presentation.launcher.style === 'bubble' ||
+      Boolean(appearance.labels.welcomeHeading || appearance.labels.welcomeMessage) ||
+      Boolean(appearance.privacyUrl || appearance.termsUrl)
+    );
+  }
+
   #handleTrigger = (): void => {
-    if (this.#appearance().presentation.launcher.style === 'bubble') {
+    if (this.#requiresPanel()) {
       this.#openPanel();
       return;
     }

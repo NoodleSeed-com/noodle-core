@@ -308,6 +308,114 @@ describe('tool execution dispatch hook', () => {
     expect(connectorCalls).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    'policy',
+    'credential',
+    'admission',
+    'evidence',
+  ] as const)('prevents late connector effects when the hard deadline expires during %s', async (stage) => {
+    const controller = new AbortController();
+    const entered = deferred();
+    const release = deferred();
+    const pause = async (boundary: typeof stage) => {
+      if (stage === boundary) {
+        entered.resolve();
+        await release.promise;
+      }
+    };
+    const effects = vi.fn();
+    const result = executeTool(
+      compile(),
+      'run',
+      { id: 'A1' },
+      deps(connector(effects), {
+        signal: controller.signal,
+        policy: {
+          before: async () => {
+            await pause('policy');
+            return { allow: true };
+          },
+          after: async (_context, output) => output,
+        },
+        broker: {
+          getCredential: async () => {
+            await pause('credential');
+            return { token: 'service-token' };
+          },
+        },
+        beforeDispatch: async () => {
+          await pause('admission');
+          return { allow: true };
+        },
+        operationEvidence: {
+          begin: async () => {
+            await pause('evidence');
+            return { finish: async () => undefined };
+          },
+        },
+      }),
+    );
+    await entered.promise;
+    controller.abort(new DOMException('Execution deadline elapsed', 'TimeoutError'));
+    release.resolve();
+    await expect(result).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'execution_cancelled' },
+    });
+    expect(effects).not.toHaveBeenCalled();
+  });
+
+  it('keeps client cancellation out of admitted connector transport signals', async () => {
+    const controller = new AbortController();
+    const target: Connector = {
+      id: 'actions',
+      version: '1.0.0',
+      signature: () => signature,
+      invoke: async (call) => {
+        controller.abort();
+        call.signal?.throwIfAborted();
+        return { id: 'A1' };
+      },
+    };
+    await expect(
+      executeTool(
+        compile(),
+        'run',
+        { id: 'A1' },
+        deps(target, {
+          signal: controller.signal,
+        }),
+      ),
+    ).resolves.toEqual({ ok: true, output: { id: 'A1' } });
+  });
+
+  it('propagates a hard deadline to an admitted connector transport', async () => {
+    const controller = new AbortController();
+    const effects = vi.fn();
+    const target: Connector = {
+      id: 'actions',
+      version: '1.0.0',
+      signature: () => signature,
+      invoke: async (call) => {
+        controller.abort(new DOMException('Execution deadline elapsed', 'TimeoutError'));
+        call.signal?.throwIfAborted();
+        effects();
+        return { id: 'A1' };
+      },
+    };
+    await expect(
+      executeTool(
+        compile(),
+        'run',
+        { id: 'A1' },
+        deps(target, {
+          signal: controller.signal,
+        }),
+      ),
+    ).resolves.toMatchObject({ ok: false });
+    expect(effects).not.toHaveBeenCalled();
+  });
+
   it('prevents connector invocation when dispatch is denied or the hook rejects', async () => {
     const connectorCalls = vi.fn();
     const target = connector((call) => {

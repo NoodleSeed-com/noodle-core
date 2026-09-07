@@ -13,11 +13,14 @@ import { deploymentOwnerSubjectSchema } from './control-plane.js';
 
 export * from './access-mode.js';
 export * from './app-purge-reconciliation.js';
+export * from './application-channels.js';
+export * from './application-settings.js';
 export * from './assistant.js';
 export * from './billing-operations.js';
 export * from './billing-org-transfer.js';
 export * from './billing-read.js';
 export * from './business-information.js';
+export * from './business-information-query.js';
 export * from './config.js';
 export * from './control-plane.js';
 export * from './deployment-package.js';
@@ -27,6 +30,7 @@ export * from './knowledge.js';
 export * from './managed-assistant-sponsorship.js';
 export * from './platform-account-reset.js';
 export * from './platform-auth.js';
+export * from './solution-onboarding.js';
 
 // ─── Deploy ─────────────────────────────────────────────────────────────────────
 
@@ -265,3 +269,9 @@ export function formatWireError(error: z.ZodError): string {
   const path = issue.path.map(String).join('.');
   return path === '' ? issue.message : `"${path}": ${issue.message}`;
 }
+
+export * from './application-activity.js';
+export * from './application-connections.js';
+export * from './application-onboarding.js';
+
+export * from './billing-catalog.js';

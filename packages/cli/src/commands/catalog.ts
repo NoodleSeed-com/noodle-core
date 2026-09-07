@@ -1,3 +1,4 @@
+import { CATALOG_SOLUTIONS } from '@noodle-borg/cli-catalog';
 /**
  * The CLI's declarative command catalog: the single source of truth `usage()`, per-command
  * `--help`, `noodle commands --json`, and did-you-mean suggestions all render from. Data lives in
@@ -47,6 +48,7 @@ export const CATALOG: readonly CommandSpec[] = [
   ...CATALOG_HOSTED_OBSERVABILITY,
   POLICY_COMMAND,
   ...CATALOG_HOSTED_DEPLOYMENT,
+  CATALOG_SOLUTIONS,
   ...CATALOG_TENANT_RESOURCES,
   CATALOG_DISTRIBUTIONS,
   ...CATALOG_ACCOUNT,

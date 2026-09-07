@@ -1,3 +1,5 @@
+import type { OrganizationAgreementStore } from './organization-agreements.js';
+
 export type OrgRole = 'owner' | 'developer';
 
 /** The canonical principal bound to a personal workspace must remain that organization's owner. */
@@ -147,7 +149,7 @@ export interface WelcomeEmailRecord {
   readonly lastErrorCode?: 'delivery_failed';
 }
 
-export interface OrganizationStore {
+export interface OrganizationStore extends OrganizationAgreementStore {
   /** Resolve the one active public MCP label for an immutable organization identity. */
   getActiveMcpSubdomain(org: string): Promise<ActiveMcpSubdomainClaim | undefined>;
   /** Resolve an active public MCP label to its immutable organization identity. */

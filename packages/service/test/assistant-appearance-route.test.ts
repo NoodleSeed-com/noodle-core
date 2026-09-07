@@ -43,8 +43,10 @@ let appearance: InMemoryAssistantAppearanceSettingsStore;
 let sessions: InMemoryAssistantStore;
 let artifact: RuntimeArtifact;
 let audit: ReturnType<typeof vi.fn>;
+let businessNotice: { displayName: string; privacyUrl: string; supportUrl: string } | undefined;
 
 beforeEach(async () => {
+  businessNotice = undefined;
   appearance = new InMemoryAssistantAppearanceSettingsStore();
   sessions = new InMemoryAssistantStore();
   artifact = ARTIFACT;
@@ -62,6 +64,10 @@ beforeEach(async () => {
     clock: () => NOW,
     maxBody: 64 * 1024,
     serviceBase: () => base,
+    resolveRuntimeTarget: async (target: import('@noodle-borg/transport-http').ServedTarget) => ({
+      ...target,
+      ...(businessNotice ? { businessNotice } : {}),
+    }),
   } as unknown as AssistantRouteDeps;
 
   http = createServer((req, res) => {
@@ -95,6 +101,40 @@ const reset = (revision: number) =>
   fetch(base, { method: 'DELETE', headers: { 'if-match': `"${revision}"` } });
 
 describe('assistant appearance operator route', () => {
+  it('pins the receiving notice after appearance overrides in the actual authenticated session response', async () => {
+    businessNotice = {
+      displayName: 'Receiving company',
+      privacyUrl: 'https://recipient.example/privacy',
+      supportUrl: 'mailto:help@recipient.example',
+    };
+    await replace(0, {
+      branding: { name: 'Appearance only' },
+      assistant: {
+        privacyUrl: 'https://other.example/privacy',
+        labels: { welcomeMessage: 'Welcome to our service.' },
+      },
+    });
+    const created = await sessions.createClient({
+      name: 'web',
+      tenant: TENANT,
+      deploymentId: 'dep_1',
+      allowedOrigins: ['https://www.acme.test'],
+      now: NOW,
+    });
+    const basic = Buffer.from(`${created.client.id}:${created.secret}`).toString('base64');
+    const response = await fetch(`${base}/session`, {
+      method: 'POST',
+      headers: { authorization: `Basic ${basic}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ origin: 'https://www.acme.test', user: { id: 'customer-1' } }),
+    });
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.configuration.branding.name).toBe(businessNotice.displayName);
+    expect(body.configuration.assistant.privacyUrl).toBe(businessNotice.privacyUrl);
+    expect(body.configuration.assistant.labels.welcomeMessage).toContain(businessNotice.supportUrl);
+    expect(body.configuration.assistant.labels.welcomeMessage).toContain('Welcome to our service.');
+    expect((await sessions.getSession(body.token, NOW))?.configuration).toEqual(body.configuration);
+  });
   it('shows developer intent, Halo fallback, and revision zero before an override exists', async () => {
     const response = await read();
     expect(response.status).toBe(200);

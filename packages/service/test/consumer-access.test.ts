@@ -1,6 +1,8 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { PUBLIC_RECORD_ADMISSION_DEFAULTS } from '@noodle-borg/admission-limits/portable';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { AnonymousConsumerLimiter, createAdmissionGate } from '../src/admission.js';
 import {
   createServiceHandler,
   InMemoryAuditStore,
@@ -132,14 +134,31 @@ describe('consumer access modes (B11)', () => {
     expect(deployed.accessMode).toBe('owner-only');
   });
 
-  it('rate-limits anonymous public tool execution', async () => {
+  it('allows repeated anonymous public tools/call debugging beyond the former hourly cap', async () => {
     const deployed = await deploy('limited-app', 'public');
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 70; i++) {
       expect((await callTool(deployed.url, i)).status).toBe(200);
     }
-    const denied = await callTool(deployed.url, 61);
-    expect(denied.status).toBe(429);
-    expect(await denied.text()).toContain('quota_exceeded');
+  });
+
+  it('keeps the anonymous bound, identity separation, denial audit and hourly recovery', async () => {
+    let now = 0;
+    const gate = createAdmissionGate(new AnonymousConsumerLimiter(() => new Date(now)), audit);
+    const context = {
+      routeId: 'acme/limited-app/prod@1',
+      org: 'acme',
+      app: 'limited-app',
+      env: 'prod',
+      accessMode: 'public' as const,
+      method: 'tools/call',
+      category: 'execute' as const,
+      name: 'greet',
+      remoteAddress: '192.0.2.1',
+    };
+    for (let i = 0; i < PUBLIC_RECORD_ADMISSION_DEFAULTS.networkPerHour; i++) {
+      expect(await gate(context)).toEqual({ allow: true });
+    }
+    expect(await gate(context)).toEqual({ allow: false, reason: 'quota_exceeded', status: 429 });
 
     const [event] = await audit.list({ org: 'acme', eventType: 'tool.call.denied' });
     expect(event).toMatchObject({
@@ -157,6 +176,13 @@ describe('consumer access modes (B11)', () => {
         routeId: 'acme/limited-app/prod@1',
       },
     });
+    expect(await gate({ ...context, subject: 'signed-in' })).toEqual({ allow: true });
+    expect(await gate({ ...context, method: 'tools/list', category: 'discovery' })).toEqual({
+      allow: true,
+    });
+    expect(await gate({ ...context, routeId: 'acme/another-app/prod@1' })).toEqual({ allow: true });
+    now = 60 * 60 * 1000;
+    expect(await gate(context)).toEqual({ allow: true });
   });
 
   it('rejects user-root manifests for public deploys but allows them for mixed', async () => {

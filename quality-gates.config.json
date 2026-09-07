@@ -40,8 +40,8 @@
       {
         "path": "packages/wire-contracts",
         "role": "foundation",
-        "maxSourceLines": 5500,
-        "reason": "Dependency-light shared wire schemas; routes and business authority stay outside."
+        "maxSourceLines": 6500,
+        "reason": "Dependency-light shared wire schemas; routes and business authority stay outside. Founder-approved MVP allowance under ADR 0233."
       },
       {
         "path": "packages/asset-storage",
@@ -82,13 +82,13 @@
       {
         "path": "packages/service",
         "role": "composition",
-        "maxSourceLines": 47000,
-        "reason": "Portable public runtime and control-plane composition; commercial imports remain forbidden.",
+        "maxSourceLines": 65000,
+        "reason": "Portable public runtime and control-plane composition; commercial imports remain forbidden. Founder-approved ADR 0233 amendment (2026-09-07) covers bounded reference capacity, onboarding and conservative recovery safeguards.",
         "modules": [
           {
             "path": "src/routes",
-            "maxSourceLines": 12500,
-            "reason": "Public HTTP transport and portable operator API routes."
+            "maxSourceLines": 14500,
+            "reason": "Public HTTP transport and portable operator API routes. Founder-approved MVP allowance under ADR 0233."
           },
           {
             "path": "src/oauth",
@@ -116,8 +116,8 @@
       {
         "path": "packages/compiler",
         "role": "library",
-        "maxSourceLines": 9000,
-        "reason": "One compiler pipeline with cohesive validation and emission phases."
+        "maxSourceLines": 10000,
+        "reason": "One compiler pipeline with cohesive validation and emission phases. Founder-approved MVP allowance under ADR 0233."
       },
       {
         "path": "packages/authoring",

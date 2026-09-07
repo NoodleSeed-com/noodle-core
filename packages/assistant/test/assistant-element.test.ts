@@ -27,6 +27,7 @@ describe('Noodle assistant element', () => {
     const element = new NoodleAssistantElement();
     element.sessionEndpoint = '/api/assistant/session';
     document.body.append(element);
+    await vi.waitFor(() => expect(element.hasAttribute('data-presentation-ready')).toBe(true));
 
     const launcher = element.shadowRoot?.querySelector<HTMLButtonElement>('.launcher-trigger');
     const launcherForm = element.shadowRoot?.querySelector<HTMLFormElement>('.launcher-form');
@@ -44,7 +45,7 @@ describe('Noodle assistant element', () => {
     launcherForm?.requestSubmit();
     expect(element.hasAttribute('open')).toBe(true);
     expect(launcher?.getAttribute('aria-expanded')).toBe('false');
-    expect(launcher?.getAttribute('aria-busy')).toBe('true');
+    expect(launcher?.getAttribute('aria-busy')).toBe('false');
 
     await vi.waitFor(() => {
       expect(element.hasAttribute('data-presentation-ready')).toBe(true);

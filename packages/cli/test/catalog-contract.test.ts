@@ -58,7 +58,7 @@ describe('catalog-wide typed discovery contract', () => {
   it('requires structured arguments and flags on every active recursive node', () => {
     const nodes = activeNodes();
     expect(CATALOG).toHaveLength(63);
-    expect(nodes).toHaveLength(288);
+    expect(nodes).toHaveLength(323);
     expect(
       nodes
         .map(({ path }) => path)

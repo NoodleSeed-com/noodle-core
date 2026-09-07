@@ -81,10 +81,15 @@ describe.skipIf(!DATABASE_URL)('Postgres MCP confirmation nonce concurrency', ()
 
   it('rejects expired nonces and admits exactly one concurrent live consume', async () => {
     const ledger = new PostgresMcpConfirmationNonceLedger(pool);
-    await expect(ledger.consume('already-expired', Date.now() - 1)).resolves.toBe(false);
+    const clock = await pool.query<{ now_ms: string }>(
+      'SELECT floor(extract(epoch FROM now()) * 1000)::text AS now_ms',
+    );
+    const databaseNow = Number(clock.rows[0]?.now_ms);
+    expect(Number.isSafeInteger(databaseNow)).toBe(true);
+    await expect(ledger.consume('already-expired', databaseNow - 1)).resolves.toBe(false);
 
     const results = await Promise.all(
-      Array.from({ length: 16 }, () => ledger.consume('one-live-nonce', Date.now() + 60_000)),
+      Array.from({ length: 16 }, () => ledger.consume('one-live-nonce', databaseNow + 60_000)),
     );
     expect(results.filter(Boolean)).toHaveLength(1);
   });

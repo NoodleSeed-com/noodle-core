@@ -330,6 +330,11 @@ const httpOperationSchema = z
     /** How to encode a non-GET request mapping. JSON remains the default. */
     requestEncoding: z.enum(['json', 'form-urlencoded']).optional(),
     response: exprMapSchema.optional(),
+    /** Explicit provider evidence mapping; never infer completion from an HTTP status or tool name. */
+    evidence: z
+      .object({ outcome: z.string().min(1), reference: z.string().min(1).optional() })
+      .strict()
+      .optional(),
     /**
      * Per-operation request headers: header name -> a `${...}` expression (over `args`/`env`) or a
      * literal string. Merged over the connector defaults but *below* the `auth` scheme, so a declared
@@ -518,6 +523,23 @@ const connectorIdentity = {
 };
 
 /** An outbound HTTP connector: a declared `http` origin + HTTP operations with `${...}` mapping. */
+const transportAuthSchema = z
+  .object({
+    kind: z.literal('apiKey'),
+    header: z
+      .string()
+      .regex(/^x-[a-z0-9]+(?:-[a-z0-9]+)*$/iu)
+      .refine(
+        (header) =>
+          !/^x-(?:forwarded(?:-|$)|real-ip$|http-method-override$|original-url$|rewrite-url$)/iu.test(
+            header,
+          ),
+        'transport authentication cannot use routing headers',
+      ),
+    secret: secretRefSchema,
+  })
+  .strict();
+
 const httpConnectorDefSchema = z
   .object({
     ...connectorIdentity,
@@ -529,6 +551,7 @@ const httpConnectorDefSchema = z
           .optional(),
         /** Connector-default auth scheme; an operation's own `auth` overrides it. */
         auth: httpAuthSchema.optional(),
+        transportAuth: transportAuthSchema.optional(),
       })
       .strict(),
     operations: z.record(z.string(), httpOperationSchema),

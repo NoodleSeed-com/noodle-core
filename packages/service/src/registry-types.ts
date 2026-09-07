@@ -10,6 +10,7 @@ import type { DelegatedExchangeOptions } from './delegated-token-exchange.js';
 import type { ExternalCredentialExchangeRuntimeOptions } from './external-credential-exchange.js';
 import type { GoogleWorkloadIdentityRuntimeOptions } from './google-workload-identity.js';
 import type { LocalDevtoolsDelegatedExchangeRuntime } from './local-devtools-delegated-exchange.js';
+import type { NativeRecordConnectorFactory } from './native-record-connector.js';
 import type { OAuthStore } from './oauth/store.js';
 import type { StateHandleStoreFactory } from './state-connector-factory.js';
 import type { DeployRecord, SecretEnvelope, TenantAuthConfig } from './store.js';
@@ -109,6 +110,7 @@ export interface AccessUpdateOptions {
 }
 
 export interface ServerRegistryOptions {
+  readonly nativeRecords?: NativeRecordConnectorFactory;
   /** Pure renderer injection used for deployment-bound package construction and failure testing. */
   readonly renderAppPackage?: AppPackageRenderer;
   readonly customerVerifierFactory?: (auth: TenantAuthConfig) => OwnerTokenVerifier;

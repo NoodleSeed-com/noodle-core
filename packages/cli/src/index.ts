@@ -49,6 +49,7 @@ export {
   meilisearch,
   type NoodleManagedModel,
   noodleManaged,
+  noodlePlatform,
   type OpenAICompatibleModel,
   type OpenAICompatibleModelInput,
   openAICompatible,

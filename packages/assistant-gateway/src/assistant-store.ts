@@ -25,6 +25,7 @@ import {
   expireStrandedExecutingInteraction,
   isPrunableInteraction,
   isTerminalInteraction,
+  scrubExecutingInteraction,
   shouldExpireStrandedExecutingInteraction,
   transitionedInteractions,
 } from './assistant-interaction-state.js';
@@ -32,7 +33,7 @@ import type { AssistantRecoverableView } from './assistant-view-availability.js'
 import type { TenantRef } from './tenant-ref.js';
 
 export {
-  ASSISTANT_INTERACTION_EXECUTING_GRACE_MS,
+  ASSISTANT_INTERACTION_EXECUTION_LIMIT_MS,
   ASSISTANT_INTERACTION_OUTCOME_RETENTION_MS,
   type AssistantConfirmationInteractionRecord,
   AssistantInteractionCapacityError,
@@ -745,7 +746,7 @@ export class InMemoryAssistantStore implements AssistantStore {
       return { disposition: 'replay', interaction: cloneInteraction(current) };
     }
     const claimed = executingInteraction(current, input.now);
-    this.#interactions.set(claimed.id, claimed);
+    this.#interactions.set(claimed.id, scrubExecutingInteraction(claimed));
     return { disposition: 'claimed', interaction: cloneInteraction(claimed) };
   }
 

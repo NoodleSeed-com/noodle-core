@@ -72,6 +72,11 @@ describe('sealed MCP request state', () => {
       'request_state_argument_mismatch',
     ],
     ['deployment', { deploymentId: 'dep_other' }, 'request_state_binding_mismatch'],
+    [
+      'execution configuration',
+      { executionRevision: 'new-snapshot' },
+      'request_state_binding_mismatch',
+    ],
     ['server version', { serverVersion: '9.9.9' }, 'request_state_binding_mismatch'],
   ] as const)('fails closed on a wrong %s binding with a safe reason', async (_label, override, reason) => {
     const state = manager();

@@ -8,6 +8,9 @@ export type ExecutionErrorCode =
   | 'unknown_tool'
   | 'unknown_resource'
   | 'unknown_prompt'
+  | 'configuration_required'
+  | 'configuration_invalid'
+  | 'configuration_changed'
   | 'unsupported_fulfilment'
   | 'connector_unavailable'
   | 'connector_route_unavailable'
@@ -96,7 +99,7 @@ export interface ToolContinuation {
   readonly nextStepIndex: number;
   readonly completedSteps: Readonly<Record<string, unknown>>;
   readonly resultMetas: readonly Readonly<Record<string, unknown>>[];
-  readonly env: Readonly<Record<string, string>>;
+  readonly env: Readonly<Record<string, unknown>>;
   readonly pending: ElicitationRequest;
 }
 
@@ -120,7 +123,7 @@ export interface ToolPreparationContinuation {
   readonly nextStepIndex: number;
   readonly completedSteps: Readonly<Record<string, unknown>>;
   readonly elicited: Readonly<Record<string, unknown>>;
-  readonly env: Readonly<Record<string, string>>;
+  readonly env: Readonly<Record<string, unknown>>;
   readonly pending: ElicitationRequest;
 }
 
@@ -130,6 +133,8 @@ export interface ToolPreparationContinuation {
  */
 export interface PreparedToolContinuation {
   readonly kind: 'prepared_confirmation';
+  /** Private hosting snapshot; never projected into a model-visible confirmation. */
+  readonly executionRevision?: string;
   readonly version: 1;
   readonly artifact: ContinuationArtifactIdentity;
   readonly toolName: string;
@@ -137,7 +142,7 @@ export interface PreparedToolContinuation {
   /** First flow step not evaluated during preparation; zero for a single-operation fulfilment. */
   readonly nextStepIndex: number;
   readonly completedSteps: Readonly<Record<string, unknown>>;
-  readonly env: Readonly<Record<string, string>>;
+  readonly env: Readonly<Record<string, unknown>>;
   /** Exact first connector invocation approved by the user; absent for a pure flow. */
   readonly reviewedAction?: PreparedOperationAction;
 }

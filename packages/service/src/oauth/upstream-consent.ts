@@ -96,6 +96,7 @@ export async function renderUpstreamConsent(input: {
     .send(
       renderConsentPage({
         clientName: client?.client_name ?? pending.clientId,
+        portal: (await input.store.getClientPurpose(pending.clientId)) === 'portal',
         resourceHost: hostOf(pending.resource),
         redirectHost: hostOf(pending.redirectUri),
         userEmail: input.identity.email,

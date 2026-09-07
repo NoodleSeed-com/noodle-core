@@ -13,7 +13,12 @@ import {
 } from './client.js';
 import { renderConversationError } from './element-error-recovery.js';
 import { AssistantElementEventController } from './element-event-controller.js';
-import { appendLegalLinks, assistantElementMarkup, queryRequired } from './element-helpers.js';
+import {
+  appendConversationStatus,
+  appendLegalLinks,
+  assistantElementMarkup,
+  queryRequired,
+} from './element-helpers.js';
 import { AssistantElementHostEnvironmentController } from './element-host-environment-controller.js';
 import { AssistantElementLauncherController } from './element-launcher-controller.js';
 import { AssistantElementModalController, MODAL_ATTRIBUTES } from './element-modal-controller.js';
@@ -265,7 +270,7 @@ export class NoodleAssistantElement extends HTMLElementBase {
     this.#conversationGeneration += 1;
     this.#client?.abort();
     this.#setBusy(false);
-    this.#appendStatus(this.#appearance.labels.stopped);
+    appendConversationStatus(this.#messages, this.#appearance.labels.stopped);
     this.dispatchEvent(new CustomEvent('assistant-stopped'));
   }
 
@@ -483,6 +488,7 @@ export class NoodleAssistantElement extends HTMLElementBase {
       this.removeAttribute('data-public-configuration-loading');
       this.#presentationGate.reveal();
       this.#setSessionState('ready');
+      this.#launcher.sync();
       this.#messages?.querySelector('.conversation-error')?.remove();
       this.#webmcp.start(this.#client);
     }
@@ -589,15 +595,6 @@ export class NoodleAssistantElement extends HTMLElementBase {
     return body;
   }
 
-  #appendStatus(text: string): void {
-    if (!this.#messages) return;
-    const status = document.createElement('p');
-    status.className = 'conversation-status';
-    status.setAttribute('role', 'status');
-    status.textContent = text;
-    this.#messages.append(status);
-  }
-
   #scrollToBottom(): void {
     this.#scroll.scrollToBottom();
   }
@@ -670,6 +667,7 @@ export class NoodleAssistantElement extends HTMLElementBase {
     this.toggleAttribute('data-public-configuration-loading', loading);
     if (loading) this.#presentationGate.syncOpenState();
     else this.#presentationGate.reveal();
+    if (!loading) this.#launcher.sync();
   }
 
   #setSessionState(state: AssistantSessionVisualState): void {

@@ -87,10 +87,16 @@ describe('HttpConnector', () => {
       baseUrl: '${env.STORE_ORIGIN}',
       allowedOrigins: ['${env.ALLOWED_STORE_ORIGIN}'],
     });
-    const call = (env: Record<string, string>) =>
+    const call = (env: Record<string, unknown>) =>
       c.invoke({ operation: 'get_post', args: { post_id: '1' }, credential, env });
 
     await expect(call({ STORE_ORIGIN: baseUrl })).rejects.toThrow(/managed variable/i);
+    await expect(call({ STORE_ORIGIN: [baseUrl], ALLOWED_STORE_ORIGIN: baseUrl })).rejects.toThrow(
+      /managed variable/i,
+    );
+    await expect(call({ STORE_ORIGIN: baseUrl, ALLOWED_STORE_ORIGIN: true })).rejects.toThrow(
+      /managed variable/i,
+    );
     await expect(
       call({ STORE_ORIGIN: baseUrl, ALLOWED_STORE_ORIGIN: `${baseUrl}/products` }),
     ).rejects.toThrow(/canonical.*origin/i);

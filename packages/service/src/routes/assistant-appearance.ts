@@ -11,6 +11,7 @@ import { sendForbidden } from '../http-util.js';
 import type { TenantRef } from '../store.js';
 import type { AssistantRouteDeps } from './assistant.js';
 import { now } from './assistant-route-http.js';
+import { activeAssistantTarget } from './assistant-session-target.js';
 import { authorizeControlPlane } from './control-plane.js';
 
 export async function handleAssistantAppearance(
@@ -64,7 +65,7 @@ export async function handleAssistantAppearance(
       currentRevision: updated.currentRevision,
     });
   }
-  const target = await deps.registry.getActiveByTenant(tenant);
+  const target = await activeAssistantTarget({ registry: deps.registry }, tenant);
   await deps.audit.emit({
     eventType:
       updated.record.override === undefined
@@ -93,7 +94,7 @@ async function respond(
   knownRecord?: AssistantAppearanceSettingsRecord,
   knownTarget?: Awaited<ReturnType<AssistantRouteDeps['registry']['getActiveByTenant']>>,
 ): Promise<void> {
-  const target = knownTarget ?? (await deps.registry.getActiveByTenant(tenant));
+  const target = knownTarget ?? (await activeAssistantTarget({ registry: deps.registry }, tenant));
   const developer = target && assistantBrowserConfiguration(target.served.artifact.server);
   const record = knownRecord ?? (await deps.appearance?.get(tenant));
   const resolution = resolveAssistantAppearanceConfiguration(developer, record?.override);

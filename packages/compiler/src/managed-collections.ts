@@ -1,7 +1,15 @@
 import { canonicalJson, sha256Canonical } from '@noodle-borg/app-package';
 import { z } from 'zod';
-import type { ArtifactManagedCollection, JsonSchema } from './artifact/types.js';
+import type { ArtifactManagedCollection, JsonSchema, OperationRef } from './artifact/types.js';
+import { computeSignatureHash } from './catalog/signature.js';
+import type { ConnectorCatalog, OperationSignature } from './catalog/types.js';
 import type { CompileError } from './errors.js';
+import { computeConnectionConfigRevision, type DeclaredConnectorRef } from './fulfilment-emit.js';
+import {
+  managedCollectionControlFields,
+  projectManagedCollectionControls,
+  validateManagedCollectionControls,
+} from './managed-collection-controls.js';
 
 export const MAX_MANAGED_COLLECTIONS = 16;
 export const MAX_MANAGED_COLLECTION_NAME_LENGTH = 64;
@@ -22,6 +30,12 @@ const collectionNameSchema = z
   );
 
 const jsonSchemaSchema = z.record(z.string(), z.unknown());
+const sourceSchema = z
+  .object({
+    connector: collectionNameSchema,
+    scan: collectionNameSchema,
+  })
+  .strict();
 
 export const managedCollectionManifestSchema = z
   .object({
@@ -30,6 +44,12 @@ export const managedCollectionManifestSchema = z
     description: z.string().trim().min(1).max(MAX_MANAGED_COLLECTION_DESCRIPTION_LENGTH),
     schemaVersion: z.number().int().positive().max(MAX_MANAGED_COLLECTION_SCHEMA_VERSION),
     recordSchema: jsonSchemaSchema,
+    behavior: z
+      .object({ kind: z.literal('request') })
+      .strict()
+      .optional(),
+    source: sourceSchema.optional(),
+    ...managedCollectionControlFields,
   })
   .strict();
 
@@ -63,6 +83,10 @@ export function compileManagedCollections(
   collections: readonly ManagedCollectionManifest[],
   toolNames: readonly string[],
   errors: CompileError[],
+  options: {
+    readonly catalog?: ConnectorCatalog;
+    readonly declared?: Readonly<Record<string, DeclaredConnectorRef>>;
+  } = {},
 ): readonly ArtifactManagedCollection[] {
   const compiled: ArtifactManagedCollection[] = [];
   const seen = new Set<string>();
@@ -91,8 +115,17 @@ export function compileManagedCollections(
 
     const schemaErrorsBefore = errors.length;
     validateRecordSchema(collection.recordSchema, `${path}.recordSchema`, errors);
+    validateManagedCollectionControls(
+      projectManagedCollectionControls(collection),
+      collection.recordSchema,
+      collection.source !== undefined,
+      path,
+      errors,
+    );
     if (errors.length !== schemaErrorsBefore) return;
 
+    const source = compileCollectionSource(collection, path, errors, options);
+    if (collection.source !== undefined && source === undefined) return;
     compiled.push({
       name: collection.name,
       title: collection.title,
@@ -100,10 +133,250 @@ export function compileManagedCollections(
       schemaVersion: collection.schemaVersion,
       schemaDigest: sha256Canonical(collection.recordSchema),
       recordSchema: collection.recordSchema,
+      ...projectManagedCollectionControls(collection),
+      ...(collection.behavior === undefined ? {} : { behavior: collection.behavior }),
+      source: source ?? { authority: 'native' },
     });
   });
 
   return compiled;
+}
+
+function compileCollectionSource(
+  collection: ManagedCollectionManifest,
+  path: string,
+  errors: CompileError[],
+  options: {
+    readonly catalog?: ConnectorCatalog;
+    readonly declared?: Readonly<Record<string, DeclaredConnectorRef>>;
+  },
+): ArtifactManagedCollection['source'] | undefined {
+  if (collection.source === undefined) return { authority: 'native' };
+  const declared = options.declared?.[collection.source.connector];
+  if (declared === undefined) {
+    sourceError(
+      errors,
+      `${path}.source.connector`,
+      `connector alias "${collection.source.connector}" is not declared`,
+    );
+    return undefined;
+  }
+  if (declared.binding === undefined) {
+    sourceError(
+      errors,
+      `${path}.source.connector`,
+      'external collection sources require an operator-bound connector',
+    );
+    return undefined;
+  }
+
+  const connector = options.catalog?.get(declared.id, declared.version);
+  if (options.catalog !== undefined && connector === undefined) {
+    sourceError(
+      errors,
+      `${path}.source.connector`,
+      `connector "${declared.id}" version "${declared.version}" is not in the catalog`,
+    );
+    return undefined;
+  }
+  const scan = resolveSourceOperation({
+    alias: collection.source.connector,
+    name: collection.source.scan,
+    connector,
+    declared,
+    recordSchema: collection.recordSchema,
+    path: `${path}.source.scan`,
+    errors,
+  });
+  if (scan === undefined) return undefined;
+  return {
+    authority: 'external',
+    connectorAlias: collection.source.connector,
+    connectorId: declared.id,
+    connectorVersion: declared.version,
+    scan,
+  };
+}
+
+function resolveSourceOperation(input: {
+  alias: string;
+  name: string;
+  connector: ReturnType<ConnectorCatalog['get']>;
+  declared: DeclaredConnectorRef;
+  recordSchema: JsonSchema;
+  path: string;
+  errors: CompileError[];
+}): OperationRef | undefined {
+  if (input.connector === undefined) {
+    return { resolved: false, connector: input.alias, operation: input.name };
+  }
+  const operation = input.connector.operations[input.name];
+  if (operation === undefined) {
+    sourceError(
+      input.errors,
+      input.path,
+      `operation "${input.name}" does not exist on connector "${input.connector.id}"`,
+    );
+    return undefined;
+  }
+  if (operation.type !== 'read') {
+    sourceError(
+      input.errors,
+      input.path,
+      `source operation "${input.name}" must be classified as read`,
+    );
+    return undefined;
+  }
+  const contractError = validateScanSignature(operation, input.recordSchema);
+  if (contractError !== undefined) {
+    sourceError(input.errors, input.path, contractError);
+    return undefined;
+  }
+  const binding = input.declared.binding;
+  const credentialPresentation =
+    binding === undefined ? undefined : input.connector.credentialProfiles?.[binding.profile];
+  if (binding === undefined || credentialPresentation === undefined) {
+    sourceError(
+      input.errors,
+      input.path,
+      `source operation "${input.name}" requires a valid bound credential profile`,
+    );
+    return undefined;
+  }
+  const credentialRequirement = input.connector.operationCredentials?.[input.name];
+  if (
+    credentialRequirement !== undefined &&
+    !credentialRequirement.profiles.includes(binding.profile)
+  ) {
+    sourceError(
+      input.errors,
+      input.path,
+      `source operation "${input.name}" does not permit credential profile "${binding.profile}"`,
+    );
+    return undefined;
+  }
+  return {
+    resolved: true,
+    alias: input.alias,
+    connectorId: input.declared.id,
+    connectorVersion: input.declared.version,
+    operation: input.name,
+    signatureHash: computeSignatureHash(input.name, operation),
+    credentialBinding: {
+      bindingId: input.alias,
+      connectionId: binding.connection.id,
+      connectionConfigRevision: computeConnectionConfigRevision(binding.connection),
+      profile: binding.profile,
+      presentation: credentialPresentation,
+      requiredScopes: [...(credentialRequirement?.scopes ?? [])],
+      ...(credentialRequirement?.audience === undefined
+        ? {}
+        : { requiredAudience: credentialRequirement.audience }),
+    },
+  };
+}
+
+function validateScanSignature(
+  operation: OperationSignature,
+  recordSchema: JsonSchema,
+): string | undefined {
+  const input = operation.input;
+  if (!isClosedObjectWithKeys(input, ['mode', 'cursor', 'checkpoint', 'limit'])) {
+    return 'scan input must be a closed object containing only mode, cursor, checkpoint and limit';
+  }
+  const inputProperties = input.properties as Record<string, JsonSchema>;
+  if (
+    !hasTypes(inputProperties, {
+      mode: 'string',
+      cursor: 'string',
+      checkpoint: 'string',
+      limit: 'integer',
+    })
+  ) {
+    return 'scan input fields do not match the normalized source contract';
+  }
+  if (!sameStrings(input.required, ['mode', 'limit']))
+    return 'scan input must require mode and limit only';
+  const modeEnum = inputProperties.mode?.enum;
+  if (!sameStrings(modeEnum, ['snapshot', 'changes']))
+    return 'scan mode must allow snapshot and changes';
+
+  const output = operation.output;
+  if (
+    !isClosedObjectWithKeys(output, [
+      'records',
+      'deletedIds',
+      'nextCursor',
+      'checkpoint',
+      'complete',
+      'resetRequired',
+    ])
+  ) {
+    return 'scan output must match the normalized source page envelope';
+  }
+  if (!sameStrings(output.required, ['records', 'deletedIds', 'complete'])) {
+    return 'scan output must require records, deletedIds and complete only';
+  }
+  const properties = output.properties as Record<string, JsonSchema>;
+  if (
+    !hasTypes(properties, {
+      records: 'array',
+      deletedIds: 'array',
+      nextCursor: 'string',
+      checkpoint: 'string',
+      complete: 'boolean',
+      resetRequired: 'boolean',
+    })
+  ) {
+    return 'scan output fields do not match the normalized source page contract';
+  }
+  const item = properties.records?.items;
+  if (!isRecord(item) || !isClosedObjectWithKeys(item, ['id', 'version', 'record'])) {
+    return 'scan records must contain closed id, optional version and record objects';
+  }
+  if (!sameStrings(item.required, ['id', 'record']))
+    return 'scan records must require id and record only';
+  const itemProperties = item.properties as Record<string, JsonSchema>;
+  if (itemProperties.id?.type !== 'string' || itemProperties.version?.type !== 'string') {
+    return 'scan record id and version must be strings';
+  }
+  if (sha256Canonical(itemProperties.record) !== sha256Canonical(recordSchema)) {
+    return 'scan record schema must exactly match the managed collection record schema';
+  }
+  const deletedItems = properties.deletedIds?.items;
+  if (!isRecord(deletedItems) || deletedItems.type !== 'string')
+    return 'deletedIds must be an array of strings';
+  return undefined;
+}
+
+function isClosedObjectWithKeys(value: unknown, keys: readonly string[]): value is JsonSchema {
+  if (
+    !isRecord(value) ||
+    value.type !== 'object' ||
+    value.additionalProperties !== false ||
+    !isRecord(value.properties)
+  )
+    return false;
+  return sameStrings(Object.keys(value.properties), keys);
+}
+
+function hasTypes(
+  properties: Record<string, JsonSchema>,
+  expected: Readonly<Record<string, string>>,
+): boolean {
+  return Object.entries(expected).every(([key, type]) => properties[key]?.type === type);
+}
+
+function sameStrings(value: unknown, expected: readonly string[]): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every((entry) => typeof entry === 'string') &&
+    [...value].sort().join('\u0000') === [...expected].sort().join('\u0000')
+  );
+}
+
+function sourceError(errors: CompileError[], path: string, message: string): void {
+  errors.push({ code: 'invalid_managed_collection_source', path, message });
 }
 
 function validateRecordSchema(schema: JsonSchema, path: string, errors: CompileError[]): void {

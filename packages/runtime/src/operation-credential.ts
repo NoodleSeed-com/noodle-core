@@ -23,6 +23,13 @@ export async function acquireOperationCredential(
       connectorVersion: ref.connectorVersion,
       operation: ref.operation,
       ...(ref.credentialBinding ?? {}),
+      ...(ref.credentialBinding?.connectionId === undefined ||
+      deps.executionBinding?.connections[ref.credentialBinding.connectionId] === undefined
+        ? {}
+        : {
+            expectedConnectionGeneration:
+              deps.executionBinding.connections[ref.credentialBinding.connectionId],
+          }),
       ...(deps.tenantId !== undefined ? { tenantId: deps.tenantId } : {}),
       ...(deps.deploymentId !== undefined ? { deploymentId: deps.deploymentId } : {}),
       ...(deps.caller !== undefined ? { caller: deps.caller } : {}),

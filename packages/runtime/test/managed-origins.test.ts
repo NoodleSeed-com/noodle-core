@@ -30,6 +30,83 @@ widgets:
 `;
 
 describe('managed exact origins', () => {
+  function declared(defaultOrigin?: string) {
+    const result = compile(
+      manifest.replace(
+        '  assistant:',
+        `  variables:\n    - name: STORE_ORIGIN\n      schemaVersion: 1\n      valueSchema: { type: string, maxLength: 256 }\n      portal: { label: Website origin }\n      requiredFor: []\n${defaultOrigin ? `      default: ${defaultOrigin}\n` : ''}  assistant:`,
+      ),
+    );
+    if (!result.ok) throw new Error(JSON.stringify(result.errors));
+    return result.artifact;
+  }
+
+  it('decodes typed operator values and re-resolves the unchanged declaration', () => {
+    const artifact = declared();
+    const first = resolveManagedOrigins(artifact, { STORE_ORIGIN: '"https://first.example"' });
+    const second = resolveManagedOrigins(artifact, { STORE_ORIGIN: '"https://second.example"' });
+    expect(first.ok && first.artifact.server.assistant?.allowedOrigins).toEqual([
+      'https://first.example',
+    ]);
+    expect(second.ok && second.artifact.server.assistant?.allowedOrigins).toEqual([
+      'https://second.example',
+    ]);
+    expect(artifact.server.assistant?.allowedOrigins).toEqual(['${env.STORE_ORIGIN}']);
+  });
+
+  it('uses typed defaults and allows partial portal setup only when explicitly selected', () => {
+    const withDefault = resolveManagedOrigins(declared('https://default.example'), {});
+    expect(withDefault.ok && withDefault.artifact.server.assistant?.allowedOrigins).toEqual([
+      'https://default.example',
+    ]);
+    const artifact = declared();
+    expect(resolveManagedOrigins(artifact, {}).ok).toBe(false);
+    const partial = resolveManagedOrigins(artifact, {}, { allowUnconfiguredPortal: true });
+    expect(partial.ok).toBe(true);
+    if (!partial.ok) return;
+    expect(partial.artifact.server.assistant?.allowedOrigins).toEqual([]);
+    expect(partial.artifact.server.assistant?.surfaces?.[0]?.origins).toEqual([]);
+    expect(partial.artifact.server.handoff?.allowedDomains).toEqual([]);
+    expect(JSON.stringify(partial.artifact.resources)).not.toContain('${env.STORE_ORIGIN}');
+  });
+
+  it('never makes invalid values or undeclared origins optional', () => {
+    expect(
+      resolveManagedOrigins(
+        declared(),
+        { STORE_ORIGIN: '"https://bad.example/path"' },
+        { allowUnconfiguredPortal: true },
+      ).ok,
+    ).toBe(false);
+    const result = compile(manifest);
+    if (!result.ok) throw new Error(JSON.stringify(result.errors));
+    expect(resolveManagedOrigins(result.artifact, {}, { allowUnconfiguredPortal: true }).ok).toBe(
+      false,
+    );
+  });
+
+  it('refuses operator settings that give two surfaces the same origin', () => {
+    const artifact = declared();
+    const assistant = artifact.server.assistant;
+    if (!assistant) throw new Error('missing fixture assistant');
+    const overlapping = {
+      ...artifact,
+      server: {
+        ...artifact.server,
+        assistant: {
+          ...assistant,
+          surfaces: [
+            ...(assistant.surfaces ?? []),
+            { mode: 'authenticated' as const, origins: ['https://same.example'] },
+          ],
+        },
+      },
+    };
+    expect(resolveManagedOrigins(overlapping, { STORE_ORIGIN: '"https://same.example"' }).ok).toBe(
+      false,
+    );
+  });
+
   it('compiles reusable intent and resolves every runtime authority projection', () => {
     const compiled = compile(manifest);
     expect(compiled.ok).toBe(true);

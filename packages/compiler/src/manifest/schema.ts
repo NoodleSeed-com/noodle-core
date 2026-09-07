@@ -1,6 +1,10 @@
 import { knowledgeComponentManifestSchema } from '@noodle-borg/knowledge/portable';
 import { z } from 'zod';
 import {
+  MAX_VARIABLE_DECLARATIONS,
+  variableDeclarationManifestSchema,
+} from '../business-variables.js';
+import {
   MAX_MANAGED_COLLECTIONS,
   managedCollectionManifestSchema,
 } from '../managed-collections.js';
@@ -466,6 +470,7 @@ const serverSchema = z.object({
 });
 
 const serverV2Schema = serverSchema.extend({
+  variables: z.array(variableDeclarationManifestSchema).max(MAX_VARIABLE_DECLARATIONS).optional(),
   auth: serverAuthV2Schema.optional(),
   agentGuide: agentGuideSchema.optional(),
   /** Customer-owned knowledge components (ADR 0202): Core v2 only. */

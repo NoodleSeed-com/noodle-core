@@ -6,6 +6,7 @@ import { LegacyBillingMigrationClientPreviewResponseSchema } from '@noodle-borg/
 import type { ConfigLocation } from '../config.js';
 import { resolveControlPlaneToken, serviceJson } from '../control-plane.js';
 import { runBillingMigrationApply } from './billing-apply-ops.js';
+import { runBillingCatalog } from './billing-catalog-ops.js';
 import { runBillingEnforcement } from './billing-enforcement-ops.js';
 import { runBillingMetering } from './billing-metering-ops.js';
 import { mappingFileFailure, readMappingRequest } from './billing-migration-files.js';
@@ -28,6 +29,7 @@ export async function runBilling(
   home: ConfigLocation,
 ): Promise<number> {
   const json = rest.includes('--json');
+  if (rest[0] === 'catalog') return runBillingCatalog(rest.slice(1), env, home);
   if (rest[0] === 'accounts') return runBillingAccounts(rest.slice(1), env, home);
   if (rest[0] === 'org' && rest[1] === 'transfer') {
     return runBillingOrganizationTransfer('customer', rest.slice(2), env, home);

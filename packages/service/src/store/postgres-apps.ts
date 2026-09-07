@@ -1,5 +1,6 @@
 import type { NamedDeploymentActivationHook } from '@noodle-borg/module';
 import type { Pool } from 'pg';
+import { pausePostgresInstallations } from '../business-information/postgres-application-lifecycle.js';
 import {
   assertCustomerAuthRestorePrecondition,
   translateCustomerAuthAudienceDatabaseError,
@@ -147,6 +148,10 @@ export async function archiveAppRows(
        WHERE org_slug = $1 AND app_slug = $2 AND archived_at IS NULL`,
       [safeOrg, safeApp, at],
     );
+    const business = await client.query<{ present: boolean }>(
+      `SELECT to_regclass('business_solution_installations') IS NOT NULL AS present`,
+    );
+    if (business.rows[0]?.present) await pausePostgresInstallations(client, safeOrg, safeApp, at);
     const archivedDeployments = rowCount ?? 0;
     if (archivedDeployments > 0) {
       await client.query('COMMIT');
@@ -280,6 +285,17 @@ export async function sweepArchivedAppRows(
          RETURNING *`,
         [candidate.org_slug, candidate.slug],
       );
+      const business = await client.query<{ present: boolean }>(
+        `SELECT to_regclass('business_solution_installations') IS NOT NULL AS present`,
+      );
+      if (business.rows[0]?.present)
+        await pausePostgresInstallations(
+          client,
+          candidate.org_slug,
+          candidate.slug,
+          new Date().toISOString(),
+          true,
+        );
       deleted.push(...removed.rows.map(rowToRecord));
       await client.query('DELETE FROM apps WHERE org_slug = $1 AND slug = $2', [
         candidate.org_slug,

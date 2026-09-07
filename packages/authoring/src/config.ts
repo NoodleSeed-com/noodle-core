@@ -11,8 +11,56 @@ export interface ConfigRef {
   toString(): string;
 }
 
-export function variable(name: string): ConfigRef {
-  return makeConfigRef('variable', name);
+export interface VariableOptions<Schema extends z.ZodType> {
+  readonly schema: Schema;
+  readonly default?: z.output<Schema>;
+  readonly portal?: { readonly label: string; readonly help?: string; readonly group?: string };
+  readonly requiredFor?: readonly string[];
+}
+
+export interface DeclaredVariableRef extends ConfigRef {
+  readonly kind: 'variable';
+  readonly declaration: VariableDeclarationManifest;
+}
+
+export function variable(name: string): ConfigRef;
+export function variable<Schema extends z.ZodType>(
+  name: string,
+  options: VariableOptions<Schema>,
+): DeclaredVariableRef;
+export function variable(
+  name: string,
+  options?: VariableOptions<z.ZodType>,
+): ConfigRef | DeclaredVariableRef {
+  const ref = makeConfigRef('variable', name);
+  if (options === undefined) return ref;
+  const declaration: VariableDeclarationManifest = {
+    name,
+    schemaVersion: 1,
+    valueSchema: toJsonSchema(options.schema, 'output', true),
+    ...(Object.hasOwn(options, 'default') ? { default: options.default } : {}),
+    ...(options.portal === undefined ? {} : { portal: { ...options.portal } }),
+    requiredFor: [...new Set(options.requiredFor ?? [])].sort(),
+  };
+  const errors = validateVariableDeclaration(declaration);
+  if (errors.length > 0)
+    throw new Error(
+      `variable("${name}") ${errors.map((error) => `${error.path}: ${error.message}`).join('; ')}`,
+    );
+  return { ...ref, kind: 'variable', declaration: structuredClone(declaration) };
+}
+
+export function manifestVariables(refs: readonly DeclaredVariableRef[] | undefined): {
+  variables?: VariableDeclarationManifest[];
+} {
+  if (refs === undefined || refs.length === 0) return {};
+  return {
+    variables: refs.map((ref) => {
+      if (!isConfigRef(ref) || ref.kind !== 'variable' || ref.declaration === undefined)
+        throw new Error('server.variables requires typed variable declarations');
+      return structuredClone(ref.declaration);
+    }),
+  };
 }
 
 export function secret(name: string): ConfigRef {
@@ -56,3 +104,10 @@ function makeConfigRef(kind: ConfigRefKind, name: string): ConfigRef {
     },
   };
 }
+
+import {
+  type VariableDeclarationManifest,
+  validateVariableDeclaration,
+} from '@noodle-borg/compiler';
+import type { z } from 'zod';
+import { toJsonSchema } from './json-schema.js';

@@ -9,6 +9,7 @@ import {
   type ConnectorCall,
   ConnectorInvocationError,
   type DownstreamCredential,
+  type OperationEvidence,
 } from '@noodle-borg/runtime';
 import {
   customerRouteUnavailable,
@@ -84,6 +85,9 @@ export interface HttpOperationFake {
  * declared output fields.
  */
 export interface HttpOperation {
+  readonly evidence?: (json: unknown) => OperationEvidence;
+  /** Compiler-derived requirement for mappings that consume the trusted operation identity. */
+  readonly requiresExecution?: boolean;
   readonly method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   readonly path: string;
   readonly query?: readonly string[];
@@ -93,7 +97,8 @@ export interface HttpOperation {
   /** Build a JSON request body from already-evaluated, validated args. Ignored for `GET`. */
   readonly body?: (
     args: Readonly<Record<string, unknown>>,
-    env: Readonly<Record<string, string>>,
+    env: Readonly<Record<string, unknown>>,
+    execution?: ConnectorCall['execution'],
   ) => unknown;
   /** Encode the evaluated body as JSON (default) or a WHATWG URLSearchParams form body. */
   readonly requestEncoding?: HttpRequestEncoding;
@@ -106,7 +111,8 @@ export interface HttpOperation {
    */
   readonly headers?: (
     args: Readonly<Record<string, unknown>>,
-    env: Readonly<Record<string, string>>,
+    env: Readonly<Record<string, unknown>>,
+    execution?: ConnectorCall['execution'],
   ) => Record<string, string>;
   readonly mapResponse?: (
     json: unknown,
@@ -142,6 +148,8 @@ export interface HttpConnectorConfig {
   readonly headers?: Readonly<Record<string, string>>;
   /** Connector-default auth scheme (an operation's own `auth` overrides this). */
   readonly auth?: HttpAuthScheme;
+  /** Independent deployment API key; account credentials still use their bound presentation. */
+  readonly transportAuth?: { readonly kind: 'apiKey'; readonly header: string };
   /**
    * Legacy escape hatch: map the broker credential to arbitrary auth headers. Used only when no
    * declarative `auth` scheme resolves for the operation. Omitted for public, no-auth APIs.
@@ -209,9 +217,19 @@ export class HttpConnector implements Connector {
     return this.#config.operations[operation]?.signature;
   }
 
+  executionBoundMs(operation: string): number | undefined {
+    const op = this.#config.operations[operation];
+    // Actions never use automatic retry; read retries do not create durable effect evidence.
+    return op?.signature.type === 'action'
+      ? (op.resilience?.timeoutMs ?? this.#config.timeoutMs ?? 10_000)
+      : undefined;
+  }
+
   async invoke(call: ConnectorCall): Promise<unknown> {
     const op = this.#config.operations[call.operation];
     if (!op) throw new Error(`connector "${this.id}" has no operation "${call.operation}"`);
+    if (op.requiresExecution && !call.execution?.id)
+      throw new Error('Trusted operation identity unavailable');
 
     const configuredBase = this.#config.baseUrl;
     const customerBase = this.#customerBase
@@ -226,6 +244,7 @@ export class HttpConnector implements Connector {
         op.pagination === undefined
           ? this.#fakeJson(call.operation, op)
           : await this.#fakePaginatedJson(call.operation, op, call.args);
+      if (op.evidence) call.reportOutcome?.(op.evidence(json));
       return this.#mapOutput(op, json, call.args);
     }
 
@@ -242,18 +261,23 @@ export class HttpConnector implements Connector {
       const method = op.method ?? 'GET';
       const payload = requestPayload(
         op.requestEncoding,
-        method !== 'GET' && op.body !== undefined ? () => op.body?.(call.args, env) : undefined,
+        method !== 'GET' && op.body !== undefined
+          ? () => op.body?.(call.args, env, call.execution)
+          : undefined,
       );
 
+      const transportHeaders = await this.#transportHeaders(call);
       const headers: Record<string, string> = {
         accept:
           op.responseType === 'text' ? 'text/plain, text/*;q=0.9, */*;q=0.8' : 'application/json',
         'user-agent': 'noodle-borg/0.0',
         ...this.#config.headers,
         // Per-operation dynamic headers sit below the auth scheme, so a declared `auth` block always wins.
-        ...(op.headers !== undefined ? op.headers(call.args, env) : {}),
+        ...(op.headers !== undefined ? op.headers(call.args, env, call.execution) : {}),
         ...this.#authHeaders(op, call.credential, call.credentialPresentation),
       };
+      for (const [name, value] of Object.entries(transportHeaders))
+        setOwnedHeader(headers, name, value);
       if (payload !== undefined) {
         setOwnedHeader(
           headers,
@@ -271,17 +295,43 @@ export class HttpConnector implements Connector {
       const init: RequestInit = {
         method,
         headers,
+        ...(call.signal === undefined ? {} : { signal: call.signal }),
         ...(payload !== undefined ? { body: payload } : {}),
       };
       const json =
         op.pagination === undefined
           ? await this.#fetchJsonWithResilience(url, op, init)
           : await this.#fetchPaginatedJson(op, call.args, base, init, customerBase, allowed);
+      if (op.evidence) call.reportOutcome?.(op.evidence(json));
       return this.#mapOutput(op, json, call.args);
     } catch (error) {
       if (customerBase !== undefined) throw sanitizedCustomerRouteError(error);
       throw error;
     }
+  }
+
+  async #transportHeaders(call: ConnectorCall): Promise<Record<string, string>> {
+    const transport = this.#config.transportAuth;
+    if (transport === undefined) return {};
+    const header = transport.header.toLowerCase();
+    const account = call.credentialPresentation;
+    if (
+      !/^x-[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(header) ||
+      account === undefined ||
+      (account.kind === 'apiKey' && account.header.toLowerCase() === header) ||
+      call.acquireTransportCredential === undefined
+    ) {
+      throw new Error('Independent transport authentication is not configured safely');
+    }
+    const credential = await call.acquireTransportCredential();
+    if (
+      credential.kind === 'cookie' ||
+      credential.token.length < 1 ||
+      credential.token.length > 4096 ||
+      /[\r\n]/u.test(credential.token)
+    )
+      throw new Error('Independent transport requires a valid bounded token credential');
+    return { [header]: credential.token };
   }
 
   #mapOutput(op: HttpOperation, json: unknown, args: Readonly<Record<string, unknown>>): unknown {
@@ -340,7 +390,7 @@ export class HttpConnector implements Connector {
     return url;
   }
 
-  #resolveAllowedOrigins(env: Readonly<Record<string, string>>): ReadonlySet<string> {
+  #resolveAllowedOrigins(env: Readonly<Record<string, unknown>>): ReadonlySet<string> {
     return new Set(
       this.#allowedOrigins.map((configured) => {
         const resolved = resolveConfigString(configured, env);

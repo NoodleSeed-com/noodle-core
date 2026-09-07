@@ -194,7 +194,7 @@ describe('customer endpoint artifact contract', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    expect(result.artifact.artifactSchemaVersion).toBe('0.17.0');
+    expect(result.artifact.artifactSchemaVersion).toBe('0.19.0');
     expect(result.artifact.customerEndpoints).toEqual({
       customer_api: suffixPolicy,
     });

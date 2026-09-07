@@ -1,4 +1,9 @@
-import type { CompileError, RuntimeArtifact } from '@noodle-borg/compiler';
+import type {
+  ArtifactVariableDeclaration,
+  CompileError,
+  RuntimeArtifact,
+} from '@noodle-borg/compiler';
+import { resolveVariableEnvironment } from './business-variables.js';
 
 const MANAGED_ORIGIN = /^\$\{env\.([A-Za-z0-9_]+)\}$/;
 
@@ -14,12 +19,13 @@ export type ManagedOriginResolutionResult =
 /** Bind operator-owned exact origins into every runtime authority and host projection. */
 export function resolveManagedOrigins(
   artifact: RuntimeArtifact,
-  variables: Readonly<Record<string, string>>,
+  variables: Readonly<Record<string, unknown>>,
+  options: { readonly allowUnconfiguredPortal?: boolean } = {},
 ): ManagedOriginResolutionResult {
   const errors: ManagedOriginError[] = [];
   const replacements = new Map<string, string>();
   const resolveList = (values: readonly string[], path: string, allowLoopback: boolean): string[] =>
-    values.map((value, index) =>
+    values.flatMap((value, index) =>
       resolveManagedOrigin(
         value,
         variables,
@@ -27,6 +33,10 @@ export function resolveManagedOrigins(
         allowLoopback,
         replacements,
         errors,
+        artifact.server.variables?.find(
+          (declaration) => declaration.name === MANAGED_ORIGIN.exec(value)?.[1],
+        ),
+        options.allowUnconfiguredPortal === true,
       ),
     );
 
@@ -62,6 +72,21 @@ export function resolveManagedOrigins(
           ...handoff,
           allowedDomains: resolveList(handoff.allowedDomains, 'handoff.allowedDomains', false),
         };
+  const owners = new Map<string, number>();
+  resolvedAssistant?.surfaces?.forEach((surface, index) => {
+    for (const origin of surface.origins) {
+      const prior = owners.get(origin);
+      if (prior !== undefined && prior !== index)
+        errors.push({
+          code: 'invalid_shape',
+          path: `server.assistant.surfaces.${index}.origins`,
+          variableName: '',
+          reason: 'invalid',
+          message: 'Assistant surfaces must have distinct configured origins.',
+        });
+      owners.set(origin, index);
+    }
+  });
   if (errors.length > 0) return { ok: false, errors };
 
   return {
@@ -86,16 +111,24 @@ export function resolveManagedOrigins(
 
 function resolveManagedOrigin(
   value: string,
-  variables: Readonly<Record<string, string>>,
+  variables: Readonly<Record<string, unknown>>,
   path: string,
   allowLoopback: boolean,
   replacements: Map<string, string>,
   errors: ManagedOriginError[],
-): string {
+  declaration: ArtifactVariableDeclaration | undefined,
+  allowUnconfiguredPortal: boolean,
+): string | readonly [] {
   const match = MANAGED_ORIGIN.exec(value);
   if (match?.[1] === undefined) return value;
-  const resolved = variables[match[1]];
-  if (resolved === undefined) {
+  const decoded =
+    declaration === undefined ? undefined : resolveVariableEnvironment([declaration], variables);
+  const resolved = decoded?.ok ? decoded.env[match[1]] : variables[match[1]];
+  if (resolved === undefined && decoded?.ok !== false) {
+    if (allowUnconfiguredPortal && declaration?.portal !== undefined) {
+      replacements.set(value, '');
+      return [];
+    }
     errors.push({
       code: 'invalid_shape',
       variableName: match[1],
@@ -105,7 +138,11 @@ function resolveManagedOrigin(
     });
     return value;
   }
-  if (!isCanonicalOrigin(resolved, allowLoopback)) {
+  if (
+    decoded?.ok === false ||
+    typeof resolved !== 'string' ||
+    !isCanonicalOrigin(resolved, allowLoopback)
+  ) {
     errors.push({
       code: 'invalid_shape',
       variableName: match[1],
@@ -138,7 +175,12 @@ function isCanonicalOrigin(value: string, allowLoopback: boolean): boolean {
 
 function replaceValue(value: unknown, replacements: ReadonlyMap<string, string>): unknown {
   if (typeof value === 'string') return replaceStrings(value, replacements);
-  if (Array.isArray(value)) return value.map((item) => replaceValue(item, replacements));
+  if (Array.isArray(value))
+    return value.flatMap((item) =>
+      typeof item === 'string' && replacements.get(item) === ''
+        ? []
+        : [replaceValue(item, replacements)],
+    );
   if (value !== null && typeof value === 'object') {
     return Object.fromEntries(
       Object.entries(value).map(([key, item]) => [key, replaceValue(item, replacements)]),

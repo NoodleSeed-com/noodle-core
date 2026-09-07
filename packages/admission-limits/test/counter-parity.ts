@@ -13,6 +13,25 @@ import {
 export function describeCounterStore(makeStore: () => Promise<DailyCounterStore>): void {
   const day = new Date('2030-03-04T09:00:00Z');
 
+  it('uses distinct UTC minute, hour and day rows and reports the minute reset', async () => {
+    const store = await makeStore();
+    const key = `minute-${Math.random()}`;
+    expect(await store.consume({ key, limit: 1, window: 'minute' }, day)).toMatchObject({
+      allowed: true,
+    });
+    expect(await store.consume({ key, limit: 1, window: 'minute' }, day)).toMatchObject({
+      allowed: false,
+      resetAt: new Date('2030-03-04T09:01:00Z'),
+    });
+    expect(await store.consume({ key, limit: 1, window: 'hour' }, day)).toMatchObject({
+      allowed: true,
+    });
+    expect(await store.consume({ key, limit: 1 }, day)).toMatchObject({ allowed: true });
+    expect(
+      await store.consume({ key, limit: 1, window: 'minute' }, new Date('2030-03-04T09:01:00Z')),
+    ).toMatchObject({ allowed: true });
+  });
+
   it('consumes up to the limit and then denies', async () => {
     const store = await makeStore();
     const key = `k-${Math.random()}`;
@@ -218,5 +237,96 @@ export function describeAtomicCounterStore(
 
     expect(outcomes.filter(Boolean)).toHaveLength(5);
     await expect(store.peek(fleet, day)).resolves.toBe(5);
+  });
+
+  it('spends an equal logical attempt once and conflicts on changed content', async () => {
+    const store = await makeStore();
+    const surface = `surface-${Math.random()}`;
+    const attempt = { key: `attempt-${Math.random()}`, fingerprint: 'a'.repeat(64) };
+    const requests = [{ key: surface, limit: 10 }] as const;
+
+    await expect(store.consumeAllOnce(requests, attempt, day)).resolves.toEqual({
+      kind: 'consumed',
+    });
+    await expect(store.consumeAllOnce(requests, attempt, day)).resolves.toEqual({
+      kind: 'replayed',
+    });
+    await expect(
+      store.consumeAllOnce(requests, { ...attempt, fingerprint: 'b'.repeat(64) }, day),
+    ).resolves.toEqual({ kind: 'conflict' });
+    await expect(store.peek(surface, day)).resolves.toBe(1);
+  });
+
+  it('serializes concurrent equal logical attempts without duplicate spend', async () => {
+    const store = await makeStore();
+    const surface = `surface-${Math.random()}`;
+    const attempt = { key: `attempt-${Math.random()}`, fingerprint: 'c'.repeat(64) };
+    const outcomes = await Promise.all(
+      Array.from({ length: 12 }, () =>
+        store.consumeAllOnce([{ key: surface, limit: 20 }], attempt, day),
+      ),
+    );
+
+    expect(outcomes.filter((outcome) => outcome.kind === 'consumed')).toHaveLength(1);
+    expect(outcomes.filter((outcome) => outcome.kind === 'replayed')).toHaveLength(11);
+    await expect(store.peek(surface, day)).resolves.toBe(1);
+  });
+
+  it('does not retain retry evidence or partially spend when a batch refuses', async () => {
+    const store = await makeStore();
+    const account = `account-${Math.random()}`;
+    const fleet = `fleet-${Math.random()}`;
+    const attempt = { key: `attempt-${Math.random()}`, fingerprint: 'd'.repeat(64) };
+    await store.consume({ key: fleet, limit: 1 }, day);
+
+    await expect(
+      store.consumeAllOnce(
+        [
+          { key: account, limit: 1 },
+          { key: fleet, limit: 1 },
+        ],
+        attempt,
+        day,
+      ),
+    ).resolves.toMatchObject({ kind: 'refused', exhausted: [{ key: fleet, limit: 1 }] });
+    await expect(store.peek(account, day)).resolves.toBe(0);
+
+    const nextDay = new Date('2030-03-05T09:00:00Z');
+    await expect(
+      store.consumeAllOnce(
+        [
+          { key: account, limit: 1 },
+          { key: fleet, limit: 1 },
+        ],
+        attempt,
+        nextDay,
+      ),
+    ).resolves.toEqual({ kind: 'consumed' });
+  });
+
+  it('reports every exhausted window without spending available allowances', async () => {
+    const store = await makeStore();
+    const prefix = `all-windows-${Math.random()}`;
+    await store.consume({ key: `${prefix}-minute`, limit: 1, window: 'minute' }, day);
+    await store.consume({ key: `${prefix}-hour`, limit: 1, window: 'hour' }, day);
+    const outcome = await store.consumeAllOnce(
+      [
+        { key: `${prefix}-minute`, limit: 1, window: 'minute' },
+        { key: `${prefix}-hour`, limit: 1, window: 'hour' },
+        { key: `${prefix}-day`, limit: 10 },
+      ],
+      { key: `${prefix}-attempt`, fingerprint: 'a'.repeat(64) },
+      day,
+    );
+    expect(outcome.kind).toBe('refused');
+    if (outcome.kind !== 'refused') return;
+    expect(outcome.exhausted).toEqual(
+      expect.arrayContaining([
+        { key: `${prefix}-minute`, limit: 1, resetAt: new Date('2030-03-04T09:01:00Z') },
+        { key: `${prefix}-hour`, limit: 1, resetAt: new Date('2030-03-04T10:00:00Z') },
+      ]),
+    );
+    expect(outcome.exhausted).toHaveLength(2);
+    expect(await store.peek(`${prefix}-day`, day)).toBe(0);
   });
 }

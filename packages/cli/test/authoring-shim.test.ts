@@ -55,6 +55,7 @@ describe('@noodleseed/one deploy-time shim (ADR 0150)', () => {
       'managedSecret',
       'meilisearch',
       'noodleManaged',
+      'noodlePlatform',
       'openAICompatible',
       'prompt',
       'publicWebsite',

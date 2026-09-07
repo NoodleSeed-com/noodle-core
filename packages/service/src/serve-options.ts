@@ -6,6 +6,7 @@ import type {
 } from '@noodle-borg/control-plane/portable';
 import type { WrappingMasterKey } from '@noodle-borg/runtime';
 import type { ModuleImporter, ModuleInput } from '@noodle-borg/service-modules';
+import type { ApplicationConnectionsOptions } from './application-connections.js';
 import type { ExternalCredentialExchangeRuntimeOptions } from './external-credential-exchange.js';
 import type { LocalDevtoolsDelegatedCredentialSink } from './local-devtools-delegated-credentials.js';
 import type { LocalDevtoolsDelegatedExchangeRuntime } from './local-devtools-delegated-exchange.js';
@@ -16,6 +17,15 @@ import type { PostgresPool } from './store/cloudsql-pool.js';
 import type { ArtifactStore, TenantBridgeAuthConfig } from './store.js';
 
 export type ServeServiceOptions = ServiceOptions & {
+  /** Stable HMAC identity key; falls back to the existing business-source key or local master key. */
+  readonly operationEvidenceIdentityKey?: string;
+  /** Shared restore fence. Rotate before reopening a restored database to invalidate old confirmations. */
+  readonly operationEvidenceEpoch?: string;
+  /** Host registration for operator-consented accounts; storage follows the service persistence profile. */
+  readonly applicationConnections?: Pick<
+    ApplicationConnectionsOptions,
+    'providers' | 'portalOrigins' | 'credentialEpoch' | 'guardedFetch' | 'now'
+  >;
   readonly port?: number;
   readonly host?: string;
   /**
@@ -74,6 +84,8 @@ export type ServeServiceOptions = ServiceOptions & {
    * `wrappingMasterKey` is supplied — the service refuses to boot without a custodian (fail closed).
    */
   readonly secretMasterKey?: string;
+  /** Stable secret used only to pseudonymize external source record identities. */
+  readonly businessInformationSourceIdentityKey?: string;
   /**
    * Injected wrapping-key custodian for managed hosts. Takes precedence over `secretMasterKey`; vendor
    * construction and credentials remain outside the portable public service.

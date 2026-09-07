@@ -73,7 +73,13 @@ export function emitCatalogArtifactSurfaces({
   errors,
 }: CatalogArtifactEmissionInput): CatalogArtifactEmissionResult {
   const declared: Record<string, DeclaredConnectorRef> = manifest.connectors ?? {};
-  const usedAliases = new Set<string>();
+  const usedAliases = new Set<string>(
+    manifest.manifestVersion === '2'
+      ? (manifest.server.collections ?? []).flatMap((collection) =>
+          collection.source === undefined ? [] : [collection.source.connector],
+        )
+      : [],
+  );
   const customerRouting =
     catalog === undefined ? undefined : new CustomerRoutingCollector(manifest.server.auth, errors);
   const artifactAmbientContext = emitAmbientContext(

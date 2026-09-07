@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import type { BusinessNoticeInput } from './business-notice.js';
 import type {
   BusinessGrantStore,
   BusinessInformationStore,
@@ -6,15 +7,21 @@ import type {
   PayloadCipher,
   SolutionInstallationStore,
 } from './contracts.js';
+import { getBusinessNoticeRow, setBusinessNoticeRow } from './postgres-business-notice.js';
 import {
   PostgresInstallationStore,
   type PostgresInstallationStoreOptions,
 } from './postgres-installations.js';
+import { PostgresBusinessInvitations } from './postgres-invitations.js';
 import {
   PostgresManagedRequestStore,
   type PostgresManagedRequestStoreOptions,
 } from './postgres-requests.js';
 import { ensureBusinessInformationSchema } from './postgres-schema.js';
+import {
+  BusinessPrincipalAuthority,
+  type BusinessPrincipalProvider,
+} from './principal-authority.js';
 
 export interface PostgresBusinessInformationStoreOptions
   extends PostgresInstallationStoreOptions,
@@ -22,8 +29,10 @@ export interface PostgresBusinessInformationStoreOptions
 
 /** Hosted authoritative adapter. Construction fails closed unless a payload cipher is supplied. */
 export class PostgresBusinessInformationStore implements BusinessInformationStore {
+  readonly #principals = new BusinessPrincipalAuthority();
   readonly #pool: Pool;
   readonly #installations: PostgresInstallationStore;
+  readonly #invitations: PostgresBusinessInvitations;
   readonly #requests: PostgresManagedRequestStore;
 
   constructor(
@@ -40,11 +49,43 @@ export class PostgresBusinessInformationStore implements BusinessInformationStor
     }
     this.#pool = pool;
     this.#installations = new PostgresInstallationStore(pool, options);
-    this.#requests = new PostgresManagedRequestStore(pool, cipher, this.#installations, options);
+    this.#invitations = new PostgresBusinessInvitations(pool, options);
+    this.#requests = new PostgresManagedRequestStore(
+      pool,
+      cipher,
+      this.#installations,
+      options,
+      this.#principals,
+    );
+  }
+
+  configurePrincipalAuthority(provider: BusinessPrincipalProvider | undefined): void {
+    this.#principals.configure(provider);
+  }
+
+  async listEligibleAssignees(scope: Parameters<BusinessGrantStore['listGrants']>[0]) {
+    return this.#principals.eligible(await this.listGrants(scope));
   }
 
   ensureSchema(): Promise<void> {
     return ensureBusinessInformationSchema(this.#pool);
+  }
+
+  getBusinessNotice(scope: Parameters<BusinessInformationStore['getBusinessNotice']>[0]) {
+    return getBusinessNoticeRow(this.#pool, scope);
+  }
+  setBusinessNotice(input: BusinessNoticeInput) {
+    return setBusinessNoticeRow(this.#pool, input);
+  }
+
+  bindApplication(
+    scope: Parameters<SolutionInstallationStore['bindApplication']>[0],
+    generation: string,
+  ) {
+    return this.#installations.bindApplication(scope, generation);
+  }
+  pauseApplication(org: string, app: string, at: string, retired = false) {
+    return this.#installations.pauseApplication(org, app, at, retired);
   }
 
   createInstallation(
@@ -76,6 +117,18 @@ export class PostgresBusinessInformationStore implements BusinessInformationStor
     return this.#installations.listInstallations(org);
   }
 
+  listInstallationsForSubject(
+    subject: string,
+  ): ReturnType<SolutionInstallationStore['listInstallationsForSubject']> {
+    return this.#installations.listInstallationsForSubject(subject);
+  }
+
+  setIntakeState(
+    input: Parameters<SolutionInstallationStore['setIntakeState']>[0],
+  ): ReturnType<SolutionInstallationStore['setIntakeState']> {
+    return this.#installations.setIntakeState(input);
+  }
+
   getGrant(
     scope: Parameters<BusinessGrantStore['getGrant']>[0],
     subject: string,
@@ -101,10 +154,40 @@ export class PostgresBusinessInformationStore implements BusinessInformationStor
     return this.#installations.revokeGrant(input);
   }
 
+  createInvitation(
+    input: Parameters<BusinessGrantStore['createInvitation']>[0],
+  ): ReturnType<BusinessGrantStore['createInvitation']> {
+    return this.#invitations.create(input);
+  }
+
+  listInvitations(
+    scope: Parameters<BusinessGrantStore['listInvitations']>[0],
+  ): ReturnType<BusinessGrantStore['listInvitations']> {
+    return this.#invitations.list(scope);
+  }
+
+  revokeInvitation(
+    input: Parameters<BusinessGrantStore['revokeInvitation']>[0],
+  ): ReturnType<BusinessGrantStore['revokeInvitation']> {
+    return this.#invitations.revoke(input);
+  }
+
+  claimInvitation(
+    input: Parameters<BusinessGrantStore['claimInvitation']>[0],
+  ): ReturnType<BusinessGrantStore['claimInvitation']> {
+    return this.#invitations.claim(input);
+  }
+
   createRequest(
     input: Parameters<ManagedRequestStore['createRequest']>[0],
   ): ReturnType<ManagedRequestStore['createRequest']> {
     return this.#requests.createRequest(input);
+  }
+
+  probeRequest(
+    input: Parameters<ManagedRequestStore['probeRequest']>[0],
+  ): ReturnType<ManagedRequestStore['probeRequest']> {
+    return this.#requests.probeRequest(input);
   }
 
   getRequest(
@@ -123,6 +206,12 @@ export class PostgresBusinessInformationStore implements BusinessInformationStor
     input: Parameters<ManagedRequestStore['mutateRequest']>[0],
   ): ReturnType<ManagedRequestStore['mutateRequest']> {
     return this.#requests.mutateRequest(input);
+  }
+
+  migrateLegacyRequest(
+    input: Parameters<ManagedRequestStore['migrateLegacyRequest']>[0],
+  ): ReturnType<ManagedRequestStore['migrateLegacyRequest']> {
+    return this.#requests.migrateLegacyRequest(input);
   }
 
   deleteRequest(
@@ -147,5 +236,9 @@ export class PostgresBusinessInformationStore implements BusinessInformationStor
     input: Parameters<ManagedRequestStore['purgeExpired']>[0],
   ): ReturnType<ManagedRequestStore['purgeExpired']> {
     return this.#requests.purgeExpired(input);
+  }
+
+  listAcceptedSchemaInventory(): ReturnType<ManagedRequestStore['listAcceptedSchemaInventory']> {
+    return this.#requests.listAcceptedSchemaInventory();
   }
 }

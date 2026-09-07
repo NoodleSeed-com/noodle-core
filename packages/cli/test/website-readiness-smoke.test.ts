@@ -176,4 +176,25 @@ describe('website readiness smoke', () => {
       ),
     ).rejects.toThrow('website readiness check failed');
   });
+
+  it('requires configured assistant lead capture when the release selected it', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      Response.json({
+        status: 'ready',
+        analytics: 'configured',
+        acquisition: 'configured',
+        marketingPhase: 'hosting',
+        leadCapture: 'unconfigured',
+        assistantLeadCapture: 'unconfigured',
+      }),
+    );
+    await expect(
+      checkWebsiteReadiness(
+        'https://website.test',
+        { expectedMarketingPhase: 'hosting', expectedAssistantLeadCapture: 'configured' },
+        fetchImpl,
+      ),
+    ).rejects.toThrow('website readiness check failed');
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
 });

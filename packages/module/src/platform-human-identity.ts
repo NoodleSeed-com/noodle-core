@@ -122,5 +122,10 @@ export interface PlatformHumanIdentityContribution {
     transaction: ModuleSqlTransaction,
     input: { readonly oldTokenHash: string; readonly clientId: string },
   ) => Promise<'continue' | 'unknown' | 'suspended'>;
+  /** Check a business assignee under the caller's borrowed transaction and suspension lock. */
+  readonly assertActivePrincipal?: (
+    transaction: ModuleSqlTransaction,
+    subject: string,
+  ) => Promise<void>;
   readonly continuityProbe?: () => void | Promise<void>;
 }

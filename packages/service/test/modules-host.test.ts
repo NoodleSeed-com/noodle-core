@@ -35,6 +35,26 @@ function context(method = 'tools/call'): AdmissionContext {
 }
 
 describe('ModuleHost', () => {
+  it('projects one optional live Activity allowance authority and rejects ambiguous providers', async () => {
+    const resolveActivityHistoryAllowance = vi.fn(async (_org: string) => ({
+      maximumDays: 7,
+      defaultDays: 7,
+      revision: 'verified-v1',
+    }));
+    expect(new ModuleHost().resolveActivityHistoryAllowance).toBeUndefined();
+    const contribution = { resolveActivityHistoryAllowance };
+    const host = new ModuleHost({ modules: [loaded('billing', contribution)] });
+    expect(await host.resolveActivityHistoryAllowance?.('acme')).toEqual({
+      maximumDays: 7,
+      defaultDays: 7,
+      revision: 'verified-v1',
+    });
+    expect(resolveActivityHistoryAllowance).toHaveBeenCalledWith('acme');
+    expect(
+      () => new ModuleHost({ modules: [loaded('one', contribution), loaded('two', contribution)] }),
+    ).toThrow('multiple module resolveActivityHistoryAllowance');
+  });
+
   it('orders admission hooks by order and then module position before the host gate', async () => {
     const calls: string[] = [];
     const host = new ModuleHost({

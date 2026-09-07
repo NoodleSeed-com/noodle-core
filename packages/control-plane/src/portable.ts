@@ -61,6 +61,16 @@ export {
   resolveMcpSubdomainTenant,
 } from './mcp-subdomain-claims.js';
 export {
+  type AcceptOrganizationAgreementInput,
+  type AgreementDocument,
+  type AgreementDocuments,
+  agreementDocumentDigest,
+  type OrganizationAgreementAcceptance,
+  OrganizationAgreementError,
+  type OrganizationAgreementStore,
+  validateAgreementDocuments,
+} from './organization-agreements.js';
+export {
   domainFromEmail,
   domainKey,
   memberKey,

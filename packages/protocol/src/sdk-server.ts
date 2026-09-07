@@ -31,6 +31,8 @@ export interface ServedArtifact {
 
 export interface ProtocolRequestContext {
   readonly caller?: CallerIdentity;
+  /** Internal hosting attribution, never MCP payload metadata or caller-visible context. */
+  readonly publicAdmission?: NonNullable<ExecuteDeps['publicAdmission']>;
   /** Origin-wide readiness for the complete OAuth client-credentials lifecycle. */
   readonly oauthClientCredentialsReady?: boolean;
   /** Request-host-specific widget metadata projection; never persisted into the served artifact. */

@@ -164,5 +164,5 @@ export const ASSISTANT_ELEMENT_STYLES = `<style>
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; } .messages { scroll-behavior: auto; } .message.assistant.streaming .markdown::after { animation: none; } }
   @media (forced-colors: active) { .message.thinking > span { color: CanvasText; background: none; } }
   @media (hover: none) { .message-copy { opacity: 1; } }
-  @media (max-width: 560px) { :host([data-mode="floating"]:not([open])) { bottom: 20px; } :host([open]:not([mobile-fullscreen])) .panel { width: calc(100vw - 40px); max-height: calc(100dvh - 40px); } }
+  @media (max-width: 560px) { :host([data-mode="floating"]:not([open])) { bottom: 20px; } :host([data-mode="floating"]:not([open]):not([launcher-expanded])) .launcher { width: var(--ns-assistant-collapsed-launcher-width, var(--_ns-assistant-launcher-collapsed-width, max-content)); } :host([data-mode="floating"]:not([open]):not([launcher-expanded])) .launcher-label { display: var(--ns-assistant-collapsed-launcher-label-display, block); } :host([open]:not([mobile-fullscreen])) .panel { width: calc(100vw - 40px); max-height: calc(100dvh - 40px); } }
 </style>`;

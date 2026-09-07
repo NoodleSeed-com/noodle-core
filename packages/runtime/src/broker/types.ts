@@ -105,6 +105,8 @@ export interface CredentialRequest {
   readonly bindingId?: string;
   readonly connectionId?: string;
   readonly connectionConfigRevision?: string;
+  /** Original operator account generation from trusted hosting state, never caller input. */
+  readonly expectedConnectionGeneration?: string;
   readonly profile?: string;
   readonly presentation?: CredentialProfile;
   readonly requiredScopes?: readonly string[];

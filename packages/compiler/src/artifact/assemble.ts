@@ -35,6 +35,7 @@ interface ArtifactAssemblyInput {
   readonly customerEndpoints: RuntimeArtifact['customerEndpoints'];
   readonly knowledge?: RuntimeArtifact['server']['knowledge'];
   readonly managedCollections?: RuntimeArtifact['server']['managedCollections'];
+  readonly variables?: RuntimeArtifact['server']['variables'];
 }
 
 export function assembleRuntimeArtifact({
@@ -53,6 +54,7 @@ export function assembleRuntimeArtifact({
   customerEndpoints,
   knowledge,
   managedCollections,
+  variables,
 }: ArtifactAssemblyInput): RuntimeArtifact {
   // 4. Assemble the artifact. `resources`/`prompts` and their capability lists are emitted only when
   // present, keeping a tools-only artifact byte-identical to before this slice.
@@ -104,6 +106,7 @@ export function assembleRuntimeArtifact({
         : {}),
       ...(manifest.server.auth !== undefined ? { auth: manifest.server.auth } : {}),
       ...(knowledge !== undefined && knowledge.length > 0 ? { knowledge } : {}),
+      ...(variables !== undefined && variables.length > 0 ? { variables } : {}),
       ...(managedCollections !== undefined && managedCollections.length > 0
         ? { managedCollections }
         : {}),

@@ -38,21 +38,23 @@ export async function resolveAssistantSessionTarget<Target extends AssistantSess
   if (!target) return undefined;
   const assistant = target.served.artifact.server.assistant;
   const bound = session.boundSurface ?? deriveLegacyBinding(assistant, session);
-  if (bound === 'pre-surfaces') return target;
+  if (bound === 'pre-surfaces') {
+    return assistant?.allowedOrigins.includes(session.origin) ? target : undefined;
+  }
   // Fail closed: an origin no surface owns must never widen to the whole server.
   if (bound === 'unowned') return undefined;
   // Fail closed on a vanished surface. A rollback to an artifact without the bound surface must end the
   // session's reach, never hand it the unprojected server.
   if (bound === 'authenticated') {
     const surface = authenticatedSurfaceOf(assistant);
-    if (surface === undefined) return undefined;
+    if (surface === undefined || !surface.origins.includes(session.origin)) return undefined;
     // An omitted allowlist on an authenticated surface is the authored whole-server intent, so the
     // exact binding still holds (instructions, budgets, attribution) without narrowing capabilities.
     if (surface.capabilities === undefined) return target;
     return projected(target, surface.capabilities);
   }
   const surface = publicSurfaceOf(assistant);
-  if (surface === undefined) return undefined;
+  if (surface === undefined || !surface.origins.includes(session.origin)) return undefined;
   return projected(target, surface.capabilities);
 }
 

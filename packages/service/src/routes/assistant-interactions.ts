@@ -14,6 +14,7 @@ import {
   assistantToolContinuation,
   assistantViewAvailableData,
   auditAssistantInteraction,
+  boundedAssistantExecution,
   recoverableAssistantView,
   withAssistantSessionExecutionAuthority,
 } from '@noodle-borg/assistant-gateway/portable';
@@ -116,7 +117,7 @@ async function handleResolution(
     return sendJson(res, 409, { error: 'interaction is invalid or expired' });
   }
   if (response.value.action !== 'accept') {
-    return resolveStop(res, deps, session, interaction, response.value.action, suggestions);
+    return resolveStop(req, res, deps, session, interaction, response.value.action, suggestions);
   }
   if (interaction.kind === 'confirmation' && response.value.content !== undefined) {
     return sendJson(res, 400, { error: 'confirmation content cannot replace reviewed arguments' });
@@ -145,10 +146,11 @@ async function handleResolution(
     acceptedContent = validated.value;
   }
 
-  return resolveAccept(res, deps, session, interaction, acceptedContent, suggestions);
+  return resolveAccept(req, res, deps, session, interaction, acceptedContent, suggestions);
 }
 
 async function resolveAccept(
+  req: IncomingMessage,
   res: ServerResponse,
   deps: AssistantRouteDeps,
   session: AssistantSessionRecord,
@@ -159,7 +161,7 @@ async function resolveAccept(
   if (interaction.status !== 'pending') {
     return replayOrConflict(res, deps, session, interaction, 'accept');
   }
-  const target = await sessionScopedTarget(deps.registry, session);
+  const target = await sessionScopedTarget(deps.registry, session, deps.resolveRuntimeTarget, req);
   if (!target) {
     await auditAssistantInteraction({
       audit: deps.audit,
@@ -206,59 +208,75 @@ async function resolveAccept(
     action: 'accept',
     status: 'accepted',
   });
-  const executeDeps = {
-    ...withAssistantSessionExecutionAuthority(
-      target.served.deps as ExecuteDeps,
-      target.served.artifact,
-      session,
-    ),
-    caller: session.caller,
-    context,
-  };
-  let result: AssistantResolutionResult;
-  if (claimed.interaction.kind === 'confirmation') {
-    const prepared = assistantPreparedToolContinuation(claimed.interaction);
-    const tool = target.served.artifact.tools.find(
-      (candidate) => candidate.name === claimed.interaction.tool,
-    );
-    if (
-      !prepared &&
-      tool?.fulfilment.kind === 'flow' &&
-      tool.fulfilment.steps.some((step) => step.kind === 'elicit')
-    ) {
-      result = {
-        status: 'failed',
-        error: {
-          code: 'invalid_continuation',
-          message: 'legacy confirmation did not capture elicited input',
-        },
+  const result = await boundedAssistantExecution<AssistantResolutionResult>(
+    async (signal) => {
+      const executeDeps = {
+        ...withAssistantSessionExecutionAuthority(
+          target.served.deps as ExecuteDeps,
+          target.served.artifact,
+          session,
+        ),
+        caller: session.caller,
+        context,
+        invocationId: claimed.interaction.id,
+        signal,
       };
-    } else {
-      result = prepared
-        ? await executePreparedTool(target.served.artifact, prepared, executeDeps)
-        : await executeToolInteractive(
-            target.served.artifact,
-            claimed.interaction.tool,
-            claimed.interaction.arguments,
-            executeDeps,
-          );
-    }
-  } else {
-    const continuation = assistantToolContinuation(claimed.interaction);
-    result = isToolPreparationContinuation(continuation)
-      ? await resumeToolPreparation(
-          target.served.artifact,
-          continuation,
-          { action: 'accept', content },
-          executeDeps,
-        )
-      : await resumeTool(
-          target.served.artifact,
-          continuation,
-          { action: 'accept', content },
-          executeDeps,
+      let result: AssistantResolutionResult;
+      if (claimed.interaction.kind === 'confirmation') {
+        const prepared = assistantPreparedToolContinuation(claimed.interaction);
+        const tool = target.served.artifact.tools.find(
+          (candidate) => candidate.name === claimed.interaction.tool,
         );
-  }
+        if (
+          !prepared &&
+          tool?.fulfilment.kind === 'flow' &&
+          tool.fulfilment.steps.some((step) => step.kind === 'elicit')
+        ) {
+          result = {
+            status: 'failed',
+            error: {
+              code: 'invalid_continuation',
+              message: 'legacy confirmation did not capture elicited input',
+            },
+          };
+        } else {
+          result = prepared
+            ? await executePreparedTool(target.served.artifact, prepared, executeDeps)
+            : await executeToolInteractive(
+                target.served.artifact,
+                claimed.interaction.tool,
+                claimed.interaction.arguments,
+                executeDeps,
+              );
+        }
+      } else {
+        const continuation = assistantToolContinuation(claimed.interaction);
+        result = isToolPreparationContinuation(continuation)
+          ? await resumeToolPreparation(
+              target.served.artifact,
+              continuation,
+              { action: 'accept', content },
+              executeDeps,
+            )
+          : await resumeTool(
+              target.served.artifact,
+              continuation,
+              { action: 'accept', content },
+              executeDeps,
+            );
+      }
+
+      return result;
+    },
+    () => ({
+      status: 'failed',
+      error: {
+        code: 'connector_error',
+        reason: 'operation_outcome_unknown',
+        message: 'Execution stopped. Verify the original outcome before requesting another write.',
+      },
+    }),
+  );
 
   return finishExecution(
     res,
@@ -550,6 +568,7 @@ async function finishExecution(
 }
 
 async function resolveStop(
+  req: IncomingMessage,
   res: ServerResponse,
   deps: AssistantRouteDeps,
   session: AssistantSessionRecord,
@@ -560,7 +579,7 @@ async function resolveStop(
   if (interaction.status !== 'pending') {
     return replayOrConflict(res, deps, session, interaction, action);
   }
-  const target = await sessionScopedTarget(deps.registry, session);
+  const target = await sessionScopedTarget(deps.registry, session, deps.resolveRuntimeTarget, req);
   const context = target
     ? await resolveAssistantInteractionContext(interaction, session, target, deps)
     : undefined;

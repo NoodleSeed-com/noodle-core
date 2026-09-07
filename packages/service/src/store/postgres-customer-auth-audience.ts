@@ -15,7 +15,7 @@ interface ActiveCustomerAuthRow {
 
 /** Efficient shared-store lookup used to fail closed on cross-boundary OIDC audience reuse. */
 export async function findActiveCustomerAuthAudienceConflictRow(
-  pool: Pool,
+  pool: Pick<Pool, 'query'>,
   ref: TenantRef,
   auth: TenantAuthConfig,
 ): Promise<TenantRef | undefined> {

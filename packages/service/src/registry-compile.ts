@@ -7,6 +7,7 @@ import {
   InMemoryCatalog,
   type LocalAssetOptions,
   type PackagedAsset,
+  RECORD_CONNECTOR_ID,
   type RuntimeArtifact,
 } from '@noodle-borg/compiler';
 import {
@@ -21,6 +22,7 @@ import {
   type Connector,
   InMemoryConnectorRegistry,
   resolveManagedOrigins,
+  resolveVariableEnvironment,
 } from '@noodle-borg/runtime';
 import {
   type AppPackageRenderer,
@@ -32,6 +34,7 @@ import { missingServerConfigErrors } from './assistant-bindings.js';
 import { ManagedConfigBroker } from './credential-broker.js';
 import { deploymentCredentialBrokerOptions } from './credential-broker-options.js';
 import { normalizePersistedManifestForCompile } from './manifest-normalize.js';
+import type { NativeRecordConnectorFactory } from './native-record-connector.js';
 import type { OAuthStore } from './oauth/store.js';
 import { missingSecretErrors, missingVariableErrors } from './registry-helpers.js';
 import type { DeployError, ServerRegistryOptions } from './registry-types.js';
@@ -47,6 +50,7 @@ import {
 } from './store.js';
 
 interface RegistryCompileContext {
+  readonly activeArtifact: () => Promise<RuntimeArtifact | undefined>;
   readonly configStore: ConfigStore;
   readonly platformCatalog: readonly CatalogConnector[];
   readonly localAssetOptions: LocalAssetOptions | undefined;
@@ -62,6 +66,7 @@ interface RegistryCompileContext {
   readonly googleWorkloadIdentity: ServerRegistryOptions['googleWorkloadIdentity'];
   readonly stateHandleStoreFactory: StateHandleStoreFactory | undefined;
   readonly platformConnectors: readonly Connector[];
+  readonly nativeRecords: NativeRecordConnectorFactory | undefined;
   readonly policyGate: PolicyGate | undefined;
   readonly appPackageRenderer: AppPackageRenderer | undefined;
   readonly knowledgeSearch: KnowledgeSearchPortFactory | undefined;
@@ -103,6 +108,18 @@ export async function compileRegistryTarget(
   if (connectors !== undefined && connectors.trim() !== '') {
     const cc = compileConnectors(connectors);
     if (!cc.ok) return { ok: false, errors: cc.errors };
+    if (cc.catalog.some((entry) => entry.id === RECORD_CONNECTOR_ID))
+      return {
+        ok: false,
+        errors: [
+          {
+            code: 'reserved_connector',
+            path: 'connectors',
+            message:
+              'The native record connector is platform-owned and cannot be supplied by an application.',
+          },
+        ],
+      };
     catalogConnectors = cc.catalog;
     httpConnectors = cc.connectors;
     secretBindings = cc.secretBindings;
@@ -132,13 +149,21 @@ export async function compileRegistryTarget(
   const projectionErrors = compiled.ok
     ? publicSurfaceDelegatedAuthErrors(compiled.artifact, secretBindings)
     : [];
-  const [resolvedSecrets, resolvedVariables] = await Promise.all([
-    context.configStore.resolveConfigValues('secret', scope),
-    context.configStore.resolveConfigValues('variable', scope),
-  ]);
+  const resolvedSecrets = await context.configStore.resolveConfigValues('secret', scope);
+  const resolvedVariables = await context.configStore.resolveConfigValues('variable', scope);
+  const businessVariables = new Set(
+    compiled.ok
+      ? compiled.artifact.server.variables
+          ?.filter((declaration) => declaration.portal !== undefined)
+          .map((declaration) => declaration.name)
+      : [],
+  );
   const connectorConfigErrors = [
     ...missingSecretErrors(secretBindings, resolvedSecrets),
-    ...missingVariableErrors(variableBindings, resolvedVariables),
+    ...missingVariableErrors(
+      variableBindings.filter((name) => !businessVariables.has(name)),
+      resolvedVariables,
+    ),
   ];
   if (!compiled.ok) {
     return { ok: false, errors: [...connectorConfigErrors, ...compiled.errors] };
@@ -147,6 +172,10 @@ export async function compileRegistryTarget(
     compiled.artifact,
     resolvedSecrets,
     resolvedVariables,
+  ).filter(
+    (error) =>
+      error.code !== 'missing_variable' ||
+      !businessVariables.has(error.path.replace(/^variables\./, '')),
   );
   const errors = [
     ...identityErrors,
@@ -154,7 +183,43 @@ export async function compileRegistryTarget(
     ...connectorConfigErrors,
     ...missingServerConfig,
   ];
-  const originResolution = resolveManagedOrigins(compiled.artifact, resolvedVariables);
+  const settings = resolveVariableEnvironment(
+    compiled.artifact.server.variables ?? [],
+    resolvedVariables,
+  );
+  if (!settings.ok) errors.push({ ...settings.error, path: 'server.variables' });
+  if (settings.ok && deploymentId === undefined && settings.missing.length > 0) {
+    const previous = await context.activeArtifact();
+    if (previous !== undefined) {
+      const previouslyMissing = resolveVariableEnvironment(
+        previous.server.variables ?? [],
+        resolvedVariables,
+      );
+      for (const declaration of compiled.artifact.server.variables ?? []) {
+        if (!settings.missing.includes(declaration.name)) continue;
+        const old = previous.server.variables?.find((entry) => entry.name === declaration.name);
+        if (
+          declaration.requiredFor.some(
+            (tool) =>
+              previous.tools.some((entry) => entry.name === tool) &&
+              !(
+                previouslyMissing.ok &&
+                previouslyMissing.missing.includes(declaration.name) &&
+                old?.requiredFor.includes(tool)
+              ),
+          )
+        )
+          errors.push({
+            code: 'configuration_required',
+            path: `variables.${declaration.name}`,
+            message: 'Configure the new requirement before updating an existing capability.',
+          });
+      }
+    }
+  }
+  const originResolution = resolveManagedOrigins(compiled.artifact, resolvedVariables, {
+    allowUnconfiguredPortal: true,
+  });
   if (!originResolution.ok) {
     const missingVariables = new Set(
       errors.filter((error) => error.code === 'missing_variable').map((error) => error.path),
@@ -187,7 +252,8 @@ export async function compileRegistryTarget(
   if (errors.length > 0 || !originResolution.ok) {
     return { ok: false, errors, compiledArtifact: compiled.artifact };
   }
-  const artifact = originResolution.artifact;
+  // Keep declarations reusable; serving binds live operator settings once for each request.
+  const artifact = compiled.artifact;
   const localAuthority =
     context.delegatedExchange === undefined &&
     secretBindings.some((binding) => binding.authKind === 'delegatedTokenExchange')
@@ -239,18 +305,29 @@ export async function compileRegistryTarget(
       boundDeploymentId,
       context.stateHandleStoreFactory,
     );
+    const nativeRecords = context.nativeRecords?.({
+      tenant,
+      artifact,
+      ...(boundDeploymentId === undefined ? {} : { deploymentId: boundDeploymentId }),
+    });
     return {
       artifact,
       deps: {
         connectors: new InMemoryConnectorRegistry([
           ...context.platformConnectors,
+          ...(nativeRecords === undefined ? [] : [nativeRecords]),
           ...(stateConnector !== undefined ? [stateConnector] : []),
           ...httpConnectors,
         ]),
         broker,
         tenantId: `${tenant.org}/${tenant.app}/${tenant.env}`,
         ...(boundDeploymentId !== undefined ? { deploymentId: boundDeploymentId } : {}),
-        env: () => context.configStore.resolveConfigValues('variable', scope),
+        env: () =>
+          context.configStore.transactConfig === undefined
+            ? context.configStore.resolveConfigValues('variable', scope)
+            : context.configStore.transactConfig(scope.org, (transaction) =>
+                transaction.resolveConfigValues('variable', scope),
+              ),
         ...(context.policyGate !== undefined ? { policy: context.policyGate } : {}),
         ...(context.knowledgeSearch !== undefined && (artifact.server.knowledge?.length ?? 0) > 0
           ? {

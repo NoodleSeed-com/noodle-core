@@ -1,20 +1,30 @@
 import { randomUUID } from 'node:crypto';
 import type { Pool, PoolClient } from 'pg';
+import { postgresQueryExecutor } from '../store/postgres-transaction.js';
 import type {
   BusinessGrant,
   BusinessGrantStore,
   GrantMutationResult,
   InstallationCreateResult,
+  InstallationMutationResult,
   InstallationScope,
   SolutionInstallation,
   SolutionInstallationStore,
 } from './contracts.js';
+import type { ManagedDefinitionResolver } from './managed-releases.js';
 import {
+  effectiveInstallation,
   installationFingerprint,
+  managedInstallationIntentMatches,
   normalizeInstallationInput,
   permissionsForBusinessRole,
   validateExpectedRevision,
 } from './model.js';
+import {
+  bindPostgresInstallationApplication,
+  lockInstallationApplication,
+  pausePostgresInstallations,
+} from './postgres-application-lifecycle.js';
 import {
   type GrantRow,
   grantFromRow,
@@ -27,17 +37,28 @@ import { validateEmail, validateScalar, validateScope } from './validation.js';
 export interface PostgresInstallationStoreOptions {
   readonly now?: () => Date;
   readonly publicId?: () => string;
+  /** Service-wide stable managed release resolver; injection exists for deterministic release tests. */
+  readonly managedDefinition?: ManagedDefinitionResolver;
 }
 
-export class PostgresInstallationStore implements SolutionInstallationStore, BusinessGrantStore {
+export class PostgresInstallationStore implements SolutionInstallationStore {
   readonly #pool: Pool;
   readonly #now: () => Date;
   readonly #publicId: () => string;
+  readonly #managedDefinition: ManagedDefinitionResolver | undefined;
 
   constructor(pool: Pool, options: PostgresInstallationStoreOptions = {}) {
     this.#pool = pool;
     this.#now = options.now ?? (() => new Date());
     this.#publicId = options.publicId ?? (() => `sol_${randomUUID().replaceAll('-', '')}`);
+    this.#managedDefinition = options.managedDefinition;
+  }
+
+  bindApplication(scope: InstallationScope, generation: string) {
+    return bindPostgresInstallationApplication(this.#pool, validateScope(scope), generation);
+  }
+  pauseApplication(org: string, app: string, at: string, retired = false) {
+    return pausePostgresInstallations(this.#pool, org, app, at, retired);
   }
 
   async createInstallation(
@@ -52,9 +73,9 @@ export class PostgresInstallationStore implements SolutionInstallationStore, Bus
         `INSERT INTO business_solution_installations
           (org_slug, app_slug, environment, installation_id, public_id, profile_key,
            profile_version, managed_collections, retention_days, revision, create_fingerprint,
-           created_at, created_by_subject, updated_at, updated_by_subject)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,1,$10,$11,$12,$11,$12)
-         ON CONFLICT (org_slug, installation_id) DO NOTHING
+           created_at, created_by_subject, updated_at, updated_by_subject, definition_snapshot, application_generation)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,1,$10,$11,$12,$11,$12,$13::jsonb,'pending')
+         ON CONFLICT DO NOTHING
          RETURNING *`,
         [
           normalized.scope.org,
@@ -69,6 +90,7 @@ export class PostgresInstallationStore implements SolutionInstallationStore, Bus
           fingerprint,
           now,
           normalized.actorSubject,
+          JSON.stringify(normalized.definition),
         ],
       );
       const row = inserted.rows[0];
@@ -80,14 +102,16 @@ export class PostgresInstallationStore implements SolutionInstallationStore, Bus
         );
         const existingRow = existing.rows[0];
         if (existingRow === undefined) throw new Error('installation conflict row is unavailable');
+        const existingInstallation = installationFromRow(existingRow);
         return {
           disposition:
             existingRow.app_slug === normalized.scope.app &&
             existingRow.environment === normalized.scope.env &&
-            existingRow.create_fingerprint === fingerprint
+            (existingRow.create_fingerprint === fingerprint ||
+              managedInstallationIntentMatches(existingInstallation, normalized))
               ? 'replayed'
               : 'conflict',
-          installation: installationFromRow(existingRow),
+          installation: effectiveInstallation(existingInstallation, this.#managedDefinition),
         };
       }
       await client.query(
@@ -105,51 +129,127 @@ export class PostgresInstallationStore implements SolutionInstallationStore, Bus
           now,
         ],
       );
-      return { disposition: 'created', installation: installationFromRow(row) };
+      return {
+        disposition: 'created',
+        installation: effectiveInstallation(installationFromRow(row), this.#managedDefinition),
+      };
     });
   }
 
   async getInstallation(scope: InstallationScope): Promise<SolutionInstallation | undefined> {
     const normalized = validateScope(scope);
-    const result = await this.#pool.query<InstallationRow>(
+    const result = await postgresQueryExecutor(this.#pool).query<InstallationRow>(
       `SELECT * FROM business_solution_installations
        WHERE org_slug=$1 AND app_slug=$2 AND environment=$3 AND installation_id=$4`,
       [normalized.org, normalized.app, normalized.env, normalized.installationId],
     );
-    return result.rows[0] === undefined ? undefined : installationFromRow(result.rows[0]);
+    return result.rows[0] === undefined
+      ? undefined
+      : effectiveInstallation(installationFromRow(result.rows[0]), this.#managedDefinition);
   }
 
   async getInstallationById(
     org: string,
     installationId: string,
   ): Promise<SolutionInstallation | undefined> {
-    const result = await this.#pool.query<InstallationRow>(
+    const result = await postgresQueryExecutor(this.#pool).query<InstallationRow>(
       `SELECT * FROM business_solution_installations WHERE org_slug=$1 AND installation_id=$2`,
       [validateScalar('organization', org, 63), validateScalar('installation', installationId, 63)],
     );
-    return result.rows[0] === undefined ? undefined : installationFromRow(result.rows[0]);
+    return result.rows[0] === undefined
+      ? undefined
+      : effectiveInstallation(installationFromRow(result.rows[0]), this.#managedDefinition);
   }
 
   async resolveInstallationByPublicId(publicId: string): Promise<SolutionInstallation | undefined> {
-    const result = await this.#pool.query<InstallationRow>(
+    const result = await postgresQueryExecutor(this.#pool).query<InstallationRow>(
       `SELECT * FROM business_solution_installations WHERE public_id=$1`,
       [validateScalar('public installation id', publicId, 128)],
     );
-    return result.rows[0] === undefined ? undefined : installationFromRow(result.rows[0]);
+    return result.rows[0] === undefined
+      ? undefined
+      : effectiveInstallation(installationFromRow(result.rows[0]), this.#managedDefinition);
   }
 
   async listInstallations(org: string): Promise<readonly SolutionInstallation[]> {
-    const result = await this.#pool.query<InstallationRow>(
+    const result = await postgresQueryExecutor(this.#pool).query<InstallationRow>(
       `SELECT * FROM business_solution_installations
        WHERE org_slug=$1 ORDER BY created_at, installation_id`,
       [validateScalar('organization', org, 63)],
     );
-    return result.rows.map(installationFromRow);
+    return result.rows.map((row) =>
+      effectiveInstallation(installationFromRow(row), this.#managedDefinition),
+    );
+  }
+
+  async listInstallationsForSubject(subject: string) {
+    const grants = await postgresQueryExecutor(this.#pool).query<GrantRow>(
+      `SELECT * FROM business_installation_grants
+       WHERE subject=$1 AND revoked_at IS NULL
+       ORDER BY created_at, org_slug, installation_id`,
+      [validateScalar('identity subject', subject, 256)],
+    );
+    const joined = await Promise.all(
+      grants.rows.map(async (row) => {
+        const grant = grantFromRow(row);
+        const installation = await this.getInstallation(grant.scope);
+        if (installation === undefined) throw new Error('business grant installation is missing');
+        return { installation, grant };
+      }),
+    );
+    return joined;
+  }
+
+  async setIntakeState(
+    input: Parameters<SolutionInstallationStore['setIntakeState']>[0],
+  ): Promise<InstallationMutationResult> {
+    const scope = validateScope(input.scope);
+    validateExpectedRevision(input.expectedRevision);
+    const actor = validateScalar('actor subject', input.actorSubject, 256);
+    return inTransaction(this.#pool, async (client) => {
+      const application = input.active
+        ? await lockInstallationApplication(client, scope)
+        : undefined;
+      const currentResult = await client.query<InstallationRow>(
+        `SELECT * FROM business_solution_installations
+         WHERE org_slug=$1 AND app_slug=$2 AND environment=$3 AND installation_id=$4
+         FOR UPDATE`,
+        [scope.org, scope.app, scope.env, scope.installationId],
+      );
+      const current = currentResult.rows[0];
+      if (current === undefined) return { ok: false, reason: 'not_found', currentRevision: 0 };
+      const currentRevision = Number(current.revision);
+      if (currentRevision !== input.expectedRevision) {
+        return { ok: false, reason: 'conflict', currentRevision };
+      }
+      if (
+        input.active &&
+        application?.enforced &&
+        (!application.active || application.generation !== current.application_generation)
+      )
+        return { ok: false, reason: 'application_unavailable', currentRevision };
+      if (current.intake_active === input.active) {
+        return { ok: false, reason: 'invalid_state', currentRevision };
+      }
+      const updated = await client.query<InstallationRow>(
+        `UPDATE business_solution_installations
+         SET intake_active=$5, revision=revision+1, updated_at=$6, updated_by_subject=$7
+         WHERE org_slug=$1 AND app_slug=$2 AND environment=$3 AND installation_id=$4
+         RETURNING *`,
+        [scope.org, scope.app, scope.env, scope.installationId, input.active, this.#now(), actor],
+      );
+      const row = updated.rows[0];
+      if (row === undefined) throw new Error('installation intake update returned no row');
+      return {
+        ok: true,
+        installation: effectiveInstallation(installationFromRow(row), this.#managedDefinition),
+      };
+    });
   }
 
   async getGrant(scope: InstallationScope, subject: string): Promise<BusinessGrant | undefined> {
     const normalized = validateScope(scope);
-    const result = await this.#pool.query<GrantRow>(
+    const result = await postgresQueryExecutor(this.#pool).query<GrantRow>(
       `SELECT * FROM business_installation_grants
        WHERE org_slug=$1 AND app_slug=$2 AND environment=$3 AND installation_id=$4 AND subject=$5`,
       [
@@ -165,7 +265,7 @@ export class PostgresInstallationStore implements SolutionInstallationStore, Bus
 
   async listGrants(scope: InstallationScope): Promise<readonly BusinessGrant[]> {
     const normalized = validateScope(scope);
-    const result = await this.#pool.query<GrantRow>(
+    const result = await postgresQueryExecutor(this.#pool).query<GrantRow>(
       `SELECT * FROM business_installation_grants
        WHERE org_slug=$1 AND app_slug=$2 AND environment=$3 AND installation_id=$4
        ORDER BY subject`,
@@ -296,7 +396,7 @@ export class PostgresInstallationStore implements SolutionInstallationStore, Bus
 async function lockInstallation(client: PoolClient, scope: InstallationScope): Promise<boolean> {
   const result = await client.query(
     `SELECT 1 FROM business_solution_installations
-     WHERE org_slug=$1 AND app_slug=$2 AND environment=$3 AND installation_id=$4 FOR UPDATE`,
+     WHERE org_slug=$1 AND app_slug=$2 AND environment=$3 AND installation_id=$4 FOR NO KEY UPDATE`,
     [scope.org, scope.app, scope.env, scope.installationId],
   );
   return result.rowCount === 1;

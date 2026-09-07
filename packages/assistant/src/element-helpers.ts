@@ -85,3 +85,12 @@ export function appendLegalLinks(
     legal.append(link);
   }
 }
+
+export function appendConversationStatus(messages: HTMLElement | undefined, text: string): void {
+  if (!messages) return;
+  const status = document.createElement('p');
+  status.className = 'conversation-status';
+  status.setAttribute('role', 'status');
+  status.textContent = text;
+  messages.append(status);
+}

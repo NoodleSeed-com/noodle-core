@@ -207,6 +207,15 @@ export async function ensureArtifactSchema(
         PRIMARY KEY (kind, scope_level, org_slug, app_slug, environment, name)
       )
     `);
+  await pool.query(
+    "ALTER TABLE config_values ADD COLUMN IF NOT EXISTS value_origin text CHECK (value_origin IS NULL OR value_origin = 'default')",
+  );
+  await pool.query(`ALTER TABLE config_values ADD COLUMN IF NOT EXISTS generation uuid NOT NULL DEFAULT gen_random_uuid();
+    CREATE OR REPLACE FUNCTION refresh_config_generation() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN NEW.generation:=gen_random_uuid(); RETURN NEW; END $$;
+    DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid='config_values'::regclass AND tgname='config_generation') THEN
+      CREATE TRIGGER config_generation BEFORE INSERT OR UPDATE ON config_values FOR EACH ROW EXECUTE FUNCTION refresh_config_generation();
+    END IF; END $$`);
   await ensurePersonalWorkspaceBindingSchema(pool);
   await ensureStateHandleSchema(pool);
   await ensureRequestEventSchema(pool);

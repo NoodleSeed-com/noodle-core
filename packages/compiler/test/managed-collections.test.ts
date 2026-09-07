@@ -53,6 +53,74 @@ function collection(recordSchema: unknown = baseRecordSchema) {
   };
 }
 
+const boundConnector = {
+  inventory: {
+    id: 'inventory_api',
+    version: '1.0.0',
+    binding: {
+      profile: 'customer',
+      connection: { id: 'inventory_connection', source: { kind: 'externalExchange' as const } },
+    },
+  },
+};
+
+const scanInput = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['mode', 'limit'],
+  properties: {
+    mode: { type: 'string', enum: ['snapshot', 'changes'] },
+    cursor: { type: 'string' },
+    checkpoint: { type: 'string' },
+    limit: { type: 'integer', minimum: 1 },
+  },
+} as const;
+
+function scanOutput(recordSchema: unknown = baseRecordSchema) {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['records', 'deletedIds', 'complete'],
+    properties: {
+      records: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'record'],
+          properties: {
+            id: { type: 'string' },
+            version: { type: 'string' },
+            record: recordSchema,
+          },
+        },
+      },
+      deletedIds: { type: 'array', items: { type: 'string' } },
+      nextCursor: { type: 'string' },
+      checkpoint: { type: 'string' },
+      complete: { type: 'boolean' },
+      resetRequired: { type: 'boolean' },
+    },
+  } as const;
+}
+
+function sourceCatalog(type: 'read' | 'action' = 'read', output: unknown = scanOutput()) {
+  return {
+    get(id: string, version: string) {
+      if (id !== 'inventory_api' || version !== '1.0.0') return undefined;
+      return {
+        id,
+        version,
+        kind: 'custom' as const,
+        credentialProfiles: { customer: { kind: 'bearer' as const } },
+        operations: {
+          scan_stock: { type, input: scanInput, output: output as Record<string, unknown> },
+        },
+      };
+    },
+  };
+}
+
 describe('managed collection compilation', () => {
   it('projects a valid declaration with a stable record-schema digest', () => {
     const first = compileManifest(manifest({ collections: [collection()] }));
@@ -78,11 +146,98 @@ describe('managed collection compilation', () => {
       {
         ...collection(),
         schemaDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
+        source: { authority: 'native' },
       },
     ]);
     expect(first.artifact.server.managedCollections?.[0]?.schemaDigest).toBe(
       reordered.artifact.server.managedCollections?.[0]?.schemaDigest,
     );
+  });
+
+  it('emits native authority and resolves a normalized external source', () => {
+    const nativeResult = compileManifest(manifest({ collections: [collection()] }));
+    expect(nativeResult.ok).toBe(true);
+    if (nativeResult.ok) {
+      expect(nativeResult.artifact.server.managedCollections?.[0]?.source).toEqual({
+        authority: 'native',
+      });
+    }
+
+    const externalManifest = manifest({
+      collections: [{ ...collection(), source: { connector: 'inventory', scan: 'scan_stock' } }],
+    });
+    const result = compileManifest(
+      { ...externalManifest, connectors: boundConnector },
+      { catalog: sourceCatalog() },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.artifact.server.managedCollections?.[0]?.source).toMatchObject({
+      authority: 'external',
+      connectorAlias: 'inventory',
+      connectorId: 'inventory_api',
+      connectorVersion: '1.0.0',
+      scan: {
+        resolved: true,
+        operation: 'scan_stock',
+        credentialBinding: {
+          bindingId: 'inventory',
+          connectionId: 'inventory_connection',
+          profile: 'customer',
+          presentation: { kind: 'bearer' },
+          requiredScopes: [],
+        },
+      },
+    });
+  });
+
+  it('rejects unbound, write-classified and schema-incompatible sources', () => {
+    const external = {
+      ...manifest({
+        collections: [{ ...collection(), source: { connector: 'inventory', scan: 'scan_stock' } }],
+      }),
+      connectors: boundConnector,
+    };
+    const unbound = compileManifest(
+      { ...external, connectors: { inventory: { id: 'inventory_api', version: '1.0.0' } } },
+      { catalog: sourceCatalog() },
+    );
+    const write = compileManifest(external, { catalog: sourceCatalog('action') });
+    const wrongRecord = compileManifest(external, {
+      catalog: sourceCatalog(
+        'read',
+        scanOutput({
+          type: 'object',
+          additionalProperties: false,
+          required: ['other'],
+          properties: { other: { type: 'string' } },
+        }),
+      ),
+    });
+
+    for (const result of [unbound, write, wrongRecord]) {
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.errors).toContainEqual(
+          expect.objectContaining({ code: 'invalid_managed_collection_source' }),
+        );
+      }
+    }
+  });
+
+  it('rejects an unimplemented targeted-get declaration rather than advertising unused behavior', () => {
+    const result = compileManifest({
+      ...manifest({
+        collections: [
+          {
+            ...collection(),
+            source: { connector: 'inventory', scan: 'scan_stock', get: 'get_stock' },
+          },
+        ],
+      }),
+      connectors: boundConnector,
+    });
+    expect(result.ok).toBe(false);
   });
 
   it('reserves each future generated submit tool name', () => {

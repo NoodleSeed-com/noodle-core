@@ -56,6 +56,27 @@ describe.skipIf(!URL)('Postgres first-party OAuth client reservation', () => {
     });
   });
 
+  it('preserves old Portal purpose across client rotation and distinguishes DCR from missing rows', async () => {
+    for (const clientId of ['old-portal', 'new-portal'])
+      await reconcileFirstPartyOAuthClient(store, {
+        ...INPUT,
+        owner: 'portal',
+        clientId,
+        redirectUri: 'https://portal.example/api/portal/auth/callback',
+      });
+    await store.putClient({
+      ...dcrClient(),
+      client_name: 'Noodle Business Portal',
+      ...{ first_party_owner: 'portal' },
+    });
+    const restarted = new PostgresOAuthStore(pool);
+    expect(await restarted.getClientPurpose('old-portal')).toBe('portal');
+    expect(await restarted.getClientPurpose('new-portal')).toBe('portal');
+    expect(await restarted.getClientPurpose(INPUT.clientId)).toBe('dynamic');
+    await pool.query('DELETE FROM oauth_clients WHERE client_id=$1', ['old-portal']);
+    expect(await restarted.getClientPurpose('old-portal')).toBeUndefined();
+  });
+
   it('has exactly one winner when Console reservation races DCR', async () => {
     const outcomes = await Promise.allSettled([
       reconcileFirstPartyOAuthClient(store, INPUT),

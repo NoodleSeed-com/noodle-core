@@ -63,7 +63,7 @@ export function prepareAuthoringRuntimeDir(dir: string, options: LoadAuthoredOpt
   );
   writeFileSync(
     join(self, 'index.mjs'),
-    "export { algolia, annotations, asset, authenticatedWebsite, bind, clientCredentials, connector, connection, customerAuth, customerEndpoint, embeddedAssistant, externalExchange, file, firecrawl, gmailConnector, googleWorkloadIdentity, handoffSession, knowledge, managedCollection, managedSecret, meilisearch, noodleManaged, openAICompatible, prompt, publicWebsite, resource, secret, server, site, tavily, tool, variable, when, z } from '@noodle-borg/authoring';\n",
+    "export { algolia, annotations, asset, authenticatedWebsite, bind, clientCredentials, connector, connection, customerAuth, customerEndpoint, embeddedAssistant, externalExchange, file, firecrawl, gmailConnector, googleWorkloadIdentity, handoffSession, knowledge, managedCollection, managedSecret, meilisearch, noodleManaged, noodlePlatform, openAICompatible, prompt, publicWebsite, resource, secret, server, site, tavily, tool, variable, when, z } from '@noodle-borg/authoring';\n",
   );
   writeFileSync(
     join(self, 'platform.mjs'),

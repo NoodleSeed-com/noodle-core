@@ -11,6 +11,7 @@ export function buildProtocolRequestDeps(
   return {
     ...deps,
     ...(context.caller !== undefined ? { caller: context.caller } : {}),
+    ...(context.publicAdmission === undefined ? {} : { publicAdmission: context.publicAdmission }),
     ...(context.customerIssuer !== undefined ? { customerIssuer: context.customerIssuer } : {}),
     ...(artifact.customerEndpoints === undefined
       ? {}

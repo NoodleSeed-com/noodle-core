@@ -11,6 +11,7 @@ import type {
 import type { DeployAuthGate } from '@noodle-borg/control-plane/portable';
 import type { RequestEventInput } from '@noodle-borg/module';
 import type { Logger, TlsPosture } from '@noodle-borg/transport-http';
+import type { RuntimeTargetResolver } from '../application-runtime-target.js';
 import type { ServerRegistry } from '../registry.js';
 import type { AuditSink } from '../store/audit.js';
 import type { ControlPlaneStore, TenantRef } from '../store.js';
@@ -38,6 +39,7 @@ import { handleAssistantTranscript } from './assistant-transcript.js';
 
 export interface AssistantDispatchDeps {
   readonly registry: ServerRegistry;
+  readonly resolveRuntimeTarget?: RuntimeTargetResolver;
   readonly store: AssistantStore;
   readonly appearance?: AssistantAppearanceSettingsStore;
   readonly publicEmbeds?: PublicEmbedStore;

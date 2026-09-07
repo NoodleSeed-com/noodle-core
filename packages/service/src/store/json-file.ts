@@ -363,6 +363,10 @@ export class JsonFileArtifactStore implements ArtifactStore {
     return paginateAppSummaries(summarized, opts.limit);
   }
 
+  async getAppGeneration(org: string, app: string): Promise<string | undefined> {
+    return (await this.getApp(org, app))?.createdAt;
+  }
+
   async getApp(org: string, app: string): Promise<AppSummary | undefined> {
     const safeOrg = validateSlug('org', org);
     const safeApp = validateSlug('app', app);

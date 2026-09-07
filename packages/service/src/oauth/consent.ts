@@ -16,6 +16,8 @@ export interface ConsentPageInput {
   /** Where the Approve/Deny form POSTs (the AS consent endpoint). */
   readonly consentAction: string;
   readonly allowAccountSwitch?: boolean;
+  /** Server-owned registration purpose, never inferred from the client display name. */
+  readonly portal?: boolean;
 }
 
 function esc(value: string): string {
@@ -34,10 +36,10 @@ export function renderConsentPage(input: ConsentPageInput): string {
   const email = esc(input.userEmail);
   const token = esc(input.consentToken);
   const action = esc(input.consentAction);
-  const contentHtml = `<p class="ns-lede"><strong>${client}</strong> wants to access your Noodle Seed MCP server.</p>
+  const contentHtml = `<p class="ns-lede"><strong>${client}</strong> wants to access your Noodle Seed ${input.portal ? 'business workspace' : 'MCP server'}.</p>
     <dl class="ns-dl">
       <div><dt class="ns-dt">Signed in as</dt><dd class="ns-dd">${email}</dd></div>
-      <div><dt class="ns-dt">MCP server</dt><dd class="ns-dd">${resource}</dd></div>
+      <div><dt class="ns-dt">${input.portal ? 'Business workspace' : 'MCP server'}</dt><dd class="ns-dd">${resource}</dd></div>
       <div><dt class="ns-dt">Redirects to</dt><dd class="ns-dd">${redirect}</dd></div>
     </dl>
     <p class="ns-note">Only approve if you recognize this application.</p>
@@ -56,7 +58,9 @@ export function renderConsentPage(input: ConsentPageInput): string {
   return renderOAuthPage({
     title: 'Authorize access — Noodle Seed',
     kicker: 'Authorize',
-    heading: 'Authorize access to your server',
+    heading: input.portal
+      ? 'Authorize access to your workspace'
+      : 'Authorize access to your server',
     contentHtml,
   });
 }

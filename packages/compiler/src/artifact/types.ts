@@ -1,6 +1,8 @@
 import type { CapabilityRequirementName } from '@noodle-borg/capabilities';
 import type { CompiledKnowledgeComponent } from '@noodle-borg/knowledge/portable';
+import type { ArtifactVariableDeclaration } from '../business-variables.js';
 import type { CustomerEndpointPolicy } from '../customer-endpoint.js';
+import type { ManagedCollectionControls } from '../managed-collection-controls.js';
 import type { CondNode, ExprNode } from '../manifest/expression.js';
 import type { Manifest } from '../manifest/schema.js';
 import type { OperationRef } from './operation-ref.js';
@@ -192,13 +194,23 @@ export interface ArtifactServerContext {
   };
 }
 
-export interface ArtifactManagedCollection {
+export interface ArtifactManagedCollection extends ManagedCollectionControls {
   readonly name: string;
   readonly title: string;
   readonly description: string;
   readonly schemaVersion: number;
   readonly schemaDigest: string;
   readonly recordSchema: JsonSchema;
+  readonly behavior?: { readonly kind: 'request' };
+  readonly source:
+    | { readonly authority: 'native' }
+    | {
+        readonly authority: 'external';
+        readonly connectorAlias: string;
+        readonly connectorId: string;
+        readonly connectorVersion: string;
+        readonly scan: OperationRef;
+      };
 }
 
 interface ArtifactOidcAuth {
@@ -276,6 +288,8 @@ export interface ArtifactServer {
   readonly knowledge?: readonly CompiledKnowledgeComponent[];
   /** Compiled managed-record schema intent; lifecycle and operator state remain outside artifacts. */
   readonly managedCollections?: readonly ArtifactManagedCollection[];
+  /** Typed reusable managed-variable declarations, never live operator values. */
+  readonly variables?: readonly ArtifactVariableDeclaration[];
   readonly assistant?: {
     readonly model: NonNullable<Manifest['server']['assistant']>['model'];
     readonly allowedOrigins: readonly string[];

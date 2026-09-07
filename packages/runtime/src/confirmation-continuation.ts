@@ -14,11 +14,12 @@ export function confirmationRequired(
   nextStepIndex: number,
   completedSteps: Record<string, unknown>,
   elicited: Record<string, unknown>,
-  env: Record<string, string>,
+  env: Record<string, unknown>,
   action?: {
     readonly prepared: PreparedOperationAction;
     readonly review: ConfirmationActionReview;
   },
+  executionRevision?: string,
 ): ConfirmationPreparationResult {
   const reviewedAction =
     action === undefined
@@ -65,6 +66,7 @@ export function confirmationRequired(
     },
     continuation: {
       kind: 'prepared_confirmation',
+      ...(executionRevision === undefined ? {} : { executionRevision }),
       version: 1,
       artifact: artifactIdentity(artifact),
       toolName,

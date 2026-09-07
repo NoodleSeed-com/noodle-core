@@ -24,6 +24,7 @@ import {
   paginateAppSummaries,
   planAppArchive,
   planAppRestore,
+  planArchivedAppSweep,
   resolveProductionEnvironment,
   summarizeApps,
   summarizeEnvs,
@@ -398,14 +399,13 @@ function deactivateScope(records: Map<string, DeployRecord>, candidate: DeployRe
 export async function registrySweepArchived(
   state: RegistryStateView,
   before: string,
+  onPurge?: (org: string, app: string, at: string, retired?: boolean) => Promise<void>,
 ): Promise<readonly DeployRecord[]> {
   let deleted: readonly DeployRecord[];
   if (state.store !== undefined) {
     deleted = await state.store.sweepArchived(before);
   } else {
-    deleted = [...state.records.values()].filter(
-      (record) => record.archivedAt !== undefined && record.archivedAt < before,
-    );
+    deleted = planArchivedAppSweep([...state.records.values()], before);
   }
   const ids = new Set(deleted.map((record) => record.deploymentId));
   for (const id of ids) {
@@ -413,6 +413,9 @@ export async function registrySweepArchived(
     state.servers.delete(id);
   }
   purgeActiveTenantEntries(state, ids);
+  const apps = new Map(deleted.map((record) => [`${record.orgSlug}/${record.appSlug}`, record]));
+  for (const app of apps.values())
+    await onPurge?.(app.orgSlug, app.appSlug, new Date().toISOString(), true);
   return deleted;
 }
 

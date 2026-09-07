@@ -128,7 +128,12 @@ describe('module transaction context', () => {
         { automationId: 'run-1' },
       ),
     ).rejects.toThrow('stop after automation target proof');
-    expect(calls).toEqual(['BEGIN', 'ROLLBACK', 'release']);
+    expect(calls).toEqual([
+      'BEGIN',
+      expect.stringMatching(/^SAVEPOINT activation_[0-9a-f]{32}$/),
+      'ROLLBACK',
+      'release',
+    ]);
   });
 
   it('adapts organization provisioning to the borrowed core transaction', async () => {

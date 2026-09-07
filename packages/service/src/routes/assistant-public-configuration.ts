@@ -8,6 +8,7 @@ import {
 import { sendJson } from '@noodle-borg/transport-http';
 import type { AssistantRouteDeps } from './assistant.js';
 import { applyBrowserCors } from './assistant-route-http.js';
+import { activeAssistantTarget } from './assistant-session-target.js';
 
 /** Browser-safe first paint for a public launcher; never mints a session or spends admission. */
 export async function handlePublicAssistantConfiguration(
@@ -22,14 +23,14 @@ export async function handlePublicAssistantConfiguration(
   }
   const origin = typeof req.headers.origin === 'string' ? req.headers.origin : undefined;
   const state: {
-    target?: Awaited<ReturnType<AssistantRouteDeps['registry']['getActiveByTenant']>>;
+    target?: Awaited<ReturnType<typeof activeAssistantTarget>>;
   } = {};
   const authorized = await authorizePublicConfiguration(
     { embedId, origin },
     {
       embeds: deps.publicEmbeds,
       resolveActiveSurface: async (embed) => {
-        state.target = await deps.registry.getActiveByTenant(publicEmbedTenant(embed));
+        state.target = await activeAssistantTarget(deps, publicEmbedTenant(embed));
         return state.target
           ? publicSurfaceOf(state.target.served.artifact.server.assistant)
           : undefined;
@@ -51,6 +52,7 @@ export async function handlePublicAssistantConfiguration(
     publicEmbedTenant(authorized.embed),
     deps.appearance,
     'public',
+    target.businessNotice,
   );
   applyBrowserCors(req, res, origin);
   res.setHeader('cache-control', 'private, no-cache');

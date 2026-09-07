@@ -277,7 +277,13 @@ function registerV2Tools(
     const requestState =
       era === 'modern' ? ctx.mcpReq.requestState<SealedRequestState>() : undefined;
     const modernBinding = () =>
-      toolRequestStateBinding(artifact, context, toolName, interaction.arguments);
+      toolRequestStateBinding(
+        artifact,
+        context,
+        toolName,
+        interaction.arguments,
+        deps.executionBinding?.revision,
+      );
     const rejectRequestState = (error: unknown): never => {
       const rejection = asRequestStateError(error);
       observe('mcp_error', { errorKind: rejection.reason });
@@ -339,6 +345,7 @@ function registerV2Tools(
     }
     const toolDeps: ExecuteToolDeps = {
       ...deps,
+      ...(requestState === undefined ? {} : { invocationId: requestState.nonce }),
       signal: ctx.mcpReq.signal,
       ...(context.beforeToolDispatch === undefined
         ? {}

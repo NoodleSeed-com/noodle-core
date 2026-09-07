@@ -15,6 +15,7 @@ import type {
   PlatformHumanIdentityContribution,
   PolicyGate,
   ReadinessProbe,
+  ResolveActivityHistoryAllowance,
 } from '@noodle-borg/module';
 import { DEPLOYMENT_ACTIVATION_PHASE } from '@noodle-borg/module';
 import type { LoadedServiceModule } from '@noodle-borg/service-modules';
@@ -49,6 +50,7 @@ export class ModuleHost {
   readonly toolDispatch: HostedToolDispatchHook | undefined;
   readonly deploymentActivation: readonly NamedDeploymentActivationHook[];
   readonly organizationProvisioning: OrganizationProvisioningHook | undefined;
+  readonly resolveActivityHistoryAllowance: ResolveActivityHistoryAllowance | undefined;
   readonly admissionGate: AdmissionGate;
   readonly moduleCapabilities: readonly CapabilityName[];
   readonly moduleCapabilityDetails: readonly ModuleCapabilityDetail[];
@@ -69,6 +71,10 @@ export class ModuleHost {
     this.toolDispatch = toolDispatchFor(modules, options.toolDispatch);
     this.deploymentActivation = collectDeploymentActivation(modules);
     this.organizationProvisioning = singleContribution(modules, 'organizationProvisioning');
+    this.resolveActivityHistoryAllowance = singleContribution(
+      modules,
+      'resolveActivityHistoryAllowance',
+    );
     if (
       this.deploymentAutomation !== undefined &&
       !this.deploymentActivation.some(
@@ -184,7 +190,8 @@ function deriveModuleCapabilities(
       contributions.toolDispatch !== undefined ||
       contributions.deploymentActivation !== undefined ||
       contributions.organizationProvisioning !== undefined ||
-      contributions.deploymentAutomation !== undefined
+      contributions.deploymentAutomation !== undefined ||
+      contributions.resolveActivityHistoryAllowance !== undefined
     ) {
       found.add('controls');
     }
@@ -315,6 +322,7 @@ function singleContribution<K extends keyof SingletonContributions>(
 }
 
 interface SingletonContributions {
+  readonly resolveActivityHistoryAllowance: ResolveActivityHistoryAllowance;
   readonly policyGate: PolicyGate;
   readonly authVerifier: OwnerTokenVerifier;
   readonly dataPlaneAuthorizer: DataPlaneIdentityAuthorizer;

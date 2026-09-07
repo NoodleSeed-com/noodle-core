@@ -11,17 +11,11 @@ import {
   type PublicEmbedRecord,
 } from '@noodle-borg/assistant-gateway';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ServerRegistry } from '../src/registry.js';
 import type { AssistantRouteDeps } from '../src/routes/assistant.js';
 import { handleAssistantTurn } from '../src/routes/assistant.js';
 
-/**
- * Admission on the turn route.
- *
- * The bounds themselves are proven in the gateway; what has to be proven here is that the route
- * actually consults them, and does so **before** any metered work. ADR 0201 §8 makes that ordering the
- * contract, so the registry stub below throws: any refusal that still reached it would fail loudly
- * rather than quietly cost a customer a model call.
- */
+/** Live application authority is checked first; public admission still precedes model work. */
 
 const NOW = new Date('2030-01-01T00:00:00.000Z');
 const ORIGIN = 'https://www.acme.test';
@@ -56,17 +50,49 @@ async function start(options: {
   if (options.budget) await embeds.setBudget(embed.embedId, options.budget, NOW);
   if (options.revoked) await embeds.revoke(embed.embedId, NOW);
 
+  const registry = new ServerRegistry();
+  await registry.configStore.setConfigValue({
+    kind: 'secret',
+    scope: { level: 'env', ...TENANT },
+    name: 'MODEL_KEY',
+    value: 'test-model-key',
+  });
+  const deployed = await registry.deploy(
+    TENANT,
+    `
+manifestVersion: "2"
+server:
+  name: site
+  version: 1.0.0
+  title: Site
+  assistant:
+    model: { kind: openai-compatible, baseUrl: "https://models.example/v1", model: m, apiKey: MODEL_KEY }
+    allowedOrigins: ["${ORIGIN}"]
+    surfaces:
+      - mode: ${options.kind}
+        origins: ["${ORIGIN}"]
+        capabilities: [{ kind: tool, name: ask }]
+tools:
+  - name: ask
+    description: Answer a question.
+    annotations: { readOnlyHint: true }
+    inputSchema: { type: object, additionalProperties: false }
+    fulfilment: { steps: [], output: { answer: "Hello" } }
+`,
+    { accessMode: 'public' },
+  );
+  if (!deployed.ok) throw new Error(JSON.stringify(deployed.errors));
   const created = await store.createClient({
     name: 'web',
     tenant: TENANT,
-    deploymentId: 'dep_1',
+    deploymentId: deployed.deploymentId,
     allowedOrigins: [ORIGIN],
     now: NOW,
   });
   const { token } = await store.createSession({
     clientId: created.client.id,
     tenant: TENANT,
-    deploymentId: 'dep_1',
+    deploymentId: deployed.deploymentId,
     ...(options.modelSource === undefined ? {} : { modelSource: options.modelSource }),
     origin: ORIGIN,
     ...(options.kind === 'public' ? { publicEmbedId: embed.embedId } : {}),
@@ -79,14 +105,16 @@ async function start(options: {
     absoluteExpiresAt: new Date(NOW.getTime() + 3_600_000).toISOString(),
   });
 
-  // Any turn that gets past admission lands here. Throwing is the assertion: metered work must be
-  // unreachable for a refused turn.
-  const registryGet = vi.fn(() => {
-    throw new Error('metered work reached before admission refused the turn');
-  });
+  const modelFetch = vi.fn<typeof fetch>().mockResolvedValue(
+    Response.json({
+      choices: [{ message: { role: 'assistant', content: 'Hello.' } }],
+    }),
+  );
   const deps = {
     store,
-    registry: { get: registryGet },
+    registry,
+    modelFetch,
+    audit: { emit: async () => {} },
     ...(options.omitStores
       ? {}
       : { publicEmbeds: embeds, admissionCounters: new InMemoryDailyCounterStore() }),
@@ -106,7 +134,7 @@ async function start(options: {
   servers.push(server);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  return { base, token, registryGet };
+  return { base, token, modelFetch };
 }
 
 const turn = (base: string, token: string, message = 'hello') =>
@@ -121,8 +149,8 @@ const turn = (base: string, token: string, message = 'hello') =>
   });
 
 describe('public turn admission on the route', () => {
-  it('refuses every turn on a surface switched off, without touching the deployment', async () => {
-    const { base, token, registryGet } = await start({
+  it('refuses every turn on a surface switched off, without invoking the model', async () => {
+    const { base, token, modelFetch } = await start({
       kind: 'public',
       budget: { turnsPerDay: 0 },
     });
@@ -130,29 +158,32 @@ describe('public turn admission on the route', () => {
 
     expect(response.status).toBe(429);
     expect(await response.json()).toMatchObject({ code: 'daily_turn_budget_exhausted' });
-    expect(registryGet).not.toHaveBeenCalled();
+    expect(modelFetch).not.toHaveBeenCalled();
   });
 
   it('refuses once the surface has spent its day', async () => {
     const { base, token } = await start({ kind: 'public', budget: { turnsPerDay: 1 } });
 
-    // The first turn is admitted and then dies in the (throwing) deployment read — proving admission
-    // ran and passed. The second is refused by admission itself.
-    expect((await turn(base, token)).status).toBe(500);
+    // The first turn reaches the model; the second is refused by admission itself.
+    const response = await turn(base, token);
+    expect(response.status).toBe(200);
+    expect(await response.text()).not.toContain('event: error');
     expect((await turn(base, token)).status).toBe(429);
   });
 
   it('refuses a session that has spent its own turns', async () => {
-    const { base, token, registryGet } = await start({
+    const { base, token, modelFetch } = await start({
       kind: 'public',
       envelope: clamp({ turnsPerSession: 1 }),
     });
 
-    expect((await turn(base, token)).status).toBe(500);
+    const response = await turn(base, token);
+    expect(response.status).toBe(200);
+    expect(await response.text()).not.toContain('event: error');
     const spent = await turn(base, token);
     expect(spent.status).toBe(429);
     expect(await spent.json()).toMatchObject({ code: 'session_turn_budget_exhausted' });
-    expect(registryGet).toHaveBeenCalledTimes(1);
+    expect(modelFetch).toHaveBeenCalledTimes(1);
   });
 
   it('never applies sponsored bounds to an operator-funded session in an enrolled tenant', async () => {
@@ -173,25 +204,27 @@ describe('public turn admission on the route', () => {
       managedModelResolver: { resolve },
     });
 
-    expect((await turn(base, token)).status).toBe(500);
+    const response = await turn(base, token);
+    expect(response.status).toBe(200);
+    expect(await response.text()).not.toContain('event: error');
     expect((await turn(base, token)).status).toBe(429);
     expect(resolve).not.toHaveBeenCalled();
   });
 
   it('refuses an oversized message before it costs a turn', async () => {
-    const { base, token, registryGet } = await start({ kind: 'public' });
+    const { base, token, modelFetch } = await start({ kind: 'public' });
     const response = await turn(base, token, 'x'.repeat(ADMISSION_DEFAULTS.messageCharacters + 1));
 
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ code: 'message_too_long' });
-    expect(registryGet).not.toHaveBeenCalled();
+    expect(modelFetch).not.toHaveBeenCalled();
   });
 
   it('stops a live conversation whose surface was revoked', async () => {
-    const { base, token, registryGet } = await start({ kind: 'public', revoked: true });
+    const { base, token, modelFetch } = await start({ kind: 'public', revoked: true });
 
     expect((await turn(base, token)).status).toBe(403);
-    expect(registryGet).not.toHaveBeenCalled();
+    expect(modelFetch).not.toHaveBeenCalled();
   });
 
   /**
@@ -199,18 +232,19 @@ describe('public turn admission on the route', () => {
    * unbounded against the customer's model budget — the one outcome the envelope exists to prevent.
    */
   it('refuses rather than running unbounded when admission is not configured', async () => {
-    const { base, token, registryGet } = await start({ kind: 'public', omitStores: true });
+    const { base, token, modelFetch } = await start({ kind: 'public', omitStores: true });
 
     expect((await turn(base, token)).status).toBe(503);
-    expect(registryGet).not.toHaveBeenCalled();
+    expect(modelFetch).not.toHaveBeenCalled();
   });
 
   it('leaves an authenticated session’s turns to the embedding customer', async () => {
-    const { base, token, registryGet } = await start({ kind: 'authenticated' });
+    const { base, token, modelFetch } = await start({ kind: 'authenticated' });
 
-    // Straight through to the deployment read: the public envelope is a public-surface bound, not a
-    // global one, and an in-app embed's limits are its own product's to set.
-    expect((await turn(base, token)).status).toBe(500);
-    expect(registryGet).toHaveBeenCalled();
+    // Authenticated surfaces use their embedding customer's limits.
+    const response = await turn(base, token);
+    expect(response.status).toBe(200);
+    expect(await response.text()).not.toContain('event: error');
+    expect(modelFetch).toHaveBeenCalled();
   });
 });

@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { DeployAuthGate } from '@noodle-borg/control-plane/portable';
 import type { TlsPosture } from '@noodle-borg/transport-http';
+import type { BusinessInformationStore } from '../business-information/contracts.js';
 import type { DeveloperGrantStore } from '../oauth/developer-grant.js';
 import type { ServerRegistry } from '../registry.js';
 import type { AuditSink } from '../store/audit.js';
@@ -13,6 +14,7 @@ export interface ConfigValueDispatchDeps {
   readonly controlPlane: ControlPlaneStore;
   readonly configStore: ConfigStore;
   readonly registry: ServerRegistry;
+  readonly installations?: BusinessInformationStore;
   readonly maxBody: number;
   readonly audit: AuditSink;
   readonly developerGrants?: DeveloperGrantStore;
@@ -57,6 +59,7 @@ export function dispatchConfigValueRequest(
     ref,
     deps.audit,
     deps.developerGrants,
+    deps.installations,
   ).catch(() => {
     if (!res.headersSent) deps.sendJson(res, 500, { error: 'internal error' });
   });

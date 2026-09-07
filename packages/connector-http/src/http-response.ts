@@ -74,7 +74,8 @@ export async function fetchResponseWithResilience(
   let lastError: ConnectorInvocationError | undefined;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const signal = AbortSignal.timeout(timeoutMs);
+    const timeout = AbortSignal.timeout(timeoutMs);
+    const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
     try {
       const response = await guardedFetch(
         url,
@@ -113,7 +114,7 @@ export async function fetchResponseWithResilience(
         signal.aborted,
       );
       lastError = normalized.error;
-      if (!normalized.retry || attempt >= maxAttempts) throw lastError;
+      if (init.signal?.aborted || !normalized.retry || attempt >= maxAttempts) throw lastError;
       await sleep(retryDelayMs(retry as NormalizedRetryPolicy, attempt, normalized.retryAfterMs));
     }
   }

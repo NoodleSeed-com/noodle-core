@@ -54,6 +54,7 @@ const rootRuntimeKeys = [
   'maskToken',
   'meilisearch',
   'noodleManaged',
+  'noodlePlatform',
   'noodleProjectConfigPath',
   'openAICompatible',
   'parseBuildReadinessSnapshot',
@@ -263,7 +264,7 @@ describe('@noodleseed/one supported package contract', () => {
       ({ name, removed: diagnostic }) => ({ name, removed: diagnostic }),
     );
     expect(CATALOG).toHaveLength(63);
-    expect(paths).toHaveLength(288);
+    expect(paths).toHaveLength(323);
     expect(CATALOG.map(({ name }) => name)).toEqual(golden.catalog.topLevel);
     expect(paths).toEqual(golden.catalog.activePaths);
     expect(removed).toEqual(golden.catalog.removed);

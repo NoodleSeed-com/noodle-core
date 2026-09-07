@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resolveTargetOrigins } from '../src/application-runtime-target.js';
 import {
   bearerToken,
   createServiceHandler,
@@ -608,11 +609,30 @@ handoff:
       requestBody,
     });
     expect(response.status).toBe(201);
-    const active = await registry.getActiveByTenant({ org: 'acme', app: 'shopify', env: 'prod' });
+    const declaration = await registry.getActiveByTenant({
+      org: 'acme',
+      app: 'shopify',
+      env: 'prod',
+    });
+    if (!declaration) throw new Error('Expected active deployment');
+    const active = await resolveTargetOrigins(declaration);
     expect(active?.served.artifact.server.handoff?.allowedDomains).toEqual([
       'https://merchant.myshopify.com',
     ]);
     expect(JSON.stringify(active?.served.artifact)).not.toContain('${env.STORE_ORIGIN}');
+    await config.setConfigValue({
+      kind: 'variable',
+      scope,
+      name: 'STORE_ORIGIN',
+      value: 'https://updated.myshopify.com',
+    });
+    const updated = await resolveTargetOrigins(declaration);
+    expect(updated?.served.artifact.server.handoff?.allowedDomains).toEqual([
+      'https://updated.myshopify.com',
+    ]);
+    expect(declaration.served.artifact.server.handoff?.allowedDomains).toEqual([
+      '${env.STORE_ORIGIN}',
+    ]);
   });
 
   it('accepts environment config before the first deploy materializes the app and environment', async () => {

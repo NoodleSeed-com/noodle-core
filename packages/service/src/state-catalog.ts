@@ -1,4 +1,4 @@
-import type { CatalogConnector } from '@noodle-borg/compiler';
+import { BUILTIN_RECORD_CATALOG_CONNECTOR, type CatalogConnector } from '@noodle-borg/compiler';
 import {
   STATE_CONNECTOR_ID,
   STATE_CONNECTOR_VERSION,
@@ -15,14 +15,9 @@ export const BUILTIN_STATE_CATALOG_CONNECTOR: CatalogConnector = {
 export function withBuiltinStateCatalog(
   catalog: readonly CatalogConnector[],
 ): readonly CatalogConnector[] {
-  if (
-    catalog.some(
-      (connector) =>
-        connector.id === BUILTIN_STATE_CATALOG_CONNECTOR.id &&
-        connector.version === BUILTIN_STATE_CATALOG_CONNECTOR.version,
-    )
-  ) {
-    return catalog;
-  }
-  return [BUILTIN_STATE_CATALOG_CONNECTOR, ...catalog];
+  const builtins = [BUILTIN_STATE_CATALOG_CONNECTOR, BUILTIN_RECORD_CATALOG_CONNECTOR];
+  return [
+    ...builtins,
+    ...catalog.filter((entry) => !builtins.some((builtin) => builtin.id === entry.id)),
+  ];
 }

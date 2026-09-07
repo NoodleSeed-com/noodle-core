@@ -27,6 +27,17 @@ describe('branded consent page', () => {
     expect(html).not.toContain('value="switch_account"');
   });
 
+  it('describes a business workspace only when server-owned Portal purpose is supplied', () => {
+    const html = consent({ portal: true, clientName: 'Noodle Business Portal' });
+    expect(html).toContain('your Noodle Seed business workspace');
+    expect(html).not.toContain('your Noodle Seed MCP server');
+    expect(html).toContain('Authorize access to your workspace');
+    expect(html).toContain('name="decision" value="deny"');
+    expect(consent({ clientName: 'Noodle Business Portal' })).toContain(
+      'your Noodle Seed MCP server',
+    );
+  });
+
   it('offers account switching only when the signed WorkOS flow allows it', () => {
     const html = consent({ allowAccountSwitch: true });
 

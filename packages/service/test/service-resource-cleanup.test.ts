@@ -14,6 +14,9 @@ describe('service resource cleanup', () => {
 
     const result = closeServiceResources({
       alertTimer,
+      stopBusinessInformationSweep: () => {
+        calls.push('retention');
+      },
       telemetry: {
         dispose: async () => {
           calls.push('telemetry');
@@ -40,7 +43,7 @@ describe('service resource cleanup', () => {
         expect.objectContaining({ message: 'postgres failed' }),
       ],
     });
-    expect(calls).toEqual(['modules', 'telemetry', 'postgres']);
+    expect(calls).toEqual(['retention', 'modules', 'telemetry', 'postgres']);
   });
 
   it('rejects a failed listen instead of leaving service startup pending', async () => {

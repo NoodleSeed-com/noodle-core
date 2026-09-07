@@ -54,9 +54,9 @@
     "@noodle-borg/knowledge": "workspace:*",
     "@noodle-borg/knowledge-operations": "workspace:*",
     "@noodle-borg/module": "workspace:*",
-    "@noodle-borg/observability": "workspace:*",
     "@noodle-borg/module-audit": "workspace:*",
     "@noodle-borg/oauth-client-registry": "workspace:*",
+    "@noodle-borg/observability": "workspace:*",
     "@noodle-borg/protocol": "workspace:*",
     "@noodle-borg/runtime": "workspace:*",
     "@noodle-borg/service-modules": "workspace:*",
@@ -66,6 +66,7 @@
     "express-rate-limit": "8.5.2",
     "google-auth-library": "^10.7.0",
     "jose": "^6.2.3",
+    "oauth4webapi": "3.8.6",
     "pg": "^8.21.0",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"

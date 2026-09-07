@@ -1,4 +1,5 @@
-import type { InstallationScope, ManagedRequestRecord } from './contracts.js';
+import type { InstallationScope, ManagedRequestRecord, RequestPage } from './contracts.js';
+import { cloneRecord } from './model.js';
 import { CursorValidationError, validateScalar } from './validation.js';
 
 interface CursorValue {
@@ -77,4 +78,41 @@ function isCursor(value: unknown): value is CursorValue {
 
 function validTimestamp(value: unknown): value is string {
   return typeof value === 'string' && Number.isFinite(Date.parse(value));
+}
+
+export function page(
+  records: readonly ManagedRequestRecord[],
+  limit: number,
+  kind: 'list' | 'export',
+  scope: InstallationScope,
+  collectionKey: string,
+  snapshotAt?: string,
+): RequestPage {
+  const selected = records.slice(0, limit).map(cloneRecord);
+  const last = selected.at(-1);
+  const hasMore = records.length > limit;
+  return {
+    records: selected,
+    ...(hasMore && last !== undefined
+      ? {
+          nextCursor: encodeCursor({
+            version: 1,
+            kind,
+            scope: scopeKey(scope),
+            collectionKey,
+            lastCreatedAt: last.createdAt,
+            lastId: last.id,
+            ...(snapshotAt === undefined ? {} : { snapshotAt }),
+          }),
+        }
+      : {}),
+  };
+}
+
+export function installationIdKey(org: string, installationId: string): string {
+  return `${org}\0${installationId}`;
+}
+
+export function grantKey(scope: InstallationScope, subject: string): string {
+  return `${scopeKey(scope)}\0${validateScalar('grant subject', subject, 256)}`;
 }

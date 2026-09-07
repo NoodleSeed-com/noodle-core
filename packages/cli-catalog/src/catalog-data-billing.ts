@@ -453,6 +453,24 @@ export const BILLING_COMMAND: CommandSpec = {
   summary: 'Inspect billing accounts, buy a plan, and manage billing.',
   arguments: [],
   subcommands: [
+    branch('catalog', 'Inspect or activate the versioned billing catalog.', [
+      leaf('status', 'Inspect the active catalog and supported reader version.', {
+        ...LEAF_FIELDS,
+      }),
+      leaf('activate', 'Activate catalog 2 using protected System Release evidence.', {
+        ...LEAF_FIELDS,
+        flags: [
+          flag({
+            ...FLAG_FIELDS,
+            name: 'proof',
+            type: 'string',
+            value: '<file>',
+            summary: 'Verified protected release inventory; workload authorization is required.',
+            required: true,
+          }),
+        ],
+      }),
+    ]),
     ACCOUNTS,
     branch('org', 'Inspect or transfer an organization’s effective billing.', [
       leaf('inspect', 'Inspect effective billing entitlements for one organization.', {

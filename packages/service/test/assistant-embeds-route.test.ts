@@ -22,6 +22,13 @@ const artifactWithMode = (mode: 'public' | 'mixed'): RuntimeArtifact =>
   ({
     server: {
       assistant: {
+        model: {
+          kind: 'openai-compatible',
+          baseUrl: 'https://models.example',
+          model: 'byo',
+          apiKey: 'KEY',
+        },
+        allowedOrigins: [ORIGIN],
         surfaces: [
           {
             mode,
@@ -51,7 +58,7 @@ beforeEach(async () => {
     publicEmbeds: embeds,
     admissionCounters: counters,
     registry: {
-      getActiveByTenant: () => Promise.resolve({ served: { artifact: servedArtifact } }),
+      getActiveByTenant: () => Promise.resolve({ served: { artifact: servedArtifact, deps: {} } }),
     },
     // Unauthenticated local posture: the gate resolves no identity, which the route treats as the
     // trusted operator path. Membership enforcement has its own coverage on the clients route.
@@ -172,6 +179,17 @@ describe('the assistant embeds route', () => {
   it('reports an unknown id as missing, to a caller entitled to know', async () => {
     expect((await patch('pub_doesnotexistdoesnotexist', { turnsPerDay: 1 })).status).toBe(404);
   });
+
+  it('cannot change another tenant public embed even when its id is known', async () => {
+    const foreign = await embeds.ensure({
+      ...TENANT,
+      org: 'another',
+      surfaceMode: 'public',
+      now: NOW,
+    });
+    expect((await patch(foreign.embedId, { turnsPerDay: 0 })).status).toBe(404);
+    expect((await embeds.lookup(foreign.embedId))?.turnsPerDay).toBeUndefined();
+  });
 });
 
 /**
@@ -182,6 +200,14 @@ describe('the assistant embeds route', () => {
  */
 describe('a surface Noodle is funding', () => {
   const sponsored = (spendUsed?: number) => {
+    if (!servedArtifact.server.assistant) throw new Error('missing fixture assistant');
+    servedArtifact = {
+      ...servedArtifact,
+      server: {
+        ...servedArtifact.server,
+        assistant: { ...servedArtifact.server.assistant, model: { kind: 'noodle-managed' } },
+      },
+    };
     managedModelResolver = {
       resolve: async () => ({
         source: 'noodle-managed' as const,

@@ -71,6 +71,7 @@ exports[`service export surface lock > exports exactly this set of names 1`] = `
   "InMemoryAssistantStore",
   "InMemoryAuditStore",
   "InMemoryConfigStore",
+  "InMemoryConnectionStore",
   "InMemoryControlPlaneStore",
   "InMemoryDeveloperGrantStore",
   "InMemoryExternalCredentialProviderConfigStore",
@@ -118,11 +119,13 @@ exports[`service export surface lock > exports exactly this set of names 1`] = `
   "PlatformAuthRecoverOutboxRequestSchema",
   "PlatformAuthRollbackRequestSchema",
   "PlatformAuthStartImportRequestSchema",
+  "PortableConnections",
   "PostgresAlertRuleStore",
   "PostgresArtifactStore",
   "PostgresAssistantAppearanceSettingsStore",
   "PostgresAssistantStore",
   "PostgresAuditStore",
+  "PostgresConnectionStore",
   "PostgresDeveloperGrantStore",
   "PostgresGoogleWorkloadIdentityStore",
   "PostgresIntentCaptureSettingsStore",
@@ -157,6 +160,7 @@ exports[`service export surface lock > exports exactly this set of names 1`] = `
   "capabilitiesForConfig",
   "captureAssistantUsage",
   "captureRefusedAssistantSession",
+  "createApplicationConnections",
   "createClientSecret",
   "createCustomerVerifierFactory",
   "createFirebaseIdTokenVerifier",
@@ -222,4 +226,4 @@ exports[`service export surface lock > exports exactly this set of names 1`] = `
 ]
 `;
 
-exports[`service export surface lock > reports the surface size so a bulk loss is visible in the diff 1`] = `217`;
+exports[`service export surface lock > reports the surface size so a bulk loss is visible in the diff 1`] = `221`;

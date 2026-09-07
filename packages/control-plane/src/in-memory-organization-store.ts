@@ -16,6 +16,10 @@ import type {
 } from './contracts.js';
 import { InMemoryMcpSubdomainClaimStore } from './mcp-subdomain-claims.js';
 import {
+  type AcceptOrganizationAgreementInput,
+  InMemoryOrganizationAgreements,
+} from './organization-agreements.js';
+import {
   domainFromEmail,
   domainKey,
   memberKey,
@@ -47,12 +51,25 @@ export class InMemoryOrganizationStore {
   readonly #invitations = new Map<string, OrgInvitationRecord>();
   readonly #mcpSubdomainClaims: InMemoryMcpSubdomainClaimStore;
   readonly #now: () => Date;
+  readonly #agreements: InMemoryOrganizationAgreements;
 
   constructor(options: InMemoryOrganizationStoreOptions = {}) {
     this.#now = options.now ?? (() => new Date());
     this.#orgs = options.orgs ?? new Map();
     this.#members = options.members ?? new Map();
     this.#mcpSubdomainClaims = new InMemoryMcpSubdomainClaimStore(this.#now);
+    this.#agreements = new InMemoryOrganizationAgreements(
+      (org, subject) => this.isExactOwner(org, subject),
+      this.#now,
+    );
+  }
+
+  getOrganizationAgreement(org: string, version: string) {
+    return this.#agreements.getOrganizationAgreement(org, version);
+  }
+
+  acceptOrganizationAgreement(input: AcceptOrganizationAgreementInput) {
+    return this.#agreements.acceptOrganizationAgreement(input);
   }
 
   hasOrg(org: string): boolean {
@@ -399,6 +416,8 @@ export function bindInMemoryOrganizationStore(
   store: InMemoryOrganizationStore,
 ): InMemoryOrganizationOperations {
   return {
+    getOrganizationAgreement: store.getOrganizationAgreement.bind(store),
+    acceptOrganizationAgreement: store.acceptOrganizationAgreement.bind(store),
     getActiveMcpSubdomain: store.getActiveMcpSubdomain.bind(store),
     resolveActiveMcpSubdomain: store.resolveActiveMcpSubdomain.bind(store),
     getMcpSubdomainSetting: store.getMcpSubdomainSetting.bind(store),

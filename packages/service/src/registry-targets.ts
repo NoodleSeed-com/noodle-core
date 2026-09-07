@@ -1,11 +1,46 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { RECORD_CONNECTOR_ID } from '@noodle-borg/compiler';
 import type { ServedArtifact } from '@noodle-borg/protocol';
 import type { OwnerTokenVerifier, ServedTarget, TenantRouteRef } from '@noodle-borg/transport-http';
 import { parseAppPackageSnapshot } from './app-package-snapshot.js';
 import { hasExactCustomerAuthProjection } from './customer-auth-audience-binding.js';
+import type { NativeRecordConnectorFactory } from './native-record-connector.js';
 import type { ServerRegistry } from './registry.js';
 import { deploymentOwnerSubject } from './registry-helpers.js';
+import type { RegistryStateView } from './registry-state.js';
 import type { DeployRecord, SecretEnvelope, TenantAuthConfig, TenantRef } from './store.js';
+import { validateTenantRef } from './store.js';
+
+/** Replace only the platform record port; unrelated compiled runtime ports retain their authority. */
+export function rebindNativeRecords(
+  target: ServedTarget,
+  record: DeployRecord,
+  factory: NativeRecordConnectorFactory | undefined,
+): ServedTarget {
+  const native = factory?.({
+    tenant: recordTenant(record),
+    artifact: target.served.artifact,
+    deploymentId: record.deploymentId,
+  });
+  const previous = target.served.deps.connectors;
+  return {
+    ...target,
+    served: {
+      ...target.served,
+      deps: {
+        ...target.served.deps,
+        connectors: {
+          resolve: (ref) =>
+            ref.connectorId === RECORD_CONNECTOR_ID
+              ? native?.version === ref.connectorVersion
+                ? native
+                : undefined
+              : previous.resolve(ref),
+        },
+      },
+    },
+  };
+}
 
 /**
  * Build the front-door {@link ServedTarget} for a persisted record: its access mode plus the credential the
@@ -227,4 +262,33 @@ function deploymentSlug(name: string): string {
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '') || 'server'
   );
+}
+
+/** Immutable source projection shared by registry installation consumers. */
+export async function deploymentSourceFor(
+  state: RegistryStateView,
+  tenant: TenantRef,
+  deploymentId: string,
+) {
+  const safeTenant = validateTenantRef(tenant);
+  const record = state.store
+    ? await state.store.get(deploymentId)
+    : state.records.get(deploymentId);
+  if (
+    record === undefined ||
+    record.archivedAt !== undefined ||
+    record.orgSlug !== safeTenant.org ||
+    record.appSlug !== safeTenant.app ||
+    record.environment !== safeTenant.env
+  )
+    return undefined;
+  return {
+    manifest: record.manifest,
+    ...(record.connectors === undefined ? {} : { connectors: record.connectors }),
+    ...(record.hostedAssets === undefined
+      ? {}
+      : { hostedAssets: structuredClone(record.hostedAssets) }),
+    ...(record.accessMode === undefined ? {} : { accessMode: record.accessMode }),
+    ...(record.serverVersion === undefined ? {} : { serverVersion: record.serverVersion }),
+  };
 }

@@ -9,6 +9,7 @@ export * from './assistant-context.js';
 export * from './assistant-customer-issuer.js';
 export * from './assistant-customer-routing.js';
 export * from './assistant-delegated-projection.js';
+export * from './assistant-execution-bound.js';
 export * from './assistant-guide.js';
 export * from './assistant-interaction-state.js';
 export * from './assistant-interactive.js';

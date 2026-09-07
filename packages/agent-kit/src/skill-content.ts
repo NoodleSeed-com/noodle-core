@@ -77,7 +77,8 @@ const SDK_NOTES: Record<string, string> = {
   resource: '`resource(name, { ... })` — an MCP resource.',
   prompt: '`prompt(name, { ... })` — an MCP prompt.',
   secret: '`secret("NAME")` — reference a managed secret (operated via `noodle secrets`).',
-  variable: '`variable("NAME")` — reference a managed variable (operated via `noodle variables`).',
+  variable:
+    '`variable("NAME")` — reference managed configuration; add `{ schema, default?, portal?, requiredFor? }` and register in `server.variables` for typed business settings. Operate through `noodle variables` or authorized Portal settings.',
   customerAuth:
     '`customerAuth.oidc(...)`, `.federatedOidc(...)`, `.firebase(...)`, or `.microsoft(...)` — end-user/customer identity for `--access customers` deployments. A direct/federated issuer must publish direct RFC 8414 discovery, Dynamic Client Registration, authorization-code + refresh grants, PKCE `code_challenge_methods_supported: ["S256"]`, public-client `token_endpoint_auth_methods_supported: ["none"]`, and a public JWKS; verify it with `noodle auth doctor src/server.ts`. Firebase Web App fields are browser-visible configuration: use `variable(...)`, not `secret(...)`, and restrict the key in Firebase.',
   handoffSession: '`handoffSession(...)` — typed cross-host handoff session envelopes.',

@@ -55,6 +55,8 @@ export type CompileErrorCode =
   | 'invalid_knowledge'
   | 'knowledge_unhashed'
   | 'invalid_managed_collection'
+  | 'invalid_variable_declaration'
+  | 'invalid_managed_collection_source'
   // Resolution errors (only produced when a connector catalog is supplied):
   | 'unknown_connector_alias'
   | 'connector_not_in_catalog'

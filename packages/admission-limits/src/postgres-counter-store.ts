@@ -1,11 +1,13 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import {
+  type AtomicCounterAttemptOutcome,
   type AtomicDailyCounterStore,
   type CounterOutcome,
   type CounterRequest,
   counterRow,
   type DailyCounterStore,
   dayKey,
+  type ExhaustedCounter,
   nextReset,
   retentionCutoff,
 } from './counter-store.js';
@@ -48,6 +50,15 @@ export class PostgresDailyCounterStore implements DailyCounterStore, AtomicDaily
         PRIMARY KEY (counter_key, day)
       )
     `);
+    await this.#pool.query(`
+      CREATE TABLE IF NOT EXISTS admission_counter_receipts (
+        receipt_key text NOT NULL,
+        day date NOT NULL,
+        fingerprint text NOT NULL,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        PRIMARY KEY (receipt_key, day)
+      )
+    `);
     // The primary key leads with the counter key, so retention's `day < cutoff` would scan without
     // this. It is the only read the table has that is not a point lookup.
     //
@@ -62,6 +73,9 @@ export class PostgresDailyCounterStore implements DailyCounterStore, AtomicDaily
     // does nothing.
     await this.#pool.query(
       'CREATE INDEX IF NOT EXISTS admission_daily_counters_day ON admission_daily_counters (day)',
+    );
+    await this.#pool.query(
+      'CREATE INDEX IF NOT EXISTS admission_counter_receipts_day ON admission_counter_receipts (day)',
     );
   }
 
@@ -101,41 +115,14 @@ export class PostgresDailyCounterStore implements DailyCounterStore, AtomicDaily
   }
 
   async consumeAll(requests: readonly CounterRequest[], now: Date): Promise<boolean> {
-    const batch = requests
-      .map((request) => {
-        const row = counterRow(request, now);
-        return { request, counterKey: row.key, day: row.day, amount: request.amount ?? 1 };
-      })
-      // Every caller acquires shared rows in the same order, preventing account/global batches from
-      // deadlocking when many accounts race the fleet ceiling.
-      .sort(
-        (left, right) =>
-          left.day.localeCompare(right.day) || left.counterKey.localeCompare(right.counterKey),
-      );
-    const identities = batch.map((entry) => `${entry.day}:${entry.counterKey}`);
-    if (new Set(identities).size !== identities.length) {
-      throw new Error('atomic counter requests must have distinct row identities');
-    }
+    const batch = normalizedBatch(requests, now);
     if (batch.some((entry) => entry.request.limit <= 0)) return false;
 
     const client = await this.#pool.connect();
     let committed = false;
     try {
       await client.query('BEGIN');
-      for (const entry of batch) {
-        const result = await client.query<{ used: string }>(
-          `INSERT INTO admission_daily_counters (counter_key, day, used)
-           SELECT $1::text, $2::date, $3::bigint WHERE $3::bigint <= $4::bigint
-           ON CONFLICT (counter_key, day) DO UPDATE
-             SET used = admission_daily_counters.used + $3::bigint, updated_at = now()
-             WHERE admission_daily_counters.used + $3::bigint <= $4::bigint
-           RETURNING used`,
-          [entry.counterKey, entry.day, entry.amount, entry.request.limit],
-        );
-        if (result.rows[0] === undefined) {
-          return false;
-        }
-      }
+      if ((await consumeBatch(client, batch, now)).length > 0) return false;
       await client.query('COMMIT');
       committed = true;
       this.#maybePrune(now);
@@ -145,6 +132,48 @@ export class PostgresDailyCounterStore implements DailyCounterStore, AtomicDaily
         // Handles both a deliberate denial and an aborted transaction after an unexpected failure.
         await client.query('ROLLBACK').catch(() => undefined);
       }
+      client.release();
+    }
+  }
+
+  async consumeAllOnce(
+    requests: readonly CounterRequest[],
+    attempt: { readonly key: string; readonly fingerprint: string },
+    now: Date,
+  ): Promise<AtomicCounterAttemptOutcome> {
+    const batch = normalizedBatch(requests, now);
+    const receipt = counterRow({ key: attempt.key }, now);
+    const client = await this.#pool.connect();
+    let committed = false;
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [
+        receipt.key,
+        receipt.day,
+      ]);
+      const prior = await client.query<{ fingerprint: string }>(
+        'SELECT fingerprint FROM admission_counter_receipts WHERE receipt_key=$1 AND day=$2',
+        [receipt.key, receipt.day],
+      );
+      const existing = prior.rows[0];
+      if (existing !== undefined) {
+        await client.query('COMMIT');
+        committed = true;
+        return { kind: existing.fingerprint === attempt.fingerprint ? 'replayed' : 'conflict' };
+      }
+      const exhausted = await consumeBatch(client, batch, now);
+      if (exhausted.length > 0) return { kind: 'refused', exhausted };
+      await client.query(
+        `INSERT INTO admission_counter_receipts (receipt_key, day, fingerprint)
+         VALUES ($1,$2,$3)`,
+        [receipt.key, receipt.day, attempt.fingerprint],
+      );
+      await client.query('COMMIT');
+      committed = true;
+      this.#maybePrune(now);
+      return { kind: 'consumed' };
+    } finally {
+      if (!committed) await client.query('ROLLBACK').catch(() => undefined);
       client.release();
     }
   }
@@ -165,14 +194,21 @@ export class PostgresDailyCounterStore implements DailyCounterStore, AtomicDaily
 
   async prune(now: Date): Promise<number> {
     // `ctid` batching bounds one statement's work; the next sweep takes the next batch.
-    const result = await this.#pool.query(
+    const counters = await this.#pool.query(
       `DELETE FROM admission_daily_counters
         WHERE ctid IN (
           SELECT ctid FROM admission_daily_counters WHERE day < $1::date LIMIT $2::int
         )`,
       [retentionCutoff(now), PRUNE_BATCH],
     );
-    return result.rowCount ?? 0;
+    const receipts = await this.#pool.query(
+      `DELETE FROM admission_counter_receipts
+        WHERE ctid IN (
+          SELECT ctid FROM admission_counter_receipts WHERE day < $1::date LIMIT $2::int
+        )`,
+      [retentionCutoff(now), PRUNE_BATCH],
+    );
+    return (counters.rowCount ?? 0) + (receipts.rowCount ?? 0);
   }
 
   async #usedFor(counterKey: string, day: string): Promise<number> {
@@ -190,4 +226,60 @@ export class PostgresDailyCounterStore implements DailyCounterStore, AtomicDaily
     );
     return result.rows[0] === undefined ? 0 : Number(result.rows[0].used);
   }
+}
+
+interface CounterBatchEntry {
+  readonly request: CounterRequest;
+  readonly counterKey: string;
+  readonly day: string;
+  readonly amount: number;
+}
+
+function normalizedBatch(requests: readonly CounterRequest[], now: Date): CounterBatchEntry[] {
+  const batch = requests
+    .map((request) => {
+      const row = counterRow(request, now);
+      return { request, counterKey: row.key, day: row.day, amount: request.amount ?? 1 };
+    })
+    .sort(
+      (left, right) =>
+        left.day.localeCompare(right.day) || left.counterKey.localeCompare(right.counterKey),
+    );
+  const identities = batch.map((entry) => `${entry.day}:${entry.counterKey}`);
+  if (new Set(identities).size !== identities.length) {
+    throw new Error('atomic counter requests must have distinct row identities');
+  }
+  return batch;
+}
+
+async function consumeBatch(
+  client: PoolClient,
+  batch: readonly CounterBatchEntry[],
+  now: Date,
+): Promise<readonly ExhaustedCounter[]> {
+  const exhausted: ExhaustedCounter[] = [];
+  for (const entry of batch) {
+    await client.query(
+      'INSERT INTO admission_daily_counters (counter_key, day, used) VALUES ($1,$2,0) ON CONFLICT DO NOTHING',
+      [entry.counterKey, entry.day],
+    );
+    const result = await client.query<{ used: string }>(
+      'SELECT used FROM admission_daily_counters WHERE counter_key=$1 AND day=$2 FOR UPDATE',
+      [entry.counterKey, entry.day],
+    );
+    const used = Number(result.rows[0]?.used ?? 0);
+    if (entry.request.limit <= 0 || used + entry.amount > entry.request.limit)
+      exhausted.push({
+        key: entry.request.key,
+        limit: entry.request.limit,
+        resetAt: nextReset(now, entry.request.window),
+      });
+  }
+  if (exhausted.length > 0) return exhausted;
+  for (const entry of batch)
+    await client.query(
+      'UPDATE admission_daily_counters SET used=used+$3, updated_at=now() WHERE counter_key=$1 AND day=$2',
+      [entry.counterKey, entry.day, entry.amount],
+    );
+  return [];
 }

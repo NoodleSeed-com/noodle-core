@@ -1,4 +1,10 @@
 import type { CatalogConnector, JsonSchema } from '@noodle-borg/compiler';
+import {
+  BUILTIN_RECORD_CATALOG_CONNECTOR,
+  RECORD_CONNECTOR_ID,
+  RECORD_CONNECTOR_VERSION,
+  RECORD_OPERATION_SIGNATURES,
+} from '@noodle-borg/compiler';
 import { connector } from './connectors.js';
 
 /** Every state operation returns the same envelope (JSON Schema 2020-12, ADR 0139). */
@@ -58,13 +64,20 @@ const state = connector('noodle_state')
     output: stateOutput,
   });
 
+const records = Object.entries(RECORD_OPERATION_SIGNATURES).reduce(
+  (builder, [name, signature]) => builder.operation(name, signature),
+  connector(RECORD_CONNECTOR_ID).version(RECORD_CONNECTOR_VERSION),
+);
+
 export const noodlePlatform = {
+  records: { v1: records },
   state: {
     v1: state,
   },
 } as const;
 
 export const noodlePlatformCatalog: readonly CatalogConnector[] = [
+  BUILTIN_RECORD_CATALOG_CONNECTOR,
   {
     id: state.id,
     version: state.version,

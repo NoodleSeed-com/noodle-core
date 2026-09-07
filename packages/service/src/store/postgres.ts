@@ -18,6 +18,7 @@ import type {
   ArtifactStore,
   ConfigScope,
   ConfigStore,
+  ConfigValueInput,
   ConfigValueMetadata,
   ControlPlaneStore,
   CreateOrgWithOwnerInput,
@@ -55,10 +56,9 @@ import {
   sweepArchivedAppRows,
 } from './postgres-apps.js';
 import {
-  deleteConfigValueRow,
   listConfigValuesRow,
   resolveConfigValuesRow,
-  setConfigValueRow,
+  transactConfigRows,
 } from './postgres-config.js';
 import { findActiveCustomerAuthAudienceConflictRow } from './postgres-customer-auth-audience.js';
 import type { CustomerAuthAudienceReconciliation } from './postgres-customer-auth-audience-schema.js';
@@ -81,6 +81,7 @@ import {
   rowToRecord,
 } from './postgres-rows.js';
 import { ensureArtifactSchema } from './postgres-schema.js';
+import { postgresQueryExecutor } from './postgres-transaction.js';
 import { validateDeploymentListFilter } from './records.js';
 
 /**
@@ -155,7 +156,7 @@ export class PostgresArtifactStore
   }
 
   async get(deploymentId: string): Promise<DeployRecord | undefined> {
-    const { rows } = await this.#pool.query<DeployRow>(
+    const { rows } = await postgresQueryExecutor(this.#pool).query<DeployRow>(
       'SELECT * FROM deploy_records WHERE deployment_id = $1',
       [deploymentId],
     );
@@ -165,7 +166,7 @@ export class PostgresArtifactStore
 
   async getActiveByTenant(ref: TenantRef): Promise<DeployRecord | undefined> {
     const safe = validateTenantRef(ref);
-    const { rows } = await this.#pool.query<DeployRow>(
+    const { rows } = await postgresQueryExecutor(this.#pool).query<DeployRow>(
       `SELECT *
        FROM deploy_records
        WHERE org_slug = $1 AND app_slug = $2 AND environment = $3 AND active = true
@@ -182,7 +183,7 @@ export class PostgresArtifactStore
   ): Promise<DeployRecord | undefined> {
     const safe = validateTenantRef(ref);
     const safeVersion = normalizeServerVersion(serverVersion);
-    const { rows } = await this.#pool.query<DeployRow>(
+    const { rows } = await postgresQueryExecutor(this.#pool).query<DeployRow>(
       `SELECT *
        FROM deploy_records
        WHERE org_slug = $1
@@ -218,7 +219,7 @@ export class PostgresArtifactStore
     ref: TenantRef,
     auth: TenantAuthConfig,
   ): Promise<TenantRef | undefined> {
-    return findActiveCustomerAuthAudienceConflictRow(this.#pool, ref, auth);
+    return findActiveCustomerAuthAudienceConflictRow(postgresQueryExecutor(this.#pool), ref, auth);
   }
 
   async updateActiveAccess(
@@ -249,7 +250,9 @@ export class PostgresArtifactStore
   }
 
   async loadAll(): Promise<readonly DeployRecord[]> {
-    const { rows } = await this.#pool.query<DeployRow>('SELECT * FROM deploy_records');
+    const { rows } = await postgresQueryExecutor(this.#pool).query<DeployRow>(
+      'SELECT * FROM deploy_records',
+    );
     return rows.map(rowToRecord);
   }
 
@@ -266,7 +269,7 @@ export class PostgresArtifactStore
       clauses.push(`environment = $${values.length}`);
     }
     if (safe.includeArchived !== true) clauses.push('archived_at IS NULL');
-    const { rows } = await this.#pool.query<DeploySummaryRow>(
+    const { rows } = await postgresQueryExecutor(this.#pool).query<DeploySummaryRow>(
       `SELECT ${DEPLOY_SUMMARY_COLUMNS}
        FROM deploy_records
        WHERE ${clauses.join(' AND ')}
@@ -277,7 +280,7 @@ export class PostgresArtifactStore
   }
 
   async getAppArchivedAt(org: string, app: string): Promise<string | undefined> {
-    return getAppArchivedAtRow(this.#pool, org, app);
+    return getAppArchivedAtRow(postgresQueryExecutor(this.#pool), org, app);
   }
 
   async archiveApp(org: string, app: string, at: string): Promise<AppArchiveResult | undefined> {
@@ -300,11 +303,19 @@ export class PostgresArtifactStore
     org: string,
     opts: { readonly includeArchived?: boolean; readonly limit?: number } = {},
   ): Promise<{ readonly apps: readonly AppSummary[]; readonly truncated: boolean }> {
-    return listAppsRows(this.#pool, org, opts);
+    return listAppsRows(postgresQueryExecutor(this.#pool), org, opts);
+  }
+
+  async getAppGeneration(org: string, app: string): Promise<string | undefined> {
+    const result = await postgresQueryExecutor(this.#pool).query<{ generation: string }>(
+      `SELECT to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS generation FROM apps WHERE org_slug=$1 AND slug=$2`,
+      [validateSlug('org', org), validateSlug('app', app)],
+    );
+    return result.rows[0]?.generation;
   }
 
   async getApp(org: string, app: string): Promise<AppSummary | undefined> {
-    return getAppRow(this.#pool, org, app);
+    return getAppRow(postgresQueryExecutor(this.#pool), org, app);
   }
 
   async listEnvironments(
@@ -312,11 +323,11 @@ export class PostgresArtifactStore
     app: string,
     opts: { readonly includeArchived?: boolean } = {},
   ): Promise<readonly EnvSummary[]> {
-    return listEnvironmentsRows(this.#pool, org, app, opts);
+    return listEnvironmentsRows(postgresQueryExecutor(this.#pool), org, app, opts);
   }
 
   async getEnvironment(org: string, app: string, env: string): Promise<EnvSummary | undefined> {
-    return getEnvironmentRow(this.#pool, org, app, env);
+    return getEnvironmentRow(postgresQueryExecutor(this.#pool), org, app, env);
   }
 
   async setProductionEnvironment(
@@ -331,7 +342,7 @@ export class PostgresArtifactStore
     const safeOrg = validateSlug('org', org);
     // Org-scoped in the query itself (not filtered after fetch): a deployment_id belonging to another
     // org must never be distinguishable from an unknown one.
-    const { rows } = await this.#pool.query<DeploySummaryRow>(
+    const { rows } = await postgresQueryExecutor(this.#pool).query<DeploySummaryRow>(
       `SELECT ${DEPLOY_SUMMARY_COLUMNS} FROM deploy_records WHERE deployment_id = $1 AND org_slug = $2`,
       [deploymentId, safeOrg],
     );
@@ -339,26 +350,25 @@ export class PostgresArtifactStore
     return row ? rowToDeploymentSummary(row) : undefined;
   }
 
-  setConfigValue(input: {
-    readonly kind: ManagedConfigKind;
-    readonly scope: ConfigScope;
-    readonly name: string;
-    readonly value: string;
-    readonly updatedBySubject?: string;
-    readonly updatedByEmail?: string;
-  }): Promise<ConfigValueMetadata> {
-    return setConfigValueRow(this.#pool, this.#secretBox, input);
+  setConfigValue(input: ConfigValueInput): Promise<ConfigValueMetadata> {
+    return this.transactConfig(input.scope.org, (transaction) => transaction.setConfigValue(input));
   }
 
   deleteConfigValue(kind: ManagedConfigKind, scope: ConfigScope, name: string): Promise<boolean> {
-    return deleteConfigValueRow(this.#pool, kind, scope, name);
+    return this.transactConfig(scope.org, (transaction) =>
+      transaction.deleteConfigValue(kind, scope, name),
+    );
+  }
+
+  transactConfig<T>(org: string, work: (transaction: ConfigStore) => Promise<T>): Promise<T> {
+    return transactConfigRows(this.#pool, this.#secretBox, org, work);
   }
 
   listConfigValues(
     kind: ManagedConfigKind,
     scope: ConfigScope,
   ): Promise<readonly ConfigValueMetadata[]> {
-    return listConfigValuesRow(this.#pool, kind, scope);
+    return listConfigValuesRow(postgresQueryExecutor(this.#pool), kind, scope);
   }
 
   resolveConfigValues(
@@ -366,7 +376,13 @@ export class PostgresArtifactStore
     scope: ConfigScope,
     name?: string,
   ): Promise<Record<string, string>> {
-    return resolveConfigValuesRow(this.#pool, this.#secretBox, kind, scope, name);
+    return resolveConfigValuesRow(
+      postgresQueryExecutor(this.#pool),
+      this.#secretBox,
+      kind,
+      scope,
+      name,
+    );
   }
 
   async createOrg(input: { slug: string; displayName?: string }): Promise<OrgRecord> {
@@ -423,6 +439,18 @@ export class PostgresArtifactStore
 
   async getOrg(slug: string): Promise<OrgRecord | undefined> {
     return controlPlaneRows.getOrgRow(this.#pool, slug);
+  }
+
+  getOrganizationAgreement(org: string, version: string) {
+    return controlPlaneRows.getOrganizationAgreementRow(
+      postgresQueryExecutor(this.#pool),
+      org,
+      version,
+    );
+  }
+
+  acceptOrganizationAgreement(input: controlPlaneRows.AcceptOrganizationAgreementInput) {
+    return controlPlaneRows.acceptOrganizationAgreementRow(this.#pool, input);
   }
 
   async listOrgs(): Promise<readonly OrgRecord[]> {

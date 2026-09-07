@@ -14,16 +14,25 @@ import { normalizePublicBaseDomain } from '@noodle-borg/module';
 import type { WrappingMasterKey } from '@noodle-borg/runtime';
 import type { ModuleInput } from '@noodle-borg/service-modules';
 import { createLogger, type LogLevel } from '@noodle-borg/transport-http';
+import { resolveApplicationConnectionsConfig } from './application-connections-config.js';
 import { resolveBuildInfo } from './build-info.js';
 import { resolveMcpProtocolMode } from './mcp-protocol-runtime.js';
 import { GoogleOAuthAuthenticator } from './oauth/google.js';
+import { resolveRecoveryMode } from './recovery-quarantine.js';
 import { serveService } from './serve.js';
 import type { PostgresPool } from './store/cloudsql-pool.js';
 import { ResendEmailSender, resolveWelcomeEmailConfig } from './welcome-email.js';
 
 const LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
 
+export { parseBusinessOnboarding } from './business-onboarding.js';
+export { resolveRecoveryMode } from './recovery-quarantine.js';
+
+import { type BusinessOnboardingOptions, parseBusinessOnboarding } from './business-onboarding.js';
+
 export interface ServiceMainOverrides {
+  readonly businessOnboarding?: BusinessOnboardingOptions;
+  readonly recoveryMode?: import('./recovery-quarantine.js').RecoveryMode;
   readonly postgresPool?: PostgresPool;
   readonly wrappingMasterKey?: WrappingMasterKey;
   readonly modules?: readonly ModuleInput[];
@@ -34,6 +43,17 @@ export interface ServiceMainOverrides {
 
 /** Start the portable service process, optionally with infrastructure supplied by a private host. */
 export async function runServiceMain(overrides: ServiceMainOverrides = {}): Promise<void> {
+  const deploymentRecoveryMode = resolveRecoveryMode(
+    overrides.recoveryMode ?? process.env.NOODLE_RECOVERY_MODE,
+  );
+  if (deploymentRecoveryMode === 'quarantined') {
+    await serveService({
+      recoveryMode: deploymentRecoveryMode,
+      port: Number(process.env.PORT ?? 8787),
+      ...(process.env.HOST === undefined ? {} : { host: process.env.HOST }),
+    });
+    return;
+  }
   const port = Number(process.env.PORT ?? 8787);
   const publicBaseUrl = process.env.PUBLIC_BASE_URL;
   const host = process.env.HOST;
@@ -56,6 +76,14 @@ export async function runServiceMain(overrides: ServiceMainOverrides = {}): Prom
   const dataDir = process.env.NOODLE_DATA_DIR;
   const databaseUrl = process.env.DATABASE_URL;
   const secretMasterKey = process.env.NOODLE_SECRET_MASTER_KEY;
+  const businessInformationSourceIdentityKey = process.env.NOODLE_BUSINESS_SOURCE_IDENTITY_KEY;
+  const applicationConnections = resolveApplicationConnectionsConfig(process.env);
+  const operationEvidenceIdentityKey = process.env.NOODLE_OPERATION_EVIDENCE_IDENTITY_KEY;
+  const operationEvidenceEpoch = process.env.NOODLE_OPERATION_EVIDENCE_EPOCH;
+  const businessInformationPublicIntakeEnabled = parseOptionalBoolean(
+    'NOODLE_SOLUTION_PUBLIC_INTAKE_ENABLED',
+    process.env.NOODLE_SOLUTION_PUBLIC_INTAKE_ENABLED,
+  );
   const mcpProtocolMode = resolveMcpProtocolMode(process.env.NOODLE_MCP_PROTOCOL_MODE);
   const intentCapturePreviewOrgs = parseList(process.env.NOODLE_INTENT_CAPTURE_PREVIEW_ORGS);
   const envLevel = process.env.NOODLE_LOG_LEVEL;
@@ -209,6 +237,14 @@ export async function runServiceMain(overrides: ServiceMainOverrides = {}): Prom
       ? createJwtVerifier({ issuer: oauthIssuer, jwksUri: oauthJwksUri })
       : undefined;
   const running = await serveService({
+    ...(overrides.businessOnboarding !== undefined
+      ? { businessOnboarding: overrides.businessOnboarding }
+      : process.env.NOODLE_ORGANIZATION_AGREEMENT === undefined
+        ? {}
+        : {
+            businessOnboarding: parseBusinessOnboarding(process.env.NOODLE_ORGANIZATION_AGREEMENT),
+          }),
+    ...(deploymentRecoveryMode === undefined ? {} : { recoveryMode: deploymentRecoveryMode }),
     port,
     logger,
     developerMcp: true,
@@ -236,6 +272,13 @@ export async function runServiceMain(overrides: ServiceMainOverrides = {}): Prom
       : secretMasterKey
         ? { secretMasterKey }
         : {}),
+    ...(businessInformationSourceIdentityKey ? { businessInformationSourceIdentityKey } : {}),
+    ...(applicationConnections ? { applicationConnections } : {}),
+    ...(operationEvidenceIdentityKey ? { operationEvidenceIdentityKey } : {}),
+    ...(operationEvidenceEpoch ? { operationEvidenceEpoch } : {}),
+    ...(businessInformationPublicIntakeEnabled === undefined
+      ? {}
+      : { businessInformationPublicIntakeEnabled }),
     ...(overrides.modules === undefined ? {} : { modules: overrides.modules }),
     ...(overrides.managedAssistantModelResolver === undefined
       ? {}

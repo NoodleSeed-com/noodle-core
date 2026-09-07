@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
+import { memoryActivityPage } from './activity-pagination.js';
+import { collectionControlEnabled } from './collection-controls.js';
 import type {
+  AcceptedBusinessInformationSchema,
   BusinessGrant,
   BusinessInformationStore,
   GrantMutationResult,
@@ -14,30 +17,55 @@ import type {
   SolutionInstallation,
 } from './contracts.js';
 import {
+  InMemoryInstallationLifecycle,
+  type InstallationApplicationResolver,
+} from './in-memory-installation-lifecycle.js';
+import { InMemoryBusinessInvitations } from './in-memory-invitations.js';
+import { BusinessMemoryLocks } from './in-memory-locks.js';
+import type {
+  IdempotencyRecord,
+  InMemoryBusinessInformationStoreOptions,
+} from './in-memory-store-types.js';
+import {
+  InstallationCapacityError,
+  MAX_RETAINED_INSTALLATIONS_PER_ORG,
+} from './installation-capacity.js';
+import { migrateLegacyRequestRecord } from './legacy-request-migration.js';
+import type { ManagedDefinitionResolver } from './managed-releases.js';
+import {
   activityFromRecord,
   applyRequestOperation,
-  cloneActivity,
   cloneGrant,
-  cloneInstallation,
   cloneRecord,
   deletedRecord,
+  effectiveInstallation,
   idempotencyDigest,
   initialRecord,
   installationFingerprint,
+  managedInstallationIntentMatches,
   normalizeInstallationInput,
   permissionsForBusinessRole,
   requestFingerprint,
   validateCollectionEnabled,
   validateExpectedRevision,
+  validateStoredRecord,
 } from './model.js';
+import { matchesNativeQueryMetadata, planNativeQuery, runNativeQuery } from './native-query.js';
+import { commitNativeMemoryRecord, NativeStorageBudget } from './native-storage-budget.js';
 import {
   afterCursor,
   compareRecords,
   decodeCursor,
-  encodeCursor,
+  grantKey,
+  installationIdKey,
+  page,
   recordKey,
   scopeKey,
 } from './pagination.js';
+import {
+  BusinessPrincipalAuthority,
+  type BusinessPrincipalProvider,
+} from './principal-authority.js';
 import {
   boundedExportPageSize,
   boundedPageSize,
@@ -46,16 +74,7 @@ import {
   validateScope,
 } from './validation.js';
 
-interface IdempotencyRecord {
-  readonly fingerprint: string;
-  readonly recordKey: string;
-}
-
-export interface InMemoryBusinessInformationStoreOptions {
-  readonly now?: () => Date;
-  readonly id?: () => string;
-  readonly publicId?: () => string;
-}
+export type { InMemoryBusinessInformationStoreOptions } from './in-memory-store-types.js';
 
 /** Process-local development/test adapter. Hosted services must use the PostgreSQL adapter. */
 export class InMemoryBusinessInformationStore implements BusinessInformationStore {
@@ -64,18 +83,54 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
   readonly #publicIds = new Map<string, string>();
   readonly #installationFingerprints = new Map<string, string>();
   readonly #grants = new Map<string, BusinessGrant>();
+  readonly #invitations: InMemoryBusinessInvitations;
+  readonly #lifecycle: InMemoryInstallationLifecycle;
+  readonly #principals = new BusinessPrincipalAuthority();
+  readonly #custody = new NativeStorageBudget();
   readonly #records = new Map<string, ManagedRequestRecord>();
   readonly #activities = new Map<string, ManagedRequestActivity[]>();
   readonly #idempotency = new Map<string, IdempotencyRecord>();
-  readonly #locks = new Map<string, Promise<void>>();
+  readonly #locks = new BusinessMemoryLocks();
   readonly #now: () => Date;
   readonly #id: () => string;
   readonly #publicId: () => string;
+  readonly #managedDefinition: ManagedDefinitionResolver | undefined;
 
   constructor(options: InMemoryBusinessInformationStoreOptions = {}) {
     this.#now = options.now ?? (() => new Date());
     this.#id = options.id ?? randomUUID;
     this.#publicId = options.publicId ?? (() => `sol_${randomUUID().replaceAll('-', '')}`);
+    this.#managedDefinition = options.managedDefinition;
+    this.#lifecycle = new InMemoryInstallationLifecycle({
+      installations: this.#installations,
+      getGrant: (scope, subject) => this.#grants.get(grantKey(scope, subject)),
+      withLock: (key, operation) => this.#locks.run(key, operation),
+      now: this.#now,
+      managedDefinition: this.#managedDefinition,
+    });
+    this.#invitations = new InMemoryBusinessInvitations({
+      now: this.#now,
+      getInstallation: (scope) => this.getInstallation(scope),
+      getGrant: (scope, subject) => this.getGrant(scope, subject),
+      putGrant: (grant) => this.#grants.set(grantKey(grant.scope, grant.subject), grant),
+      withGrantLock: (scope, operation) => this.#locks.run(`grants:${scopeKey(scope)}`, operation),
+      liveAdministratorCount: (scope) => this.#liveAdministratorCount(scope),
+    });
+  }
+
+  configurePrincipalAuthority(provider: BusinessPrincipalProvider | undefined): void {
+    this.#principals.configure(provider);
+  }
+
+  async listEligibleAssignees(scope: InstallationScope) {
+    return this.#principals.eligible(await this.listGrants(scope));
+  }
+
+  getBusinessNotice(scope: InstallationScope) {
+    return this.#lifecycle.getBusinessNotice(scope);
+  }
+  setBusinessNotice(input: Parameters<BusinessInformationStore['setBusinessNotice']>[0]) {
+    return this.#lifecycle.setBusinessNotice(input);
   }
 
   async createInstallation(
@@ -83,65 +138,73 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
   ): Promise<InstallationCreateResult> {
     const normalized = normalizeInstallationInput(input);
     const key = scopeKey(normalized.scope);
-    return this.#withLock(
-      `installation:${normalized.scope.org}:${normalized.scope.installationId}`,
-      async () => {
-        const existingKey = this.#installationIds.get(
-          installationIdKey(normalized.scope.org, normalized.scope.installationId),
-        );
-        const existing =
-          existingKey === undefined ? undefined : this.#installations.get(existingKey);
-        if (existing !== undefined) {
-          return {
-            disposition:
-              existingKey === key &&
-              this.#installationFingerprints.get(key) === installationFingerprint(normalized)
-                ? 'replayed'
-                : 'conflict',
-            installation: cloneInstallation(existing),
-          };
-        }
-        const now = this.#now().toISOString();
-        const installation: SolutionInstallation = {
-          scope: { ...normalized.scope },
-          publicId: this.#uniquePublicId(),
-          profileKey: normalized.profileKey,
-          profileVersion: normalized.profileVersion,
-          managedCollections: [...normalized.managedCollections],
-          retentionDays: normalized.retentionDays,
-          revision: 1,
-          createdAt: now,
-          createdBySubject: normalized.actorSubject,
-          updatedAt: now,
-          updatedBySubject: normalized.actorSubject,
+    return this.#locks.run(`installations:${normalized.scope.org}`, async () => {
+      const existingKey = this.#installationIds.get(
+        installationIdKey(normalized.scope.org, normalized.scope.installationId),
+      );
+      const existing = existingKey === undefined ? undefined : this.#installations.get(existingKey);
+      if (existing !== undefined) {
+        return {
+          disposition:
+            existingKey === key &&
+            (this.#installationFingerprints.get(key) === installationFingerprint(normalized) ||
+              managedInstallationIntentMatches(existing, normalized))
+              ? 'replayed'
+              : 'conflict',
+          installation: effectiveInstallation(existing, this.#managedDefinition),
         };
-        this.#installations.set(key, installation);
-        this.#installationIds.set(
-          installationIdKey(normalized.scope.org, normalized.scope.installationId),
-          key,
-        );
-        this.#publicIds.set(installation.publicId, key);
-        this.#installationFingerprints.set(key, installationFingerprint(normalized));
-        const administrator: BusinessGrant = {
-          scope: { ...normalized.scope },
-          subject: normalized.actorSubject,
-          ...(normalized.actorEmail === undefined ? {} : { email: normalized.actorEmail }),
-          role: 'administrator',
-          revision: 1,
-          createdAt: now,
-          createdBySubject: normalized.actorSubject,
-          updatedAt: now,
-          updatedBySubject: normalized.actorSubject,
-        };
-        this.#grants.set(grantKey(normalized.scope, normalized.actorSubject), administrator);
-        return { disposition: 'created', installation: cloneInstallation(installation) };
-      },
-    );
+      }
+      if (
+        [...this.#installations.values()].filter(
+          (entry) => entry.scope.org === normalized.scope.org,
+        ).length >= MAX_RETAINED_INSTALLATIONS_PER_ORG
+      )
+        throw new InstallationCapacityError();
+      const now = this.#now().toISOString();
+      const installation: SolutionInstallation = {
+        scope: { ...normalized.scope },
+        publicId: this.#uniquePublicId(),
+        profileKey: normalized.profileKey,
+        profileVersion: normalized.profileVersion,
+        managedCollections: [...normalized.managedCollections],
+        definition: structuredClone(normalized.definition),
+        retentionDays: normalized.retentionDays,
+        intakeActive: true,
+        applicationGeneration: 'pending',
+        revision: 1,
+        createdAt: now,
+        createdBySubject: normalized.actorSubject,
+        updatedAt: now,
+        updatedBySubject: normalized.actorSubject,
+      };
+      this.#installations.set(key, installation);
+      this.#installationIds.set(
+        installationIdKey(normalized.scope.org, normalized.scope.installationId),
+        key,
+      );
+      this.#publicIds.set(installation.publicId, key);
+      this.#installationFingerprints.set(key, installationFingerprint(normalized));
+      const administrator: BusinessGrant = {
+        scope: { ...normalized.scope },
+        subject: normalized.actorSubject,
+        ...(normalized.actorEmail === undefined ? {} : { email: normalized.actorEmail }),
+        role: 'administrator',
+        revision: 1,
+        createdAt: now,
+        createdBySubject: normalized.actorSubject,
+        updatedAt: now,
+        updatedBySubject: normalized.actorSubject,
+      };
+      this.#grants.set(grantKey(normalized.scope, normalized.actorSubject), administrator);
+      return {
+        disposition: 'created',
+        installation: effectiveInstallation(installation, this.#managedDefinition),
+      };
+    });
   }
 
   getInstallation(scope: InstallationScope): Promise<SolutionInstallation | undefined> {
-    const found = this.#installations.get(scopeKey(validateScope(scope)));
-    return Promise.resolve(found === undefined ? undefined : cloneInstallation(found));
+    return this.#lifecycle.getInstallation(scope);
   }
 
   getInstallationById(
@@ -155,23 +218,53 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
       ),
     );
     const found = key === undefined ? undefined : this.#installations.get(key);
-    return Promise.resolve(found === undefined ? undefined : cloneInstallation(found));
+    return Promise.resolve(
+      found === undefined ? undefined : effectiveInstallation(found, this.#managedDefinition),
+    );
   }
 
   resolveInstallationByPublicId(publicId: string): Promise<SolutionInstallation | undefined> {
     const key = this.#publicIds.get(validateScalar('public installation id', publicId, 128));
     const found = key === undefined ? undefined : this.#installations.get(key);
-    return Promise.resolve(found === undefined ? undefined : cloneInstallation(found));
+    return Promise.resolve(
+      found === undefined ? undefined : effectiveInstallation(found, this.#managedDefinition),
+    );
   }
 
   listInstallations(org: string): Promise<readonly SolutionInstallation[]> {
-    const normalized = validateScalar('organization', org, 63);
+    return this.#lifecycle.listInstallations(org);
+  }
+
+  listInstallationsForSubject(subject: string) {
+    const normalized = validateScalar('identity subject', subject, 256);
     return Promise.resolve(
-      [...this.#installations.values()]
-        .filter((installation) => installation.scope.org === normalized)
-        .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
-        .map(cloneInstallation),
+      [...this.#grants.values()]
+        .filter((grant) => grant.subject === normalized && grant.revokedAt === undefined)
+        .map((grant) => {
+          const installation = this.#installations.get(scopeKey(grant.scope));
+          if (installation === undefined) throw new Error('business grant installation is missing');
+          return {
+            installation: effectiveInstallation(installation, this.#managedDefinition),
+            grant: cloneGrant(grant),
+          };
+        })
+        .sort((left, right) =>
+          left.installation.createdAt.localeCompare(right.installation.createdAt),
+        ),
     );
+  }
+
+  configureApplicationLifecycle(resolve: InstallationApplicationResolver) {
+    this.#lifecycle.configureApplicationLifecycle(resolve);
+  }
+  bindApplication(scope: InstallationScope, generation: string) {
+    return this.#lifecycle.bindApplication(scope, generation);
+  }
+  pauseApplication(org: string, app: string, at: string, retired = false) {
+    return this.#lifecycle.pauseApplication(org, app, at, retired);
+  }
+  setIntakeState(input: Parameters<BusinessInformationStore['setIntakeState']>[0]) {
+    return this.#lifecycle.setIntakeState(input);
   }
 
   getGrant(scope: InstallationScope, subject: string): Promise<BusinessGrant | undefined> {
@@ -198,7 +291,7 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
     permissionsForBusinessRole(input.role);
     const scope = validateScope(input.scope);
     const key = grantKey(scope, subject);
-    return this.#withLock(`grants:${scopeKey(scope)}`, async () => {
+    return this.#locks.run(`grants:${scopeKey(scope)}`, async () => {
       if (!(await this.getInstallation(input.scope)))
         return { ok: false, reason: 'not_found', currentRevision: 0 };
       const current = this.#grants.get(key);
@@ -237,7 +330,7 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
     validateExpectedRevision(input.expectedRevision);
     const scope = validateScope(input.scope);
     const key = grantKey(scope, input.subject);
-    return this.#withLock(`grants:${scopeKey(scope)}`, async () => {
+    return this.#locks.run(`grants:${scopeKey(scope)}`, async () => {
       const current = this.#grants.get(key);
       if (current === undefined) return { ok: false, reason: 'not_found', currentRevision: 0 };
       if (current.revision !== input.expectedRevision) {
@@ -267,45 +360,110 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
     });
   }
 
+  async createInvitation(
+    input: Parameters<BusinessInformationStore['createInvitation']>[0],
+  ): ReturnType<BusinessInformationStore['createInvitation']> {
+    return this.#invitations.create(input);
+  }
+
+  listInvitations(scope: Parameters<BusinessInformationStore['listInvitations']>[0]) {
+    return this.#invitations.list(scope);
+  }
+
+  async revokeInvitation(
+    input: Parameters<BusinessInformationStore['revokeInvitation']>[0],
+  ): ReturnType<BusinessInformationStore['revokeInvitation']> {
+    return this.#invitations.revoke(input);
+  }
+
+  async claimInvitation(
+    input: Parameters<BusinessInformationStore['claimInvitation']>[0],
+  ): ReturnType<BusinessInformationStore['claimInvitation']> {
+    return this.#invitations.claim(input);
+  }
+
   async createRequest(
     input: Parameters<BusinessInformationStore['createRequest']>[0],
   ): Promise<RequestCreateResult> {
     const idempotencyKey = idempotencyDigest(input.idempotencyKey);
-    const installation = await this.#requiredInstallation(input.scope);
-    validateCollectionEnabled(installation, input.collectionKey);
     const key = `${scopeKey(input.scope)}\0${input.collectionKey}\0${idempotencyKey}`;
-    return this.#withLock(`request-create:${key}`, async () => {
-      const candidate = initialRecord({
-        installation,
-        collectionKey: input.collectionKey,
-        id: this.#id(),
-        payload: input.payload,
-        origin: input.origin,
-        actorSubject: input.actorSubject,
-        now: this.#now(),
+    return this.#locks.run(`request-create:${key}`, async () => {
+      return this.#locks.run(`intake:${scopeKey(input.scope)}`, async () => {
+        const installation = await this.#requiredInstallation(input.scope);
+        validateCollectionEnabled(installation, input.collectionKey);
+        const candidate = initialRecord({
+          installation,
+          collectionKey: input.collectionKey,
+          id: this.#id(),
+          payload: input.payload,
+          ...(input.publicInput === undefined ? {} : { publicInput: input.publicInput }),
+          origin: input.origin,
+          actorSubject: input.actorSubject,
+          now: this.#now(),
+        });
+        const fingerprint = requestFingerprint({
+          collectionKey: candidate.collectionKey,
+          payload: input.payload,
+          origin: candidate.origin,
+          actorSubject: candidate.createdBySubject,
+        });
+        const replay = this.#idempotency.get(key);
+        if (replay !== undefined) {
+          const existing = this.#expireRecordIfNeeded(replay.recordKey, this.#now());
+          if (existing === undefined)
+            throw new Error('idempotency record points to a missing request');
+          validateStoredRecord(installation, existing);
+          return {
+            disposition: replay.fingerprint === fingerprint ? 'replayed' : 'conflict',
+            record: cloneRecord(existing),
+          };
+        }
+        if (
+          !(await this.#lifecycle.applicationAllows(installation)) ||
+          ((input.origin.kind === 'embedded' || input.publicInput === true) &&
+            !installation.intakeActive)
+        ) {
+          return { disposition: 'paused' };
+        }
+        const currentKey = recordKey(input.scope, candidate.collectionKey, candidate.id);
+        this.#commitRecord(currentKey, candidate, 'created');
+        this.#idempotency.set(key, { fingerprint, recordKey: currentKey });
+        return { disposition: 'created', record: cloneRecord(candidate) };
       });
-      const fingerprint = requestFingerprint({
-        collectionKey: candidate.collectionKey,
-        payload: candidate.content?.payload,
-        origin: candidate.origin,
-        actorSubject: candidate.createdBySubject,
-      });
-      const replay = this.#idempotency.get(key);
-      if (replay !== undefined) {
-        const existing = this.#records.get(replay.recordKey);
-        if (existing === undefined)
-          throw new Error('idempotency record points to a missing request');
-        return {
-          disposition: replay.fingerprint === fingerprint ? 'replayed' : 'conflict',
-          record: cloneRecord(existing),
-        };
-      }
-      const currentKey = recordKey(input.scope, candidate.collectionKey, candidate.id);
-      this.#records.set(currentKey, candidate);
-      this.#activities.set(currentKey, [activityFromRecord(candidate, 'created')]);
-      this.#idempotency.set(key, { fingerprint, recordKey: currentKey });
-      return { disposition: 'created', record: cloneRecord(candidate) };
     });
+  }
+
+  async probeRequest(
+    input: Parameters<BusinessInformationStore['probeRequest']>[0],
+  ): ReturnType<BusinessInformationStore['probeRequest']> {
+    const installation = await this.#requiredInstallation(input.scope);
+    const candidate = initialRecord({
+      installation,
+      collectionKey: input.collectionKey,
+      id: this.#id(),
+      payload: input.payload,
+      ...(input.publicInput === undefined ? {} : { publicInput: input.publicInput }),
+      origin: input.origin,
+      actorSubject: input.actorSubject,
+      now: this.#now(),
+    });
+    const digest = idempotencyDigest(input.idempotencyKey);
+    const key = `${scopeKey(input.scope)}\0${input.collectionKey}\0${digest}`;
+    const replay = this.#idempotency.get(key);
+    if (replay === undefined) return { disposition: 'missing' };
+    const existing = this.#expireRecordIfNeeded(replay.recordKey, this.#now());
+    if (existing === undefined) throw new Error('idempotency record points to a missing request');
+    validateStoredRecord(installation, existing);
+    const fingerprint = requestFingerprint({
+      collectionKey: candidate.collectionKey,
+      payload: input.payload,
+      origin: candidate.origin,
+      actorSubject: candidate.createdBySubject,
+    });
+    return {
+      disposition: replay.fingerprint === fingerprint ? 'replayed' : 'conflict',
+      record: cloneRecord(existing),
+    };
   }
 
   #liveAdministratorCount(scope: InstallationScope): number {
@@ -324,12 +482,33 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
   ): Promise<ManagedRequestRecord | undefined> {
     const installation = await this.#requiredInstallation(scope);
     const collection = validateCollectionEnabled(installation, collectionKey);
-    const record = this.#records.get(
-      recordKey(scope, collection.key, validateScalar('record id', id, 128)),
-    );
+    const key = recordKey(scope, collection.key, validateScalar('record id', id, 128));
+    const record = this.#expireRecordIfNeeded(key, this.#now());
     if (record === undefined || (record.deletedAt !== undefined && options.includeDeleted !== true))
       return undefined;
+    validateStoredRecord(installation, record);
     return cloneRecord(record);
+  }
+
+  async listAcceptedSchemaInventory(): Promise<readonly AcceptedBusinessInformationSchema[]> {
+    const inventory = new Map<string, AcceptedBusinessInformationSchema>();
+    for (const record of this.#records.values()) {
+      const identity = {
+        profileKey: record.profileKey,
+        profileVersion: record.profileVersion,
+        collectionKey: record.collectionKey,
+        schemaVersion: record.schemaVersion,
+        schemaDigest: record.schemaDigest,
+      };
+      inventory.set(JSON.stringify(identity), identity);
+      if (record.originalSchema !== undefined) {
+        const original = { ...identity, ...record.originalSchema };
+        inventory.set(JSON.stringify(original), original);
+      }
+    }
+    return [...inventory.entries()]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([, identity]) => ({ ...identity }));
   }
 
   async listRequests(
@@ -337,24 +516,16 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
   ): Promise<RequestPage> {
     const installation = await this.#requiredInstallation(input.scope);
     const collection = validateCollectionEnabled(installation, input.collectionKey);
-    const limit = boundedPageSize(input.limit);
-    const cursor =
-      input.cursor === undefined
-        ? undefined
-        : decodeCursor(input.cursor, {
-            kind: 'list',
-            scope: input.scope,
-            collectionKey: collection.key,
-          });
-    const records = this.#matchingRecords(input.scope, collection.key)
-      .filter((record) => input.includeDeleted === true || record.deletedAt === undefined)
-      .filter((record) => input.status === undefined || record.status === input.status)
-      .filter(
-        (record) =>
-          input.assigneeSubject === undefined || record.assigneeSubject === input.assigneeSubject,
-      )
-      .filter((record) => cursor === undefined || afterCursor(record, cursor));
-    return page(records, limit, 'list', input.scope, collection.key);
+    const now = this.#now();
+    const plan = await planNativeQuery(input, collection, now, (id) =>
+      this.getRequest(input.scope, collection.key, id, { includeDeleted: true }),
+    );
+    const records = this.#matchingRecords(input.scope, collection.key).filter((record) =>
+      matchesNativeQueryMetadata(record, plan, now),
+    );
+    const result = await runNativeQuery(plan, records);
+    for (const record of result.records) validateStoredRecord(installation, record);
+    return result;
   }
 
   async mutateRequest(
@@ -364,27 +535,89 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
     const installation = await this.#requiredInstallation(input.scope);
     const collection = validateCollectionEnabled(installation, input.collectionKey);
     const key = recordKey(input.scope, collection.key, validateScalar('record id', input.id, 128));
-    return this.#withLock(`request:${key}`, async () => {
-      const current = this.#records.get(key);
-      if (current === undefined || current.deletedAt !== undefined) {
-        return { ok: false, reason: 'not_found', currentRevision: 0 };
-      }
-      if (current.revision !== input.expectedRevision) {
+    const mutate = () =>
+      this.#locks.run<RequestMutationResult>(`request:${key}`, async () => {
+        const current = this.#expireRecordIfNeeded(key, this.#now());
+        if (current === undefined || current.deletedAt !== undefined) {
+          return { ok: false, reason: 'not_found', currentRevision: 0 };
+        }
+        if (current.revision !== input.expectedRevision) {
+          return { ok: false, reason: 'conflict', currentRevision: current.revision };
+        }
+        if (
+          input.operation.kind === 'assign' &&
+          !collectionControlEnabled(collection, 'assignment')
+        ) {
+          return { ok: false, reason: 'invalid_transition', currentRevision: current.revision };
+        }
+        if (input.operation.kind === 'assign' && input.operation.assigneeSubject !== undefined) {
+          const assignee = this.#grants.get(grantKey(input.scope, input.operation.assigneeSubject));
+          if (
+            assignee === undefined ||
+            assignee.revokedAt !== undefined ||
+            assignee.role === 'viewer' ||
+            !(await this.#principals.allows(assignee.subject))
+          ) {
+            return { ok: false, reason: 'invalid_assignee', currentRevision: current.revision };
+          }
+        }
+        const historicalCollection = validateStoredRecord(installation, current);
+        const applied = applyRequestOperation(
+          current,
+          {
+            ...historicalCollection,
+            ...(collection.management === undefined ? {} : { management: collection.management }),
+            ...(collection.editableFields === undefined
+              ? {}
+              : { editableFields: collection.editableFields }),
+          },
+          input.operation,
+          input.actorSubject,
+          this.#now(),
+          this.#id,
+        );
+        if (applied === undefined) {
+          return { ok: false, reason: 'invalid_transition', currentRevision: current.revision };
+        }
+        this.#commitRecord(key, applied.record, applied.activityKind);
+        return { ok: true, record: cloneRecord(applied.record) };
+      });
+    return input.operation.kind === 'assign'
+      ? this.#locks.run(`grants:${scopeKey(input.scope)}`, mutate)
+      : mutate();
+  }
+
+  async migrateLegacyRequest(
+    input: Parameters<BusinessInformationStore['migrateLegacyRequest']>[0],
+  ): Promise<RequestMutationResult> {
+    validateExpectedRevision(input.expectedRevision);
+    const installation = await this.#requiredInstallation(input.scope);
+    validateCollectionEnabled(installation, input.collectionKey);
+    const key = recordKey(
+      input.scope,
+      input.collectionKey,
+      validateScalar('record id', input.id, 128),
+    );
+    return this.#locks.run(`request:${key}`, async () => {
+      const current = this.#expireRecordIfNeeded(key, this.#now());
+      if (current === undefined || current.deletedAt !== undefined)
+        return { ok: false, reason: 'not_found', currentRevision: current?.revision ?? 0 };
+      if (current.revision !== input.expectedRevision)
         return { ok: false, reason: 'conflict', currentRevision: current.revision };
-      }
-      const applied = applyRequestOperation(
+      const previous = validateStoredRecord(installation, current);
+      const migrated = migrateLegacyRequestRecord(
         current,
-        input.operation,
+        previous,
+        installation,
         input.actorSubject,
         this.#now(),
-        this.#id,
       );
-      if (applied === undefined) {
+      if (migrated === undefined)
         return { ok: false, reason: 'invalid_transition', currentRevision: current.revision };
+      if (migrated !== current) {
+        this.#commitRecord(key, migrated, 'schema_migrated');
       }
-      this.#records.set(key, applied.record);
-      this.#activities.get(key)?.push(activityFromRecord(applied.record, applied.activityKind));
-      return { ok: true, record: cloneRecord(applied.record) };
+      return { ok: true, record: cloneRecord(migrated) };
     });
   }
 
@@ -395,24 +628,29 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
     const installation = await this.#requiredInstallation(input.scope);
     const collection = validateCollectionEnabled(installation, input.collectionKey);
     const key = recordKey(input.scope, collection.key, validateScalar('record id', input.id, 128));
-    return this.#withLock(`request:${key}`, () =>
+    return this.#locks.run(`request:${key}`, () =>
       Promise.resolve(
         this.#eraseRecord(key, input.expectedRevision, input.actorSubject, 'customer_request'),
       ),
     );
   }
 
-  listActivity(
+  async listActivity(
     scope: InstallationScope,
     collectionKey: string,
     id: string,
-  ): Promise<readonly ManagedRequestActivity[]> {
+    input?: Parameters<BusinessInformationStore['listActivity']>[3],
+  ): ReturnType<BusinessInformationStore['listActivity']> {
+    const installation = await this.#requiredInstallation(scope);
+    const collection = validateCollectionEnabled(installation, collectionKey);
     const key = recordKey(
       validateScope(scope),
-      collectionKey,
+      collection.key,
       validateScalar('record id', id, 128),
     );
-    return Promise.resolve((this.#activities.get(key) ?? []).map(cloneActivity));
+    const record = this.#expireRecordIfNeeded(key, this.#now());
+    if (record !== undefined) validateStoredRecord(installation, record);
+    return memoryActivityPage(scope, collection.key, id, this.#activities.get(key) ?? [], input);
   }
 
   async exportRequests(
@@ -435,6 +673,7 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
       .filter((record) => record.createdAt <= snapshotAt)
       .filter((record) => input.includeDeleted === true || record.deletedAt === undefined)
       .filter((record) => cursor === undefined || afterCursor(record, cursor));
+    for (const record of records) validateStoredRecord(installation, record);
     return {
       ...page(records, limit, 'export', input.scope, collection.key, snapshotAt),
       snapshotAt,
@@ -457,7 +696,7 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
       .slice(0, limit);
     let purged = 0;
     for (const [key, record] of candidates) {
-      const result = await this.#withLock(`request:${key}`, () =>
+      const result = await this.#locks.run(`request:${key}`, () =>
         Promise.resolve(
           this.#eraseRecord(key, record.revision, 'system:retention', 'retention_expired'),
         ),
@@ -469,10 +708,29 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
 
   #matchingRecords(scope: InstallationScope, collectionKey: string): ManagedRequestRecord[] {
     const prefix = `${scopeKey(scope)}\0${collectionKey}\0`;
+    const now = this.#now().toISOString();
     return [...this.#records.entries()]
-      .filter(([key]) => key.startsWith(prefix))
+      .filter(
+        ([key, record]) =>
+          key.startsWith(prefix) &&
+          (record.deletedAt !== undefined || record.retentionExpiresAt > now),
+      )
       .map(([, record]) => record)
       .sort(compareRecords);
+  }
+
+  #expireRecordIfNeeded(key: string, now: Date): ManagedRequestRecord | undefined {
+    const current = this.#records.get(key);
+    if (
+      current === undefined ||
+      current.deletedAt !== undefined ||
+      current.retentionExpiresAt > now.toISOString()
+    ) {
+      return current;
+    }
+    const erased = deletedRecord(current, 'system:retention', now, 'retention_expired');
+    this.#commitRecord(key, erased, 'retention_expired');
+    return erased;
   }
 
   #eraseRecord(
@@ -481,7 +739,10 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
     actorSubject: string,
     reason: 'customer_request' | 'retention_expired',
   ): RequestMutationResult {
-    const current = this.#records.get(key);
+    const current =
+      reason === 'retention_expired'
+        ? this.#records.get(key)
+        : this.#expireRecordIfNeeded(key, this.#now());
     if (current === undefined || current.deletedAt !== undefined) {
       return { ok: false, reason: 'not_found', currentRevision: current?.revision ?? 0 };
     }
@@ -489,17 +750,27 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
       return { ok: false, reason: 'conflict', currentRevision: current.revision };
     }
     const erased = deletedRecord(current, actorSubject, this.#now(), reason);
-    this.#records.set(key, erased);
-    const erasedHistory = (this.#activities.get(key) ?? []).map((activity) => {
-      const { content: ignored, ...metadata } = activity;
-      void ignored;
-      return metadata;
-    });
-    this.#activities.set(key, [
-      ...erasedHistory,
-      activityFromRecord(erased, reason === 'customer_request' ? 'deleted' : 'retention_expired'),
-    ]);
+    this.#commitRecord(
+      key,
+      erased,
+      reason === 'customer_request' ? 'deleted' : 'retention_expired',
+    );
     return { ok: true, record: cloneRecord(erased) };
+  }
+
+  #commitRecord(
+    key: string,
+    record: ManagedRequestRecord,
+    kind: ManagedRequestActivity['kind'],
+  ): void {
+    commitNativeMemoryRecord(
+      this.#records,
+      this.#activities,
+      this.#custody,
+      key,
+      record,
+      activityFromRecord(record, kind),
+    );
   }
 
   async #requiredInstallation(scope: InstallationScope): Promise<SolutionInstallation> {
@@ -515,58 +786,4 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
     }
     throw new Error('could not allocate a unique public installation id');
   }
-
-  async #withLock<T>(key: string, operation: () => Promise<T>): Promise<T> {
-    const previous = this.#locks.get(key) ?? Promise.resolve();
-    let release: (value: void | PromiseLike<void>) => void = () => void 0;
-    const current = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const queued = previous.then(() => current);
-    this.#locks.set(key, queued);
-    await previous;
-    try {
-      return await operation();
-    } finally {
-      release(undefined);
-      if (this.#locks.get(key) === queued) this.#locks.delete(key);
-    }
-  }
-}
-
-function installationIdKey(org: string, installationId: string): string {
-  return `${org}\0${installationId}`;
-}
-
-function grantKey(scope: InstallationScope, subject: string): string {
-  return `${scopeKey(scope)}\0${validateScalar('grant subject', subject, 256)}`;
-}
-
-function page(
-  records: readonly ManagedRequestRecord[],
-  limit: number,
-  kind: 'list' | 'export',
-  scope: InstallationScope,
-  collectionKey: string,
-  snapshotAt?: string,
-): RequestPage {
-  const selected = records.slice(0, limit).map(cloneRecord);
-  const last = selected.at(-1);
-  const hasMore = records.length > limit;
-  return {
-    records: selected,
-    ...(hasMore && last !== undefined
-      ? {
-          nextCursor: encodeCursor({
-            version: 1,
-            kind,
-            scope: scopeKey(scope),
-            collectionKey,
-            lastCreatedAt: last.createdAt,
-            lastId: last.id,
-            ...(snapshotAt === undefined ? {} : { snapshotAt }),
-          }),
-        }
-      : {}),
-  };
 }
