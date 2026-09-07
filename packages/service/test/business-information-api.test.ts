@@ -1,5 +1,12 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import {
+  clientAddressBucket,
+  counterRow,
+  InMemoryDailyCounterStore,
+  PUBLIC_RECORD_ADMISSION_DEFAULTS,
+  publicRecordCounterRequests,
+} from '@noodle-borg/admission-limits/portable';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   type BusinessInformationStore,
@@ -1023,35 +1030,66 @@ describe('managed business information API', () => {
 
   it('bounds public intake with the shared admission counter port', async () => {
     await stopService();
-    const admissionTime = new Date();
-    await startService(businessStore, { clock: () => new Date(admissionTime) });
+    let admissionTime = new Date();
+    admissionTime.setUTCMinutes(15, 30, 0);
+    const admissionCounters = new InMemoryDailyCounterStore();
+    const options = { admissionCounters, clock: () => new Date(admissionTime) };
+    await startService(businessStore, options);
     const { publicId } = await install();
-    const url = `${base}/v1/solution-intake/${publicId}/travel_requests/records`;
-    for (let first = 0; first < 600; first += 20)
-      await Promise.all(
-        Array.from({ length: 20 }, async (_, offset) => {
-          const index = first + offset;
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              'idempotency-key': `bounded-intake-${index}`,
-            },
-            body: JSON.stringify({
-              payload: { request_type: 'service', summary: `Request ${index}` },
-            }),
-          });
-          await response.arrayBuffer();
-          expect(response.status).toBe(201);
-        }),
+    const network = clientAddressBucket('127.0.0.1');
+    if (!network) throw new Error('loopback admission bucket missing');
+    const requests = publicRecordCounterRequests(publicId, { network });
+    const limit = PUBLIC_RECORD_ADMISSION_DEFAULTS.networkPerMinute;
+    expect(limit).toBe(600);
+    // Exercise the real 600 boundary without turning an API contract test into a throughput test.
+    expect(
+      await admissionCounters.consumeAll(
+        requests.map((request) => ({ ...request, amount: limit - 1 })),
+        admissionTime,
+      ),
+    ).toBe(true);
+    const usage = () =>
+      Promise.all(
+        requests.map((request) =>
+          admissionCounters.peek(counterRow(request, admissionTime).key, admissionTime),
+        ),
       );
-    const refused = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'idempotency-key': 'bounded-intake-refused' },
-      body: JSON.stringify({ payload: { request_type: 'service', summary: 'One too many' } }),
-    });
+    const submit = (key: string) =>
+      fetch(`${base}/v1/solution-intake/${publicId}/travel_requests/records`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': key },
+        body: JSON.stringify({ payload: { request_type: 'service', summary: 'Boundary request' } }),
+      });
+    const accepted = await submit('bounded-intake-accepted');
+    expect(accepted.status).toBe(201);
+    const receipt = await accepted.json();
+    expect(await usage()).toEqual([600, 600, 600]);
+
+    await stopService();
+    await startService(businessStore, options);
+    const refused = await submit('bounded-intake-refused');
     expect(refused.status).toBe(429);
-    expect(refused.headers.get('retry-after')).not.toBeNull();
+    expect(refused.headers.get('retry-after')).toBe('30');
+    await expect(refused.json()).resolves.toMatchObject({
+      code: 'quota_exceeded',
+      limits: [
+        {
+          category: 'network',
+          limit: 600,
+          resetAt: new Date(+admissionTime + 30_000).toISOString(),
+        },
+      ],
+    });
+    const replay = await submit('bounded-intake-accepted');
+    expect(replay.status).toBe(200);
+    await expect(replay.json()).resolves.toEqual(receipt);
+    expect(await usage()).toEqual([600, 600, 600]);
+
+    admissionTime = new Date(+admissionTime + 30_000);
+    const nextMinute = await submit('bounded-intake-refused');
+    expect(nextMinute.status).toBe(201);
+    expect((await nextMinute.json()).data.recordId).not.toBe(receipt.data.recordId);
+    expect(await usage()).toEqual([1, 601, 601]);
   });
 
   it('redacts infrastructure failures from public responses', async () => {
