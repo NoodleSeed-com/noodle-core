@@ -1,7 +1,9 @@
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { renderPublishableSkills } from '@noodle-borg/agent-kit';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPluginMarketplaceArchive } from '../../../scripts/lib/plugin-marketplace-artifact.mjs';
@@ -434,6 +436,76 @@ afterEach(() => {
 });
 
 describe('system release bundle validation', () => {
+  it.each([
+    ['malformed', '{', 'Invalid agreement catalog JSON'],
+    ['absent', undefined, 'NOODLE_GOOGLE_CLIENT_ID is required'],
+    [
+      'configured',
+      JSON.stringify({
+        version: 'v1',
+        ...Object.fromEntries(
+          ['terms', 'privacy', 'processing'].map((name) => [
+            name,
+            { url: `https://example.com/legal/v1/${name}.txt`, sha256: 'a'.repeat(64) },
+          ]),
+        ),
+      }),
+      'NOODLE_GOOGLE_CLIENT_ID is required',
+    ],
+  ])('validates %s agreement configuration through the promotion command', (_name, catalog, error) => {
+    const bundle = createBundle({ empty: true });
+    const result = spawnSync(
+      process.execPath,
+      [
+        fileURLToPath(new URL('../../../scripts/system-release-promote.mjs', import.meta.url)),
+        '--bundle',
+        bundle.root,
+      ],
+      {
+        encoding: 'utf8',
+        timeout: 5_000,
+        maxBuffer: 64 * 1024,
+        env: {
+          PATH: process.env.PATH,
+          NOODLE_BILLING_ENFORCEMENT_MODE: 'free_v1',
+          NOODLE_CONTROL_PLANE_SIGNUP_MODE: 'public',
+          CONSOLE_SIGNUP_MODE: 'public',
+          PUBLIC_BASE_URL: 'https://service.example.com',
+          PORTAL_SERVICE_ACCOUNT: 'portal-run@example.iam.gserviceaccount.com',
+          NOODLE_PORTAL_URL: 'https://portal.example.com',
+          NOODLE_OAUTH_PORTAL_CLIENT_ID: 'portal-client',
+          PORTAL_AUTH_SECRET_SECRET: 'portal-auth',
+          PORTAL_AUTH_SECRET_VERSION: '1',
+          CALENDAR_ADAPTER_INSTANCE_CONNECTION_NAME: 'example-project:us-central1:example-instance',
+          CALENDAR_ADAPTER_SERVICE_ACCOUNT: 'calendar-adapter@example.iam.gserviceaccount.com',
+          CALENDAR_ADAPTER_KEY_SECRET: 'calendar-adapter-key',
+          CALENDAR_ADAPTER_KEY_VERSION: '1',
+          CALENDAR_ADAPTER_DATABASE_URL_SECRET: 'calendar-adapter-database-url',
+          CALENDAR_ADAPTER_DATABASE_URL_VERSION: '1',
+          GCP_PROJECT: 'project-prod',
+          GCP_REGION: 'us-central1',
+          GCP_ARTIFACTS_PROJECT: 'project-ci',
+          AR_REPO: 'borg',
+          CLOUD_RUN_SERVICE: 'service',
+          CLOUD_RUN_BUILDER_JOB: 'builder',
+          CLOUD_RUN_WEBSITE: 'website',
+          CLOUD_RUN_DOCS: 'docs',
+          CLOUD_RUN_CONSOLE: 'console',
+          CLOUD_RUN_PORTAL: 'portal',
+          CLOUD_RUN_CALENDAR_ADAPTER: 'calendar-adapter',
+          NOODLE_BUSINESS_SOURCE_IDENTITY_KEY_SECRET: 'source-identity',
+          NOODLE_BUSINESS_SOURCE_IDENTITY_KEY_VERSION: '1',
+          NOODLE_ORGANIZATION_AGREEMENT: catalog,
+          // No ambient credentials; the next required variable stops execution before cloud access.
+        },
+      },
+    );
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr.trim()).toBe(error);
+  });
+
   it('accepts a complete immutable bundle and an empty publication plan', () => {
     const complete = createBundle();
     expect(validateReleaseBundle(complete.root)).toMatchObject({
