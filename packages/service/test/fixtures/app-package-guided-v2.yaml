@@ -1,0 +1,19 @@
+manifestVersion: '2'
+server:
+  name: guided
+  title: Guided
+  version: 1.0.0
+  agentGuide:
+    description: Use Guided to list records.
+    useWhen: [A user asks for guided records.]
+    workflows:
+      - id: list_records
+        title: List records
+        steps: [{ capability: { kind: tool, name: list_records } }]
+    boundaries: [Do not invent records.]
+    examples: [{ prompt: List records., workflow: list_records }]
+tools:
+  - name: list_records
+    description: List records.
+    inputSchema: { type: object, properties: {}, additionalProperties: false }
+    fulfilment: { steps: [], output: { records: [] } }

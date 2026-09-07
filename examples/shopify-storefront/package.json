@@ -1,0 +1,22 @@
+{
+  "name": "shopify-storefront",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "validate": "noodle validate",
+    "dev": "noodle dev",
+    "deploy": "noodle deploy"
+  },
+  "devDependencies": {
+    "@noodleseed/one": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "@vitejs/plugin-react": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "vite": "latest",
+    "vitest": "latest"
+  }
+}

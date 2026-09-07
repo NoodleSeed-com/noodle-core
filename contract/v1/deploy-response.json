@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "org": "acme",
+  "app": "support",
+  "env": "prod",
+  "deploymentId": "dep-01j8x2m9k3",
+  "serverVersion": "1",
+  "accessMode": "owner-only",
+  "ownerSubject": "oauth-owner-123",
+  "url": "https://cloud.noodleseed.dev/mcp/acme/support/prod/v1",
+  "defaultUrl": "https://cloud.noodleseed.dev/mcp/acme/support/prod"
+}

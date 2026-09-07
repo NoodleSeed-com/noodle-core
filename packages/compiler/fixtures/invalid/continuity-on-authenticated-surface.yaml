@@ -1,0 +1,26 @@
+# Invalid: anonymous cross-page display continuity is declared per public or mixed surface only
+# (ADR 0223, clauses 11-16). The authenticated direction reattaches through a backend-verified sign-in
+# instead, so a block here would configure something nothing reads.
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+  assistant:
+    model:
+      kind: noodle-managed
+    allowedOrigins:
+      - https://app.acme.test
+    surfaces:
+      - mode: authenticated
+        origins:
+          - https://app.acme.test
+        continuity:
+          enabled: true
+tools:
+  - name: get_order
+    description: Look up an order.
+    inputSchema:
+      type: object
+    fulfilment:
+      use: acme.get_order

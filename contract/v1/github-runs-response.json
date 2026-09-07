@@ -1,0 +1,53 @@
+{
+  "ok": true,
+  "data": {
+    "runs": [
+      {
+        "runId": "run-3f9a1c2b4d5e",
+        "orgSlug": "acme",
+        "appSlug": "support-bot",
+        "envName": "prod",
+        "sourceEvent": "push",
+        "deliveryId": "72d3162e-cc78-11e3-81ab-4c9367dc0958",
+        "githubRepositoryId": 861539132,
+        "commitSha": "6dcb09b5b57875f334f61aebed695e2e4193db5e",
+        "ref": "refs/heads/main",
+        "status": "queued",
+        "actorLogin": "octocat",
+        "createdAt": "2026-07-06T09:30:00.000Z"
+      },
+      {
+        "runId": "run-8e7d6c5b4a39",
+        "orgSlug": "acme",
+        "appSlug": "support-bot",
+        "envName": "pr-42",
+        "sourceEvent": "pull_request",
+        "deliveryId": "81e4273f-dd89-22f4-92bc-5da478ed1a69",
+        "githubRepositoryId": 861539132,
+        "commitSha": "7fdc1ac6c68986f445f72bfced7a6f3f52a4ec6f",
+        "ref": "refs/heads/feature-widgets",
+        "prNumber": 42,
+        "status": "queued",
+        "blockedReason": "fork_pending_approval",
+        "actorLogin": "outside-contributor",
+        "createdAt": "2026-07-06T09:25:00.000Z"
+      },
+      {
+        "runId": "run-1a2b3c4d5e6f",
+        "orgSlug": "acme",
+        "appSlug": "support-bot",
+        "envName": "prod",
+        "sourceEvent": "push",
+        "deliveryId": "93f5384a-ee9a-33e5-a3cd-6eb589fe2b7a",
+        "githubRepositoryId": 861539132,
+        "commitSha": "5ecb08a4a46764e223f50d9dcd584d1d3082ca4d",
+        "ref": "refs/heads/main",
+        "status": "superseded",
+        "actorLogin": "octocat",
+        "createdAt": "2026-07-06T09:20:00.000Z",
+        "finishedAt": "2026-07-06T09:30:00.000Z"
+      }
+    ],
+    "truncated": false
+  }
+}

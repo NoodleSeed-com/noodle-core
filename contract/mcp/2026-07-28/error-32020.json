@@ -1,0 +1,18 @@
+{
+  "status": 400,
+  "contentType": "application/json",
+  "json": {
+    "jsonrpc": "2.0",
+    "error": {
+      "code": -32020,
+      "message": "Bad Request: the request headers and body disagree: the body names method tools/list but the Mcp-Method header names prompts/list",
+      "data": {
+        "mismatch": {
+          "header": "prompts/list",
+          "body": "the body names method tools/list but the Mcp-Method header names prompts/list"
+        }
+      }
+    },
+    "id": 1
+  }
+}

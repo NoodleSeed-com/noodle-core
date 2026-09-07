@@ -1,0 +1,48 @@
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+connectors:
+  acme:
+    id: acme_orders
+    version: 1.2.0
+tools:
+  - name: track_order
+    description: Look up an order and, if confirmed, fetch its tracking.
+    inputSchema:
+      type: object
+      properties:
+        order_id:
+          type: string
+      required:
+        - order_id
+      additionalProperties: false
+    outputSchema:
+      type: object
+      properties:
+        url:
+          type: string
+      additionalProperties: false
+    fulfilment:
+      steps:
+        - id: lookup
+          use: acme.get_order
+          args:
+            id: ${input.order_id}
+        - id: confirm
+          if: ${steps.lookup.status === "open"}
+          map:
+            proceed: true
+        - id: track
+          if: ${steps.confirm.proceed}
+          use: acme.get_tracking
+          args:
+            order_id: ${steps.lookup.id}
+        - id: shaped
+          map:
+            id: ${steps.lookup.id}
+            url: ${steps.track.url}
+      output:
+        url: ${steps.shaped.url}
+        label: "order ${input.order_id}"

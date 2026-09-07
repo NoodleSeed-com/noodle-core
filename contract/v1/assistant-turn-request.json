@@ -1,0 +1,24 @@
+{
+  "message": "Can you help with this form?",
+  "suggestions": true,
+  "clientContext": {
+    "locale": "en-GB",
+    "timeZone": "Europe/London"
+  },
+  "modelContext": {
+    "content": [
+      {
+        "type": "text",
+        "text": "The time-off form is mounted with unsaved changes."
+      }
+    ],
+    "structuredContent": {
+      "widget": {
+        "name": "time-off-request-form",
+        "lifecycle": "mounted",
+        "start": "2026-07-23",
+        "end": "2026-07-24"
+      }
+    }
+  }
+}

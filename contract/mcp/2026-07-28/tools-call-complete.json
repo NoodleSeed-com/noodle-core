@@ -1,0 +1,28 @@
+{
+  "status": 200,
+  "contentType": "application/json",
+  "json": {
+    "result": {
+      "content": [
+        {
+          "type": "text",
+          "text": "{\"ticket\":\"T-100\"}"
+        }
+      ],
+      "structuredContent": {
+        "ticket": "T-100"
+      },
+      "isError": false,
+      "resultType": "complete",
+      "_meta": {
+        "io.modelcontextprotocol/serverInfo": {
+          "name": "golden_server",
+          "title": "Golden Server",
+          "version": "1.2.3"
+        }
+      }
+    },
+    "jsonrpc": "2.0",
+    "id": 1
+  }
+}

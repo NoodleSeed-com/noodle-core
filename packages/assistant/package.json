@@ -1,0 +1,142 @@
+{
+  "name": "@noodleseed/assistant",
+  "version": "1.2.0",
+  "description": "Embed the Noodle Seed customer-branded assistant in your web app with managed or framework-owned UI, a framework-neutral MCP App host, a DOM-free client, and a backend session helper. Authoring and deploying the server is @noodleseed/one.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NoodleSeed-com/noodle-core.git",
+    "directory": "packages/assistant"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      },
+      "default": "./dist/index.js"
+    },
+    "./app-view": {
+      "import": {
+        "types": "./dist/app-view.d.ts",
+        "default": "./dist/app-view.js"
+      },
+      "require": {
+        "types": "./dist/app-view.d.cts",
+        "default": "./dist/app-view.cjs"
+      },
+      "default": "./dist/app-view.js"
+    },
+    "./client": {
+      "import": {
+        "types": "./dist/client.d.ts",
+        "default": "./dist/client.js"
+      },
+      "require": {
+        "types": "./dist/client.d.cts",
+        "default": "./dist/client.cjs"
+      },
+      "default": "./dist/client.js"
+    },
+    "./react": {
+      "import": {
+        "types": "./dist/react.d.ts",
+        "default": "./dist/react.js"
+      },
+      "require": {
+        "types": "./dist/react.d.cts",
+        "default": "./dist/react.cjs"
+      },
+      "default": "./dist/react.js"
+    },
+    "./react/client": {
+      "import": {
+        "types": "./dist/react/client.d.ts",
+        "default": "./dist/react/client.js"
+      },
+      "require": {
+        "types": "./dist/react/client.d.cts",
+        "default": "./dist/react/client.cjs"
+      },
+      "default": "./dist/react/client.js"
+    },
+    "./server": {
+      "import": {
+        "types": "./dist/server.d.ts",
+        "default": "./dist/server.js"
+      },
+      "require": {
+        "types": "./dist/server.d.cts",
+        "default": "./dist/server.cjs"
+      },
+      "default": "./dist/server.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "attw": "attw --pack . --format json",
+    "build": "tsup",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "react": ">=18.2.0 <20"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@types/node": "^24.13.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "publint": "^0.3.21",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "tsup": "^8.5.1"
+  },
+  "module": "./dist/index.js",
+  "typesVersions": {
+    "*": {
+      "app-view": [
+        "./dist/app-view.d.ts"
+      ],
+      "react": [
+        "./dist/react.d.ts"
+      ],
+      "react/client": [
+        "./dist/react/client.d.ts"
+      ],
+      "client": [
+        "./dist/client.d.ts"
+      ],
+      "server": [
+        "./dist/server.d.ts"
+      ]
+    }
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.4",
+    "ai": "6.0.201",
+    "dompurify": "^3.4.11",
+    "marked": "^16.4.2",
+    "zod": "^4.4.3"
+  }
+}

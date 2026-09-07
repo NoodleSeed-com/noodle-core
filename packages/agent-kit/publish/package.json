@@ -1,0 +1,39 @@
+{
+  "name": "@noodleseed/agent-kit",
+  "version": "0.22.0",
+  "private": false,
+  "description": "Self-checking, self-updating agent skills for the Noodle Seed CLI. Authored in this repo by @noodle-borg/agent-kit; this is the published, independently-versioned canonical skills artifact the CLI fetches and verifies.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "main": "./manifest.json",
+  "exports": {
+    ".": "./manifest.json",
+    "./manifest.json": "./manifest.json",
+    "./skills/*": "./skills/*"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "files": [
+    "skills/",
+    "manifest.json"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NoodleSeed-com/noodle-core",
+    "directory": "packages/agent-kit"
+  },
+  "author": "Noodle Seed",
+  "keywords": [
+    "noodle-seed",
+    "mcp",
+    "agent-skills",
+    "codex",
+    "claude-code",
+    "cursor"
+  ]
+}

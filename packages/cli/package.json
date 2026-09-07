@@ -1,0 +1,152 @@
+{
+  "name": "@noodleseed/one",
+  "version": "0.35.0",
+  "private": false,
+  "description": "Noodle CLI by Noodle Seed \u2014 author, run, and deploy declarative MCP servers. Embedding the assistant in your own web app is @noodleseed/assistant.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./platform": {
+      "types": "./dist/platform.d.ts",
+      "import": "./dist/platform.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js"
+    },
+    "./react/styles.css": "./react/styles.css"
+  },
+  "bin": {
+    "noodle": "dist/bin.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NoodleSeed-com/noodle-core",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://docs.noodleseed.dev/docs/quickstart",
+  "bugs": {
+    "url": "https://github.com/NoodleSeed-com/noodle-core/issues"
+  },
+  "author": "Noodle Seed",
+  "keywords": [
+    "noodle-seed",
+    "mcp",
+    "model-context-protocol",
+    "agent-connectivity",
+    "headless-software",
+    "mcp-server",
+    "mcp-apps",
+    "ai-agents",
+    "typescript",
+    "cli"
+  ],
+  "files": [
+    "dist",
+    "react"
+  ],
+  "bundleDependencies": [
+    "@noodle-borg/admission-limits",
+    "@noodle-borg/auth",
+    "@noodle-borg/agent-kit",
+    "@noodle-borg/app-package",
+    "@noodle-borg/assistant-gateway",
+    "@noodle-borg/authoring",
+    "@noodle-borg/capabilities",
+    "@noodle-borg/cli-catalog",
+    "@noodle-borg/compiler",
+    "@noodle-borg/compute",
+    "@noodle-borg/connector-defs",
+    "@noodle-borg/connector-http",
+    "@noodle-borg/devtools-ui",
+    "@noodle-borg/knowledge-operations",
+    "@noodle-borg/openapi-import",
+    "@noodle-borg/plugin-distribution",
+    "@noodle-borg/protocol",
+    "@noodle-borg/runtime",
+    "@noodle-borg/service",
+    "@noodle-borg/transport-http",
+    "@noodle-borg/wire-contracts"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.14",
+    "@jitl/quickjs-ffi-types": "^0.32.0",
+    "@jitl/quickjs-wasmfile-debug-asyncify": "^0.32.0",
+    "@jitl/quickjs-wasmfile-debug-sync": "^0.32.0",
+    "@jitl/quickjs-wasmfile-release-asyncify": "^0.32.0",
+    "@jitl/quickjs-wasmfile-release-sync": "^0.32.0",
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "@noodle-borg/admission-limits": "workspace:*",
+    "@noodle-borg/agent-kit": "workspace:*",
+    "@noodle-borg/app-audit": "workspace:*",
+    "@noodle-borg/app-package": "workspace:*",
+    "@noodle-borg/assistant-gateway": "workspace:*",
+    "@noodle-borg/auth": "workspace:*",
+    "@noodle-borg/authoring": "workspace:*",
+    "@noodle-borg/capabilities": "workspace:*",
+    "@noodle-borg/cli-catalog": "workspace:*",
+    "@noodle-borg/compiler": "workspace:*",
+    "@noodle-borg/compute": "workspace:*",
+    "@noodle-borg/connector-defs": "workspace:*",
+    "@noodle-borg/connector-http": "workspace:*",
+    "@noodle-borg/deploy-client": "workspace:*",
+    "@noodle-borg/devtools-ui": "workspace:*",
+    "@noodle-borg/knowledge": "workspace:*",
+    "@noodle-borg/knowledge-operations": "workspace:*",
+    "@noodle-borg/module": "workspace:*",
+    "@noodle-borg/openapi-import": "workspace:*",
+    "@noodle-borg/plugin-distribution": "workspace:*",
+    "@noodle-borg/protocol": "workspace:*",
+    "@noodle-borg/runtime": "workspace:*",
+    "@noodle-borg/service": "workspace:*",
+    "@noodle-borg/transport-http": "workspace:*",
+    "@noodle-borg/wire-contracts": "workspace:*",
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "content-type": "^1.0.5",
+    "cors": "^2.8.6",
+    "cross-spawn": "^7.0.6",
+    "eventsource": "^3.0.7",
+    "eventsource-parser": "^3.1.0",
+    "hono": "^4.12.28",
+    "ipaddr.js": "^2.4.0",
+    "jose": "^6.2.3",
+    "json-schema-typed": "^8.0.2",
+    "open": "11.0.0",
+    "pkce-challenge": "^5.0.1",
+    "quickjs-emscripten": "^0.32.0",
+    "quickjs-emscripten-core": "^0.32.0",
+    "raw-body": "^3.0.2",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "typescript": "^6.0.3",
+    "undici": "^8.7.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3",
+    "zod-to-json-schema": "^3.25.2"
+  },
+  "devDependencies": {
+    "@noodleseed/assistant": "workspace:*",
+    "next": "^16.2.9",
+    "@types/node": "^24.13.1",
+    "vite": "^8.1.0"
+  }
+}

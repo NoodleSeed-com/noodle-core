@@ -1,0 +1,21 @@
+.credit-union-frame {
+  --accent: #146c5a;
+  --accent-foreground: #ffffff;
+}
+
+.credit-union-frame svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.credit-union-notice {
+  margin: 0;
+  color: var(--text-secondary, #5f6368);
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}

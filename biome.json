@@ -1,0 +1,71 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "files": {
+    "ignoreUnknown": true,
+    "includes": [
+      "**",
+      "!**/dist",
+      "!**/fixtures",
+      "!examples/**/design",
+      "!**/*.tsbuildinfo",
+      "!apps/website/next-env.d.ts",
+      "!apps/website/app/globals.css",
+      "!apps/docs/next-env.d.ts",
+      "!apps/docs/app/globals.css",
+      "!apps/docs/content/_generated",
+      "!apps/console/next-env.d.ts",
+      "!apps/console/app/globals.css",
+      "!apps/console/app/signin.css",
+      "!packages/protocol/src/widget/ext-apps-bundle.ts",
+      "!packages/agent-kit/src/generated/example-files.ts"
+    ]
+  },
+  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "correctness": { "noUnusedImports": "error", "noUnusedVariables": "error" },
+      "suspicious": { "noTemplateCurlyInString": "off" }
+    }
+  },
+  "javascript": { "formatter": { "quoteStyle": "single", "semicolons": "always" } },
+  "overrides": [
+    {
+      "includes": ["apps/website/**", "packages/website-ui/**", "packages/website-legacy/**"],
+      "linter": {
+        "rules": {
+          "performance": { "noImgElement": "off" },
+          "a11y": { "noSvgWithoutTitle": "off", "noStaticElementInteractions": "off" },
+          "suspicious": { "noArrayIndexKey": "off" },
+          "complexity": { "noImportantStyles": "off" }
+        }
+      }
+    },
+    {
+      "includes": ["packages/website-legacy/src/legacy/website-to-ai/**"],
+      "formatter": { "lineWidth": 120 }
+    },
+    {
+      "includes": ["apps/docs/**"],
+      "linter": {
+        "rules": {
+          "performance": { "noImgElement": "off" },
+          "security": { "noDangerouslySetInnerHtml": "off" }
+        }
+      }
+    },
+    {
+      "includes": ["apps/console/**"],
+      "linter": {
+        "rules": {
+          "performance": { "noImgElement": "off" },
+          "a11y": { "noSvgWithoutTitle": "off", "noStaticElementInteractions": "off" },
+          "suspicious": { "noArrayIndexKey": "off" },
+          "security": { "noDangerouslySetInnerHtml": "off" }
+        }
+      }
+    }
+  ]
+}

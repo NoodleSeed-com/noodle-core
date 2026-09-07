@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "data": {
+    "url": "https://checkout.stripe.com/c/pay/example",
+    "expiresAt": "2026-08-22T13:00:00.000Z",
+    "replayed": false,
+    "outcome": "created"
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "ok": true,
+  "data": {
+    "schemaVersion": 1,
+    "checkedAt": "2026-07-16T12:00:00.000Z",
+    "technicalReadiness": "ready",
+    "metering": { "mode": "shadow", "coverage": "partial" },
+    "enforcement": { "state": "legacy_unchanged" },
+    "activation": { "state": "not_available" },
+    "checks": [
+      { "code": "durable_postgres", "state": "pass" },
+      { "code": "billing_attribution_complete", "state": "pass" },
+      { "code": "legacy_platform_quota_retired", "state": "pass" },
+      { "code": "key_generation_consistent", "state": "pass" },
+      { "code": "prepared_meter_epoch", "state": "pass" },
+      { "code": "partition_horizon", "state": "pass" },
+      { "code": "receipt_retention", "state": "pass" },
+      { "code": "exact_key_tombstones", "state": "pass" },
+      { "code": "aggregate_reconciliation", "state": "pass" },
+      { "code": "validation_mirror", "state": "pass" },
+      { "code": "writer_health", "state": "pass" },
+      { "code": "scheduler_health", "state": "pass" }
+    ],
+    "laterCutoverGates": [
+      "traffic_fleet_convergence_proof",
+      "plan_volume_capacity_proof",
+      "nonproduction_fail_closed_drill",
+      "grant_expiry_contract",
+      "authoritative_activation",
+      "protected_production_approval"
+    ]
+  }
+}

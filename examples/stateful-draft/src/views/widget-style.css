@@ -1,0 +1,93 @@
+@layer stateful-draft {
+  .brief-shell {
+    box-sizing: border-box;
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 24px;
+    color: var(--ns-text-primary, #172033);
+    background: var(--ns-surface, #f8fafc);
+    font-family: var(--ns-font, system-ui, sans-serif);
+    line-height: 1.5;
+  }
+  .brief-shell * {
+    box-sizing: border-box;
+  }
+  .brief-shell h1 {
+    margin: 4px 0;
+    font-size: 26px;
+    letter-spacing: -0.03em;
+  }
+  .brief-shell p {
+    color: var(--ns-text-secondary, #526077);
+  }
+  .brief-eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+  }
+  .brief-fields {
+    display: grid;
+    gap: 16px;
+    margin: 24px 0;
+  }
+  .brief-shell label {
+    display: grid;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .brief-shell input,
+  .brief-shell textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--ns-border, #cbd5e1);
+    border-radius: var(--ns-radius-md, 8px);
+    color: inherit;
+    background: var(--ns-surface-raised, #fff);
+    font: inherit;
+    font-weight: 400;
+    resize: vertical;
+  }
+  .brief-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .brief-shell button {
+    padding: 10px 16px;
+    border: 1px solid var(--ns-border, #cbd5e1);
+    border-radius: var(--ns-radius-md, 8px);
+    background: var(--ns-surface-raised, #fff);
+    color: inherit;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .brief-shell .brief-primary {
+    background: var(--ns-accent, #2563eb);
+    color: var(--ns-accent-text, #fff);
+    border-color: transparent;
+  }
+  .brief-shell button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .brief-shell :focus-visible {
+    outline: 2px solid var(--ns-focus, #2563eb);
+    outline-offset: 3px;
+  }
+  .brief-shell footer {
+    border-top: 1px solid var(--ns-border, #cbd5e1);
+    padding-top: 12px;
+    font-size: 13px;
+  }
+  @media (max-width: 380px) {
+    .brief-shell {
+      padding: 16px;
+    }
+    .brief-actions button {
+      width: 100%;
+    }
+  }
+}

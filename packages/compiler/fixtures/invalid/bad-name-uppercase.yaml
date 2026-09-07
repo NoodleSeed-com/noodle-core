@@ -1,0 +1,13 @@
+# Invalid: tool name uses uppercase letters (names must be lowercase/numbers/underscores).
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+tools:
+  - name: GetOrder
+    description: Look up an order.
+    inputSchema:
+      type: object
+    fulfilment:
+      use: acme.get_order

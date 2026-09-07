@@ -1,0 +1,22 @@
+{
+  "name": "food-ordering",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run test",
+    "validate": "noodle validate",
+    "dev": "noodle dev",
+    "deploy": "noodle deploy"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "latest",
+    "@noodleseed/one": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "vite": "latest",
+    "vitest": "latest"
+  }
+}

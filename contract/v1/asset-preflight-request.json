@@ -1,0 +1,13 @@
+{
+  "assets": [
+    {
+      "logicalId": "hero",
+      "sourcePath": "assets/hero.png",
+      "contentHash": "sha256:1f2e3d4c5b6a798877665544332211ffeeddccbbaa99887766554433221100ff",
+      "mimeType": "image/png",
+      "byteLength": 48213,
+      "width": 1024,
+      "height": 512
+    }
+  ]
+}

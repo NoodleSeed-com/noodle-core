@@ -1,0 +1,23 @@
+# Invalid: a schema pulled in by $use contains an external $ref URI. External refs are rejected even
+# when reached through $use bundling.
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+schemas:
+  order:
+    type: object
+    properties:
+      x:
+        $ref: "https://example.com/order.json"
+tools:
+  - name: get_order
+    description: Look up an order.
+    inputSchema:
+      type: object
+      properties:
+        o:
+          $use: order
+    fulfilment:
+      use: acme.get_order

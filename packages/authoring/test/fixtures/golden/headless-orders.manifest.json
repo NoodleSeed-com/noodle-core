@@ -1,0 +1,140 @@
+{
+  "manifestVersion": "2",
+  "server": {
+    "name": "acme_support",
+    "version": "1.0.0",
+    "title": "Acme Support"
+  },
+  "connectors": {
+    "acme": {
+      "id": "acme_orders",
+      "version": "1.2.0"
+    },
+    "status": {
+      "id": "status_api",
+      "version": "1.0.0"
+    }
+  },
+  "tools": [
+    {
+      "name": "track_order",
+      "description": "Look up an order and fetch its tracking link.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_id"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "fulfilment": {
+        "steps": [
+          {
+            "id": "get_order",
+            "use": "acme.get_order",
+            "args": {
+              "id": "${input.order_id}",
+              "region": "${env.REGION}"
+            }
+          },
+          {
+            "id": "get_tracking",
+            "use": "acme.get_tracking",
+            "args": {
+              "order_id": "${input.order_id}"
+            }
+          }
+        ],
+        "output": {
+          "status": "${steps.get_order.status}",
+          "url": "${steps.get_tracking.url}"
+        }
+      }
+    },
+    {
+      "name": "service_status",
+      "description": "Check the upstream status endpoint.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "fulfilment": {
+        "steps": [
+          {
+            "id": "ping",
+            "use": "status.ping",
+            "args": {}
+          }
+        ],
+        "output": {
+          "ok": "${steps.ping.ok}"
+        }
+      }
+    }
+  ],
+  "resources": [
+    {
+      "name": "support_hours",
+      "uri": "doc://acme/support-hours",
+      "description": "Support hours document.",
+      "mimeType": "text/plain",
+      "fulfilment": {
+        "steps": [],
+        "output": {
+          "value": "Mon-Fri 9:00-17:00 UTC"
+        }
+      }
+    }
+  ],
+  "prompts": [
+    {
+      "name": "escalation",
+      "description": "Draft an escalation summary.",
+      "arguments": [
+        {
+          "name": "order_id",
+          "required": true
+        }
+      ],
+      "fulfilment": {
+        "steps": [],
+        "output": {
+          "value": "Escalate order ${input.order_id} to tier two."
+        }
+      }
+    }
+  ]
+}

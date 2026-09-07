@@ -1,0 +1,18 @@
+manifestVersion: '2'
+server:
+  name: invalid_agent_guide
+  title: Invalid Agent Guide
+  version: 1.0.0
+  agentGuide:
+    description: Exercise invalid workflow identifier validation.
+    useWhen: [A workflow identifier exceeds the supported limit.]
+    workflows:
+      - id: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        title: Invalid workflow
+        steps:
+          - capability: { kind: tool, name: whoami }
+tools:
+  - name: whoami
+    description: Show the caller.
+    inputSchema: { type: object, properties: {}, additionalProperties: false }
+    fulfilment: { steps: [], output: { ok: true } }

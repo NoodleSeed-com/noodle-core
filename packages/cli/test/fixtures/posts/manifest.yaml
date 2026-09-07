@@ -1,0 +1,24 @@
+manifestVersion: "1"
+server:
+  name: posts
+  version: 1.0.0
+  title: Posts
+connectors:
+  posts:
+    id: jsonplaceholder
+    version: 1.0.0
+tools:
+  - name: get_post
+    description: Fetch a post by its ID from the public JSONPlaceholder API.
+    inputSchema:
+      type: object
+      properties:
+        post_id:
+          type: string
+      required:
+        - post_id
+      additionalProperties: false
+    fulfilment:
+      use: posts.get_post
+      args:
+        post_id: ${input.post_id}

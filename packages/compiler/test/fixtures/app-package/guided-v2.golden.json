@@ -1,0 +1,174 @@
+{
+  "schemaVersion": "1",
+  "app": {
+    "name": "acme_tasks",
+    "title": "Acme Tasks",
+    "version": "1.0.0",
+    "branding": {
+      "name": "Acme Tasks",
+      "accent": "#7C3AED",
+      "surface": "#F5F3FF",
+      "surfaceDark": "#161228",
+      "logo": {
+        "logicalId": "acme_logo",
+        "alt": "Acme Tasks logo",
+        "darkLogicalId": "acme_logo_dark"
+      },
+      "radius": "lg",
+      "density": "comfortable",
+      "typography": "system",
+      "colorScheme": "auto"
+    }
+  },
+  "skill": {
+    "description": "Use Acme Tasks to review and complete work.",
+    "useWhen": [
+      "A user asks about team tasks."
+    ],
+    "workflows": [
+      {
+        "id": "review_tasks",
+        "title": "Review tasks",
+        "steps": [
+          {
+            "capability": {
+              "kind": "tool",
+              "name": "list_tasks"
+            },
+            "behavior": {
+              "readOnly": false,
+              "destructive": false,
+              "idempotent": false,
+              "openWorld": false,
+              "confirmationRequired": false
+            }
+          },
+          {
+            "capability": {
+              "kind": "resource",
+              "name": "task_details"
+            }
+          },
+          {
+            "capability": {
+              "kind": "prompt",
+              "name": "summarize_task"
+            }
+          }
+        ]
+      }
+    ],
+    "boundaries": [],
+    "examples": [
+      {
+        "prompt": "Review a task.",
+        "workflow": "review_tasks"
+      }
+    ]
+  },
+  "surface": {
+    "auth": {
+      "required": false
+    },
+    "tools": [
+      {
+        "kind": "tool",
+        "name": "app_helper",
+        "description": "Refresh app-only state.",
+        "input": {
+          "type": "object",
+          "fields": []
+        },
+        "behavior": {
+          "readOnly": false,
+          "destructive": false,
+          "idempotent": false,
+          "openWorld": false,
+          "confirmationRequired": false
+        },
+        "visibility": [
+          "app"
+        ]
+      },
+      {
+        "kind": "tool",
+        "name": "complete_task",
+        "description": "Complete a task.",
+        "input": {
+          "type": "object",
+          "fields": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true
+            }
+          ]
+        },
+        "behavior": {
+          "readOnly": false,
+          "destructive": false,
+          "idempotent": false,
+          "openWorld": false,
+          "confirmationRequired": false
+        },
+        "visibility": [
+          "model"
+        ]
+      },
+      {
+        "kind": "tool",
+        "name": "list_tasks",
+        "description": "List team tasks.",
+        "input": {
+          "type": "object",
+          "fields": []
+        },
+        "behavior": {
+          "readOnly": false,
+          "destructive": false,
+          "idempotent": false,
+          "openWorld": false,
+          "confirmationRequired": false
+        },
+        "visibility": [
+          "model",
+          "app"
+        ],
+        "widget": "task_widget"
+      }
+    ],
+    "resources": [
+      {
+        "kind": "resource",
+        "name": "task_details",
+        "uri": "tasks://details",
+        "description": "Task details."
+      }
+    ],
+    "prompts": [
+      {
+        "kind": "prompt",
+        "name": "summarize_task",
+        "description": "Summarize a task.",
+        "arguments": [
+          {
+            "name": "id",
+            "required": true
+          }
+        ]
+      }
+    ],
+    "widgets": [
+      {
+        "kind": "widget",
+        "name": "task_widget",
+        "tool": "list_tasks"
+      }
+    ]
+  },
+  "provenance": {
+    "sourceManifestSha256": "4e6aa46e9ddd4723cbb4d9f79be6e73b0ea6ab968cfac2ebb17da87a24567728",
+    "mcpSurfaceSha256": "b8a29a35b1e0b5586f49d69789cdcb9fedfe43888399d0656ecd7108efcbd71f",
+    "compilerVersion": "1"
+  }
+}

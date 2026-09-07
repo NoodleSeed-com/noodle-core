@@ -1,0 +1,196 @@
+{
+  "ok": true,
+  "data": {
+    "deploymentId": "acme-tasks-4f9c1a2b",
+    "appSlug": "acme-tasks",
+    "environment": "prod",
+    "serverVersion": "7",
+    "active": true,
+    "snapshot": {
+      "schemaVersion": 1,
+      "artifact": {
+        "schemaVersion": "1",
+        "app": {
+          "name": "acme_tasks",
+          "title": "Acme Tasks",
+          "version": "1.0.0"
+        },
+        "skill": {
+          "description": "Use Acme Tasks to review and complete work.",
+          "useWhen": ["A user asks to review their work.", "A user asks to complete work."],
+          "workflows": [
+            {
+              "id": "review_then_complete",
+              "title": "Review then complete work",
+              "intent": "Review the work before making a change.",
+              "steps": [
+                {
+                  "capability": {
+                    "kind": "resource",
+                    "name": "task_details"
+                  },
+                  "guidance": "Start with the current task details."
+                },
+                {
+                  "capability": {
+                    "kind": "tool",
+                    "name": "complete_task"
+                  },
+                  "guidance": "Complete only the task the user selected.",
+                  "behavior": {
+                    "readOnly": false,
+                    "destructive": true,
+                    "idempotent": false,
+                    "openWorld": false,
+                    "confirmationRequired": true
+                  }
+                }
+              ]
+            }
+          ],
+          "boundaries": ["Do not invent task IDs.", "Ask before completing ambiguous work."],
+          "examples": [
+            {
+              "prompt": "Review my open task.",
+              "workflow": "review_then_complete"
+            }
+          ]
+        },
+        "surface": {
+          "auth": {
+            "required": true,
+            "kind": "oidc"
+          },
+          "tools": [
+            {
+              "kind": "tool",
+              "name": "list_tasks",
+              "title": "List tasks",
+              "description": "List the current tasks.",
+              "input": {
+                "type": "object",
+                "fields": [
+                  {
+                    "name": "secret_filter",
+                    "type": "string",
+                    "required": false,
+                    "description": "This schema must stay out of the reference."
+                  }
+                ]
+              },
+              "behavior": {
+                "readOnly": true,
+                "destructive": false,
+                "idempotent": true,
+                "openWorld": false,
+                "confirmationRequired": false
+              },
+              "visibility": ["model", "app"],
+              "widget": "task_widget"
+            },
+            {
+              "kind": "tool",
+              "name": "complete_task",
+              "description": "Complete a selected task.",
+              "input": {
+                "type": "object"
+              },
+              "behavior": {
+                "readOnly": false,
+                "destructive": true,
+                "idempotent": false,
+                "openWorld": false,
+                "confirmationRequired": true
+              },
+              "visibility": ["model"]
+            },
+            {
+              "kind": "tool",
+              "name": "refresh_widget",
+              "description": "Refresh the app widget.",
+              "input": {
+                "type": "object"
+              },
+              "behavior": {
+                "readOnly": false,
+                "destructive": false,
+                "idempotent": true,
+                "openWorld": true,
+                "confirmationRequired": false
+              },
+              "visibility": ["app"]
+            }
+          ],
+          "resources": [
+            {
+              "kind": "resource",
+              "name": "task_details",
+              "uri": "acme://tasks/details",
+              "description": "Current details for one task."
+            }
+          ],
+          "prompts": [
+            {
+              "kind": "prompt",
+              "name": "summarize_tasks",
+              "description": "Summarize the current work.",
+              "arguments": [
+                {
+                  "name": "period",
+                  "description": "The time period.",
+                  "required": true
+                }
+              ]
+            }
+          ],
+          "widgets": [
+            {
+              "kind": "widget",
+              "name": "task_widget",
+              "title": "Task widget",
+              "description": "An interactive task list.",
+              "tool": "list_tasks"
+            }
+          ]
+        },
+        "provenance": {
+          "sourceManifestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "mcpSurfaceSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "compilerVersion": "1"
+        }
+      },
+      "rendererVersion": "0.22.0",
+      "files": [
+        {
+          "target": "codex",
+          "path": ".agents/skills/acme-tasks/SKILL.md",
+          "content": "---\nname: acme-tasks\ndescription: Use Acme Tasks to review and complete work.\n---\n\n# Acme Tasks\n\n<!-- noodle-app-package source:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa surface:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb -->\n\n## When to use this product\n- A user asks to review their work.\n- A user asks to complete work.\n\n## Workflows\n\n### Review then complete work\n\nReview the work before making a change.\n\n1. `resource:task_details` — Start with the current task details.\n2. `tool:complete_task` — Complete only the task the user selected. (write; destructive; confirmation required)\n\n## Boundaries\n- Do not invent task IDs.\n- Ask before completing ambiguous work.\n\n## Examples\n- “Review my open task.” — use `review_then_complete`.\n\n## MCP surface\n\n[Read the MCP surface reference.](references/mcp-surface.md)\n",
+          "sha256": "89546cbab9ddaaee41896a465f5007f37a5a83571cb346253cee0496e7352152",
+          "byteLength": 869
+        },
+        {
+          "target": "codex",
+          "path": ".agents/skills/acme-tasks/references/mcp-surface.md",
+          "content": "# Acme Tasks MCP surface\n\nAuthentication: required (OIDC).\n\n## Tools\n\n| Tool | Description | Behavior | Visibility |\n| --- | --- | --- | --- |\n| `complete_task` | Complete a selected task. | write; destructive; confirmation required | model |\n| `list_tasks` | List the current tasks. | read-only; idempotent | model and app |\n| `refresh_widget` | Refresh the app widget. | write; idempotent; open-world | app only |\n\n## Resources\n\n| Resource | Description |\n| --- | --- |\n| `task_details` | Current details for one task. |\n\n## Prompts\n\n| Prompt | Description | Arguments |\n| --- | --- | --- |\n| `summarize_tasks` | Summarize the current work. | `period` (required) |\n\n## Widgets\n\n| Widget | Description | Opening tool |\n| --- | --- | --- |\n| `task_widget` | Task widget | Open with `list_tasks`. |\n",
+          "sha256": "35be50e06a017928b661017120d3312d37fdef8afec2df83d7d0d7ed1121a8ff",
+          "byteLength": 798
+        },
+        {
+          "target": "claude-code",
+          "path": ".claude/skills/acme-tasks/SKILL.md",
+          "content": "---\nname: acme-tasks\ndescription: Use Acme Tasks to review and complete work.\n---\n\n# Acme Tasks\n\n<!-- noodle-app-package source:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa surface:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb -->\n\n## When to use this product\n- A user asks to review their work.\n- A user asks to complete work.\n\n## Workflows\n\n### Review then complete work\n\nReview the work before making a change.\n\n1. `resource:task_details` — Start with the current task details.\n2. `tool:complete_task` — Complete only the task the user selected. (write; destructive; confirmation required)\n\n## Boundaries\n- Do not invent task IDs.\n- Ask before completing ambiguous work.\n\n## Examples\n- “Review my open task.” — use `review_then_complete`.\n\n## MCP surface\n\n[Read the MCP surface reference.](references/mcp-surface.md)\n",
+          "sha256": "89546cbab9ddaaee41896a465f5007f37a5a83571cb346253cee0496e7352152",
+          "byteLength": 869
+        },
+        {
+          "target": "claude-code",
+          "path": ".claude/skills/acme-tasks/references/mcp-surface.md",
+          "content": "# Acme Tasks MCP surface\n\nAuthentication: required (OIDC).\n\n## Tools\n\n| Tool | Description | Behavior | Visibility |\n| --- | --- | --- | --- |\n| `complete_task` | Complete a selected task. | write; destructive; confirmation required | model |\n| `list_tasks` | List the current tasks. | read-only; idempotent | model and app |\n| `refresh_widget` | Refresh the app widget. | write; idempotent; open-world | app only |\n\n## Resources\n\n| Resource | Description |\n| --- | --- |\n| `task_details` | Current details for one task. |\n\n## Prompts\n\n| Prompt | Description | Arguments |\n| --- | --- | --- |\n| `summarize_tasks` | Summarize the current work. | `period` (required) |\n\n## Widgets\n\n| Widget | Description | Opening tool |\n| --- | --- | --- |\n| `task_widget` | Task widget | Open with `list_tasks`. |\n",
+          "sha256": "35be50e06a017928b661017120d3312d37fdef8afec2df83d7d0d7ed1121a8ff",
+          "byteLength": 798
+        }
+      ],
+      "snapshotSha256": "43b920d5b2b74f31a01b115ec4a3b00517e136e23465c2b1bbee22ae97696d84"
+    }
+  }
+}

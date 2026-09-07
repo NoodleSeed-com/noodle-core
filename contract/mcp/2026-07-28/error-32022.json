@@ -1,0 +1,23 @@
+{
+  "status": 400,
+  "contentType": "application/json",
+  "json": {
+    "jsonrpc": "2.0",
+    "error": {
+      "code": -32022,
+      "message": "Unsupported protocol version: 2099-01-01",
+      "data": {
+        "supported": [
+          "2026-07-28",
+          "2025-11-25",
+          "2025-06-18",
+          "2025-03-26",
+          "2024-11-05",
+          "2024-10-07"
+        ],
+        "requested": "2099-01-01"
+      }
+    },
+    "id": 1
+  }
+}

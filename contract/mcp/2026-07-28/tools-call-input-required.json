@@ -1,0 +1,38 @@
+{
+  "status": 200,
+  "contentType": "application/json",
+  "json": {
+    "result": {
+      "resultType": "input_required",
+      "inputRequests": {
+        "team": {
+          "method": "elicitation/create",
+          "params": {
+            "message": "Which team?",
+            "requestedSchema": {
+              "type": "object",
+              "properties": {
+                "team": {
+                  "type": "string",
+                  "enum": ["support", "platform"]
+                }
+              },
+              "required": ["team"]
+            },
+            "mode": "form"
+          }
+        }
+      },
+      "requestState": "<sealed-request-state>",
+      "_meta": {
+        "io.modelcontextprotocol/serverInfo": {
+          "name": "golden_server",
+          "title": "Golden Server",
+          "version": "1.2.3"
+        }
+      }
+    },
+    "jsonrpc": "2.0",
+    "id": 1
+  }
+}

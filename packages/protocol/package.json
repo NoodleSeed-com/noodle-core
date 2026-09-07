@@ -1,0 +1,40 @@
+{
+  "name": "@noodle-borg/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@noodle-borg/app-package": "workspace:*",
+    "@noodle-borg/uri-template": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "@noodle-borg/compiler": "workspace:*",
+    "@noodle-borg/module": "workspace:*",
+    "@noodle-borg/plugin-distribution": "workspace:*",
+    "@noodle-borg/runtime": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@types/node": "^24.13.1"
+  }
+}

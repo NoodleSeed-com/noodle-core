@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "data": {
+    "accounts": [
+      {
+        "id": "ba_00000000-0000-0000-0000-000000000001",
+        "displayName": "Example billing",
+        "state": "active",
+        "createdAt": "2026-07-15T00:00:00.000Z",
+        "role": "owner",
+        "isDefault": true,
+        "plan": { "code": "free", "version": 1 },
+        "linkedOrganizationCount": 2,
+        "enforcement": { "state": "legacy_unchanged" },
+        "metering": { "state": "not_started" }
+      }
+    ]
+  }
+}

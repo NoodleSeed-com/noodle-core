@@ -1,0 +1,26 @@
+# Invalid: the tool authors its own $defs.address, and a $use: address would bundle a different
+# definition under the same key.
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+schemas:
+  address:
+    type: object
+    properties:
+      city:
+        type: string
+tools:
+  - name: get_order
+    description: Look up an order.
+    inputSchema:
+      type: object
+      properties:
+        x:
+          $use: address
+      $defs:
+        address:
+          type: string
+    fulfilment:
+      use: acme.get_order

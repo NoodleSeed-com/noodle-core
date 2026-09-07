@@ -1,0 +1,19 @@
+# Invalid: $use value is not a string schema name.
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+schemas:
+  address:
+    type: object
+tools:
+  - name: get_order
+    description: Look up an order.
+    inputSchema:
+      type: object
+      properties:
+        x:
+          $use: 42
+    fulfilment:
+      use: acme.get_order

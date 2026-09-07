@@ -1,0 +1,40 @@
+{
+  "status": 200,
+  "contentType": "application/json",
+  "json": {
+    "result": {
+      "supportedVersions": [
+        "2026-07-28",
+        "2025-11-25",
+        "2025-06-18",
+        "2025-03-26",
+        "2024-11-05",
+        "2024-10-07"
+      ],
+      "capabilities": {
+        "tools": {},
+        "resources": {},
+        "prompts": {},
+        "extensions": {
+          "io.modelcontextprotocol/ui": {
+            "mimeTypes": ["text/html;profile=mcp-app"]
+          },
+          "io.modelcontextprotocol/oauth-client-credentials": {}
+        }
+      },
+      "instructions": "Use the golden tools exactly as described.",
+      "resultType": "complete",
+      "ttlMs": 0,
+      "cacheScope": "private",
+      "_meta": {
+        "io.modelcontextprotocol/serverInfo": {
+          "name": "golden_server",
+          "title": "Golden Server",
+          "version": "1.2.3"
+        }
+      }
+    },
+    "jsonrpc": "2.0",
+    "id": 1
+  }
+}

@@ -1,0 +1,19 @@
+manifestVersion: "1"
+server:
+  name: httpbin
+  version: 1.0.0
+  title: Httpbin Auth Demo
+connectors:
+  httpbin:
+    id: httpbin
+    version: 1.0.0
+tools:
+  - name: whoami
+    description: Prove the bearer secret was attached by echoing httpbin's view of it.
+    inputSchema:
+      type: object
+      properties: {}
+      additionalProperties: false
+    fulfilment:
+      use: httpbin.whoami
+      args: {}

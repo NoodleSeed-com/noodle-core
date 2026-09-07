@@ -1,0 +1,29 @@
+/** App Package V1 source and artifact amplification limits. */
+export const APP_PACKAGE_V1_MAX_IDENTIFIER_CHARS = 200;
+export const APP_PACKAGE_V1_MAX_PROSE_CHARS = 4_000;
+export const APP_PACKAGE_V1_MAX_USE_WHEN = 32;
+export const APP_PACKAGE_V1_MAX_WORKFLOWS = 32;
+export const APP_PACKAGE_V1_MAX_WORKFLOW_STEPS = 64;
+export const APP_PACKAGE_V1_MAX_BOUNDARIES = 64;
+export const APP_PACKAGE_V1_MAX_EXAMPLES = 64;
+export const APP_PACKAGE_V1_MAX_SCHEMA_FIELDS = 64;
+export const APP_PACKAGE_V1_MAX_PROMPT_ARGUMENTS = 64;
+export const APP_PACKAGE_V1_MAX_AUTHORIZATION_VALUES = 128;
+export const APP_PACKAGE_V1_MAX_SURFACE_ITEMS = 256;
+export const APP_PACKAGE_V1_MAX_CANONICAL_BYTES = 256 * 1024;
+
+/** Canonical compiler bounds mirrored by the dependency-free Agent Kit validator. */
+export const APP_PACKAGE_V1_VALIDATION_LIMITS = Object.freeze({
+  identifierChars: APP_PACKAGE_V1_MAX_IDENTIFIER_CHARS,
+  proseChars: APP_PACKAGE_V1_MAX_PROSE_CHARS,
+  useWhen: APP_PACKAGE_V1_MAX_USE_WHEN,
+  workflows: APP_PACKAGE_V1_MAX_WORKFLOWS,
+  workflowSteps: APP_PACKAGE_V1_MAX_WORKFLOW_STEPS,
+  boundaries: APP_PACKAGE_V1_MAX_BOUNDARIES,
+  examples: APP_PACKAGE_V1_MAX_EXAMPLES,
+  surfaceItems: APP_PACKAGE_V1_MAX_SURFACE_ITEMS,
+  schemaFields: APP_PACKAGE_V1_MAX_SCHEMA_FIELDS,
+  promptArguments: APP_PACKAGE_V1_MAX_PROMPT_ARGUMENTS,
+  authorizationValues: APP_PACKAGE_V1_MAX_AUTHORIZATION_VALUES,
+  artifactBytes: APP_PACKAGE_V1_MAX_CANONICAL_BYTES,
+});

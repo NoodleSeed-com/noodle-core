@@ -1,0 +1,26 @@
+manifestVersion: "2"
+server:
+  name: customer_records
+  version: 1.0.0
+  title: Customer Records
+  auth:
+    issuer: https://id.noodleseed.dev
+    audience: https://org.cloud.noodleseed.dev/app/mcp
+    routing:
+      endpoints:
+        customer_api:
+          claim: tenant.api_base_url
+connectors:
+  api:
+    id: customer_records
+    version: 1.0.0
+tools:
+  - name: list_records
+    description: List customer records.
+    inputSchema:
+      type: object
+      properties: {}
+      additionalProperties: false
+    fulfilment:
+      use: api.list_records
+      args: {}

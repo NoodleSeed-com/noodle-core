@@ -1,0 +1,15 @@
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+tools:
+  - name: track_order
+    description: Track an order.
+    inputSchema:
+      type: object
+    fulfilment:
+      steps:
+        - id: shaped
+          map:
+            id: ${input.order_id}

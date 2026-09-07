@@ -1,0 +1,21 @@
+{
+  "manifest": "{\"manifestVersion\":\"1\",\"server\":{\"name\":\"acme_support\",\"version\":\"1.0.0\",\"title\":\"Acme Support\"},\"tools\":[{\"name\":\"get_order\",\"description\":\"Look up an order.\",\"inputSchema\":{\"type\":\"object\"},\"fulfilment\":{\"use\":\"acme.get_order\",\"args\":{}}}]}",
+  "connectors": "{\"connectors\":[{\"id\":\"acme_orders\",\"version\":\"1.2.0\",\"kind\":\"http\",\"baseUrl\":\"https://api.acme.example\",\"operations\":{}}]}",
+  "hostedAssets": [
+    {
+      "logicalId": "hero",
+      "sourcePath": "assets/hero.png",
+      "contentHash": "sha256:1f2e3d4c5b6a798877665544332211ffeeddccbbaa99887766554433221100ff",
+      "mimeType": "image/png",
+      "byteLength": 48213,
+      "width": 1024,
+      "height": 512,
+      "publicUrl": "https://assets.noodleseed.dev/acme/hero-1f2e3d4c.png",
+      "objectKey": "orgs/acme/apps/support/assets/1f2e3d4c"
+    }
+  ],
+  "accessMode": "owner-only",
+  "ownerSubject": "oauth-owner-123",
+  "serverVersion": "1",
+  "deploymentSource": "cli"
+}

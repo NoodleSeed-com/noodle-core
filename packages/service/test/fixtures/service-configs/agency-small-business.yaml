@@ -1,0 +1,17 @@
+profile: agency-managed
+
+org:
+  slug: acme
+  template: small-business
+
+audit:
+  store: memory
+
+access:
+  mode: owner-only
+
+controls:
+  preset: light
+
+apps:
+  enabled: true

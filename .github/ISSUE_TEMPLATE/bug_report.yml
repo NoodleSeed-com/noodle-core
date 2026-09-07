@@ -1,0 +1,31 @@
+name: Bug report
+description: Report reproducible incorrect behavior in Noodle Core
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide the smallest project, commands, inputs, and output that reproduce the problem. Remove credentials and customer data.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Noodle and Node.js versions
+      placeholder: "@noodleseed/one 0.x; Node.js 24.x"
+    validations:
+      required: true

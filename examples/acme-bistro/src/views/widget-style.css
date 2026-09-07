@@ -1,0 +1,229 @@
+:root {
+  color-scheme: light dark;
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --nw-bg: #ffffff;
+  --nw-surface: #fdf4f3;
+  --nw-text: #1f1413;
+  --nw-muted: #7a5f5c;
+  --nw-border: #efd9d6;
+  /* Local-dev default. At runtime menu-cart.tsx overrides this from server.branding.accent. */
+  --nw-accent: #b91c1c;
+  --nw-accent-strong: #991b1b;
+  --nw-accent-soft: #fdeae8;
+  --nw-radius: 10px;
+  --nw-shadow: 0 18px 50px rgb(60 20 20 / 12%);
+}
+
+.dark,
+[data-theme="dark"] {
+  --nw-bg: #1a1211;
+  --nw-surface: #241816;
+  --nw-text: #f8ecea;
+  --nw-muted: #c3a29e;
+  --nw-border: #43302d;
+  --nw-accent: #f87171;
+  --nw-accent-strong: #ef4444;
+  --nw-accent-soft: #3a1f1d;
+  --nw-shadow: 0 18px 50px rgb(0 0 0 / 32%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--nw-bg);
+  color: var(--nw-text);
+}
+
+button {
+  font: inherit;
+}
+
+.nw-shell {
+  min-height: 100vh;
+  padding: 14px;
+  background: var(--nw-bg);
+  color: var(--nw-text);
+}
+
+.nw-card {
+  max-width: 560px;
+  margin: 0 auto;
+  background: var(--nw-surface);
+  border: 1px solid var(--nw-border);
+  border-radius: var(--nw-radius);
+  box-shadow: var(--nw-shadow);
+  overflow: hidden;
+}
+
+.nw-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border-bottom: 1px solid var(--nw-border);
+}
+
+.nw-icon svg {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: var(--nw-accent);
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nw-title-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.nw-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.nw-subtitle {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--nw-muted);
+}
+
+.nw-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--nw-accent-soft);
+  color: var(--nw-accent-strong);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.nw-menu {
+  list-style: none;
+  margin: 0;
+  padding: 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.nw-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px dashed var(--nw-border);
+}
+
+.nw-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.nw-name {
+  font-weight: 600;
+}
+
+.nw-kind {
+  font-size: 12px;
+  color: var(--nw-muted);
+}
+
+.nw-price {
+  color: var(--nw-accent-strong);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.nw-qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nw-step {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--nw-border);
+  border-radius: 8px;
+  background: var(--nw-bg);
+  color: var(--nw-text);
+  cursor: pointer;
+}
+
+.nw-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.nw-count {
+  min-width: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.nw-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px 4px;
+}
+
+.nw-total {
+  font-size: 14px;
+  color: var(--nw-muted);
+}
+
+.nw-total strong {
+  color: var(--nw-text);
+  font-size: 16px;
+}
+
+.nw-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border: 1px solid var(--nw-border);
+  border-radius: 10px;
+  background: var(--nw-bg);
+  color: var(--nw-text);
+  cursor: pointer;
+}
+
+.nw-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nw-button-primary {
+  background: var(--nw-accent);
+  border-color: var(--nw-accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.nw-button-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.nw-note {
+  margin: 0;
+  padding: 8px 16px 16px;
+  font-size: 12px;
+  color: var(--nw-muted);
+}

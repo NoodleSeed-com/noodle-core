@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "assetOrigin": "https://assets.noodleseed.dev",
+  "assets": [
+    {
+      "logicalId": "hero",
+      "sourcePath": "assets/hero.png",
+      "contentHash": "sha256:1f2e3d4c5b6a798877665544332211ffeeddccbbaa99887766554433221100ff",
+      "mimeType": "image/png",
+      "byteLength": 48213,
+      "width": 1024,
+      "height": 512,
+      "publicUrl": "https://assets.noodleseed.dev/acme/hero-1f2e3d4c.png",
+      "objectKey": "orgs/acme/apps/support/assets/1f2e3d4c"
+    }
+  ],
+  "uploads": [
+    {
+      "logicalId": "hero",
+      "uploadUrl": "https://storage.example.com/upload/1f2e3d4c?signature=abc",
+      "method": "PUT",
+      "headers": {
+        "content-type": "image/png"
+      },
+      "expiresAt": "2026-07-13T12:34:56.000Z"
+    }
+  ]
+}

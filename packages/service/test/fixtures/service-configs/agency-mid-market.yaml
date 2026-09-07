@@ -1,0 +1,17 @@
+profile: agency-managed
+
+org:
+  slug: acme
+  template: mid-market
+
+audit:
+  store: postgres
+
+access:
+  mode: org-members
+
+controls:
+  preset: standard
+
+apps:
+  enabled: true

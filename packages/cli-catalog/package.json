@@ -1,0 +1,97 @@
+{
+  "name": "@noodle-borg/cli-catalog",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./account": {
+      "types": "./dist/catalog-data-account.d.ts",
+      "import": "./dist/catalog-data-account.js"
+    },
+    "./assistant": {
+      "types": "./dist/catalog-data-assistant.d.ts",
+      "import": "./dist/catalog-data-assistant.js"
+    },
+    "./auth-discovery": {
+      "types": "./dist/catalog-data-auth-discovery.d.ts",
+      "import": "./dist/catalog-data-auth-discovery.js"
+    },
+    "./billing": {
+      "types": "./dist/catalog-data-billing.d.ts",
+      "import": "./dist/catalog-data-billing.js"
+    },
+    "./bootstrap-authoring": {
+      "types": "./dist/catalog-data-bootstrap-authoring.d.ts",
+      "import": "./dist/catalog-data-bootstrap-authoring.js"
+    },
+    "./bootstrap-pre-auth": {
+      "types": "./dist/catalog-data-bootstrap-pre-auth.d.ts",
+      "import": "./dist/catalog-data-bootstrap-pre-auth.js"
+    },
+    "./config": {
+      "types": "./dist/catalog-data-config.d.ts",
+      "import": "./dist/catalog-data-config.js"
+    },
+    "./core": {
+      "types": "./dist/catalog-data-core.d.ts",
+      "import": "./dist/catalog-data-core.js"
+    },
+    "./distributions": {
+      "types": "./dist/catalog-data-distributions.d.ts",
+      "import": "./dist/catalog-data-distributions.js"
+    },
+    "./hosted-deployment": {
+      "types": "./dist/catalog-data-hosted-deployment.d.ts",
+      "import": "./dist/catalog-data-hosted-deployment.js"
+    },
+    "./hosted-governance": {
+      "types": "./dist/catalog-data-hosted-governance.d.ts",
+      "import": "./dist/catalog-data-hosted-governance.js"
+    },
+    "./hosted-observability": {
+      "types": "./dist/catalog-data-hosted-observability.d.ts",
+      "import": "./dist/catalog-data-hosted-observability.js"
+    },
+    "./local-authoring": {
+      "types": "./dist/catalog-data-local-authoring.d.ts",
+      "import": "./dist/catalog-data-local-authoring.js"
+    },
+    "./platform-auth": {
+      "types": "./dist/catalog-data-platform-auth.d.ts",
+      "import": "./dist/catalog-data-platform-auth.js"
+    },
+    "./policy": {
+      "types": "./dist/catalog-data-policy.d.ts",
+      "import": "./dist/catalog-data-policy.js"
+    },
+    "./tenant-admin": {
+      "types": "./dist/catalog-data-tenant-admin.d.ts",
+      "import": "./dist/catalog-data-tenant-admin.js"
+    },
+    "./tenant-resources": {
+      "types": "./dist/catalog-data-tenant-resources.d.ts",
+      "import": "./dist/catalog-data-tenant-resources.js"
+    },
+    "./types": {
+      "types": "./dist/catalog-types.d.ts",
+      "import": "./dist/catalog-types.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  }
+}

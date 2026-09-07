@@ -1,0 +1,17 @@
+profile: enterprise-governed
+
+identity:
+  admin:
+    provider: google-workspace
+
+access:
+  mode: org-members
+
+controls:
+  preset: standard
+
+audit:
+  store: postgres
+
+apps:
+  enabled: false

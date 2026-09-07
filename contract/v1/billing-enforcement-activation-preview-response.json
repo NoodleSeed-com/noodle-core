@@ -1,0 +1,24 @@
+{
+  "ok": true,
+  "data": {
+    "schemaVersion": 1,
+    "ready": true,
+    "commercialScope": "free_v1",
+    "paidPlans": false,
+    "checkedAt": "2026-07-16T12:05:00.000Z",
+    "approvalChecksum": "5555555555555555555555555555555555555555555555555555555555555555",
+    "previewChecksum": "6666666666666666666666666666666666666666666666666666666666666666",
+    "blockers": [],
+    "effects": {
+      "profileScope": "enforced",
+      "commercialScope": "free_v1",
+      "paidPlans": false,
+      "startsFreshAuthoritativeEpochAtZero": true,
+      "productionAppEnforcement": true,
+      "legacyInternalExemptBypass": true,
+      "stripe": false,
+      "migrationGrants": false,
+      "invoiceEvidence": false
+    }
+  }
+}

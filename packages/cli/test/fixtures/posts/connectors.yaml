@@ -1,0 +1,30 @@
+# A declarative connector catalog — data, not code. Request/response mapping use the ${...} expression
+# language (scope: ${args.*} for the request, ${response.*} for the response). Public API, no auth.
+connectors:
+  - id: jsonplaceholder
+    version: 1.0.0
+    kind: custom
+    http:
+      baseUrl: https://jsonplaceholder.typicode.com
+      allowedOrigins:
+        - https://jsonplaceholder.typicode.com
+    operations:
+      get_post:
+        type: read
+        method: GET
+        path: /posts/{post_id}
+        input:
+          type: object
+          properties:
+            post_id: { type: string }
+          required: [post_id]
+          additionalProperties: false
+        output:
+          type: object
+          properties:
+            title: { type: string }
+            body: { type: string }
+          additionalProperties: false
+        response:
+          title: ${response.title}
+          body: ${response.body}

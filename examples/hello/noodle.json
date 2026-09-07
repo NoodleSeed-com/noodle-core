@@ -1,0 +1,5 @@
+{
+  "entrypoint": "src/server.ts",
+  "name": "hello",
+  "template": "hello"
+}

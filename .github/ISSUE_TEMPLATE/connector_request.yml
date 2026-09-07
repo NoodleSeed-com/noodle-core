@@ -1,0 +1,35 @@
+name: Connector request
+description: Propose a declarative connector or operation for Noodle Core
+title: "connector: "
+labels: ["area:connectors"]
+body:
+  - type: input
+    id: service
+    attributes:
+      label: Service and public API documentation
+    validations:
+      required: true
+  - type: textarea
+    id: operations
+    attributes:
+      label: Required operations
+      description: List the smallest useful read/write operations and their expected inputs and outputs.
+    validations:
+      required: true
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Authentication model
+      options:
+        - API key or service credential
+        - OAuth 2.0
+        - No authentication
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: User outcome
+    validations:
+      required: true

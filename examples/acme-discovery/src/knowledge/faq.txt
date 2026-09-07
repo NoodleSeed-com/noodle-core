@@ -1,0 +1,10 @@
+ACME GETAWAYS FAQ
+
+Q: Does the assistant book and take payment?
+A: No. The assistant shapes the trip and hands off to Acmes own checkout with a signed link.
+
+Q: How current are prices?
+A: Starting prices come from Acmes live site; the assistant cites the page it used.
+
+Q: Can I compare destinations?
+A: Yes, ask for a shortlist by vibe, month, or budget.

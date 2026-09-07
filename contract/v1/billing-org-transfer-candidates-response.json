@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "data": {
+    "schemaVersion": 1,
+    "items": [
+      {
+        "organization": { "slug": "acme", "displayName": "Acme" },
+        "state": "available",
+        "warnings": ["currently_paid_elsewhere"],
+        "blockers": []
+      }
+    ],
+    "nextCursor": null
+  }
+}

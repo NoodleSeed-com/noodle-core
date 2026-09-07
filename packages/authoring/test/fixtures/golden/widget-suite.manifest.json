@@ -1,0 +1,197 @@
+{
+  "manifestVersion": "2",
+  "server": {
+    "name": "acme_shop",
+    "version": "2.0.0",
+    "title": "Acme Shop",
+    "branding": {
+      "name": "Acme Shop",
+      "accent": "#1D9E75",
+      "radius": "md",
+      "density": "comfortable"
+    }
+  },
+  "handoff": {
+    "allowedDomains": [
+      "https://checkout.acme.example"
+    ]
+  },
+  "state": {
+    "handles": {
+      "cart": {
+        "kind": "cart",
+        "schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "sku": {
+                    "type": "string"
+                  },
+                  "quantity": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "sku",
+                  "quantity"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "note": {
+              "type": "string"
+            },
+            "status": {
+              "default": "draft",
+              "type": "string",
+              "enum": [
+                "draft",
+                "review"
+              ]
+            }
+          },
+          "required": [
+            "items"
+          ],
+          "additionalProperties": false
+        },
+        "version": "v1",
+        "scope": "caller",
+        "ttlSeconds": 7200
+      }
+    }
+  },
+  "connectors": {
+    "state": {
+      "id": "noodle_state",
+      "version": "1.0.0"
+    }
+  },
+  "tools": [
+    {
+      "name": "open_cart",
+      "description": "Open the shopping cart.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "fulfilment": {
+        "steps": [],
+        "output": {
+          "status": "ready"
+        }
+      }
+    },
+    {
+      "name": "open_receipt",
+      "description": "Show the latest receipt.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "additionalProperties": false
+      },
+      "fulfilment": {
+        "steps": [],
+        "output": {
+          "ok": "yes"
+        }
+      }
+    },
+    {
+      "name": "load_cart",
+      "description": "Load cart state.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "revision": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "visibility": [
+        "app"
+      ],
+      "fulfilment": {
+        "steps": [
+          {
+            "id": "read_state",
+            "use": "state.read_state",
+            "args": {
+              "handle": "cart"
+            }
+          }
+        ],
+        "output": {
+          "revision": "${steps.read_state.revision}"
+        }
+      }
+    }
+  ],
+  "widgets": [
+    {
+      "name": "cart_view",
+      "tool": "open_cart",
+      "view": {
+        "component": "CartView",
+        "entry": "./views/CartView.tsx"
+      },
+      "title": "Shopping cart",
+      "csp": {
+        "connectDomains": [
+          "https://api.acme.example"
+        ]
+      }
+    },
+    {
+      "name": "receipt_card",
+      "tool": "open_receipt",
+      "html": "<!doctype html><main data-noodle-widget>Cart</main>",
+      "title": "Receipt"
+    }
+  ]
+}

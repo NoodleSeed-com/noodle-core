@@ -1,0 +1,79 @@
+{
+  "name": "@noodle-borg/service",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./local": {
+      "types": "./dist/local.d.ts",
+      "import": "./dist/local.js"
+    },
+    "./main": {
+      "types": "./dist/main.d.ts",
+      "import": "./dist/main.js"
+    },
+    "./oauth-google": {
+      "types": "./dist/oauth/google.d.ts",
+      "import": "./dist/oauth/google.js"
+    }
+  },
+  "bin": {
+    "noodle-service": "./dist/main.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@noodle-borg/admission-limits": "workspace:*",
+    "@noodle-borg/agent-kit": "workspace:*",
+    "@noodle-borg/app-package": "workspace:*",
+    "@noodle-borg/assistant-gateway": "workspace:*",
+    "@noodle-borg/auth": "workspace:*",
+    "@noodle-borg/capabilities": "workspace:*",
+    "@noodle-borg/compiler": "workspace:*",
+    "@noodle-borg/connector-defs": "workspace:*",
+    "@noodle-borg/connector-http": "workspace:*",
+    "@noodle-borg/control-plane": "workspace:*",
+    "@noodle-borg/developer-mcp": "workspace:*",
+    "@noodle-borg/external-credential-provider": "workspace:*",
+    "@noodle-borg/knowledge": "workspace:*",
+    "@noodle-borg/knowledge-operations": "workspace:*",
+    "@noodle-borg/module": "workspace:*",
+    "@noodle-borg/observability": "workspace:*",
+    "@noodle-borg/module-audit": "workspace:*",
+    "@noodle-borg/oauth-client-registry": "workspace:*",
+    "@noodle-borg/protocol": "workspace:*",
+    "@noodle-borg/runtime": "workspace:*",
+    "@noodle-borg/service-modules": "workspace:*",
+    "@noodle-borg/transport-http": "workspace:*",
+    "@noodle-borg/wire-contracts": "workspace:*",
+    "express": "^5.2.1",
+    "express-rate-limit": "8.5.2",
+    "google-auth-library": "^10.7.0",
+    "jose": "^6.2.3",
+    "pg": "^8.21.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.13.1",
+    "@types/pg": "^8.20.0"
+  }
+}

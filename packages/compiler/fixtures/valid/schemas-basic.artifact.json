@@ -1,0 +1,107 @@
+{
+  "artifactSchemaVersion": "0.17.0",
+  "resolution": "shape-only",
+  "source": {
+    "manifestName": "acme_support",
+    "manifestVersion": "1.0.0"
+  },
+  "server": {
+    "name": "acme_support",
+    "version": "1.0.0",
+    "title": "Acme Support"
+  },
+  "tools": [
+    {
+      "name": "get_order",
+      "description": "Look up an order by its ID.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "order": {
+            "$ref": "#/$defs/order"
+          },
+          "contact": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/$defs/address"
+              }
+            ]
+          }
+        },
+        "required": [
+          "order"
+        ],
+        "$defs": {
+          "address": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            }
+          },
+          "order": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "address": {
+                "$ref": "#/$defs/address"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
+        }
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$ref": "#/$defs/order",
+        "$defs": {
+          "address": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            }
+          },
+          "order": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "address": {
+                "$ref": "#/$defs/address"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
+        }
+      },
+      "fulfilment": {
+        "kind": "operation",
+        "operationRef": {
+          "connector": "acme",
+          "operation": "get_order",
+          "resolved": false
+        },
+        "args": {}
+      }
+    }
+  ],
+  "capabilities": {
+    "tools": [
+      "get_order"
+    ]
+  }
+}

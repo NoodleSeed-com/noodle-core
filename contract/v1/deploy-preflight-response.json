@@ -1,0 +1,34 @@
+{
+  "ok": true,
+  "ready": false,
+  "ownerSubject": "oauth-owner-123",
+  "target": {
+    "org": "acme",
+    "app": "support",
+    "env": "prod",
+    "appState": "will-create",
+    "environmentState": "will-create"
+  },
+  "config": {
+    "ready": false,
+    "missingSecrets": ["ASSISTANT_MODEL_API_KEY"],
+    "missingVariables": ["ASSISTANT_MODEL", "ASSISTANT_MODEL_BASE_URL"]
+  },
+  "errors": [
+    {
+      "code": "missing_secret",
+      "path": "secrets.ASSISTANT_MODEL_API_KEY",
+      "message": "required secret \"ASSISTANT_MODEL_API_KEY\" is not configured"
+    },
+    {
+      "code": "missing_variable",
+      "path": "variables.ASSISTANT_MODEL",
+      "message": "required variable \"ASSISTANT_MODEL\" is not configured"
+    },
+    {
+      "code": "missing_variable",
+      "path": "variables.ASSISTANT_MODEL_BASE_URL",
+      "message": "required variable \"ASSISTANT_MODEL_BASE_URL\" is not configured"
+    }
+  ]
+}

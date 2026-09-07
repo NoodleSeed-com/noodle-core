@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>First Brief · Conversational onboarding demo</title>
+    <style>
+      :root { font-family: system-ui, sans-serif; color: #172033; background: #f6f8fc; }
+      body { margin: 0; }
+      main { max-width: 880px; margin: 0 auto; padding: 64px 28px; }
+      .label { font-size: 12px; font-weight: 700; letter-spacing: .14em; color: #526077; }
+      h1 { max-width: 640px; font-size: clamp(36px, 6vw, 64px); line-height: 1.08; letter-spacing: -.055em; }
+      p { max-width: 570px; line-height: 1.6; color: #526077; }
+      .sample { padding: 24px; border: 1px solid #dce3ee; border-radius: 16px; background: white; margin: 28px 0; max-width: 550px; }
+      a { color: #174bbd; }
+      button { border: none; background: #2563eb; color: white; padding: 14px 20px; border-radius: 9px; font: inherit; cursor: pointer; }
+      :focus-visible { outline: 3px solid #2563eb; outline-offset: 4px; }
+      .notice { font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <span class="label">FIRST BRIEF · INTERNAL DEMONSTRATION</span>
+      <h1>Make something useful.<br>Then decide to sign up.</h1>
+      <p>Describe a goal. Refine a short brief. See the result before deciding whether to take it into an account.</p>
+      <div class="sample">
+        <strong>Try this in the chat</strong>
+        <p>“I want to help new teammates complete their first useful project in a week.”</p>
+        <p id="status" role="status" aria-live="polite">Connecting…</p>
+      </div>
+      <form id="demo-login" action="/demo-login" method="post" hidden>
+        <p><strong>Simulated signup</strong><br>This creates a temporary demo identity. It does not register an account with any SaaS product.</p>
+        <button type="submit">Continue as a demo user</button>
+        <p><a href="http://localhost:3001">Cancel and return to the public page</a></p>
+      </form>
+      <p class="notice">Use synthetic information only. The assistant and draft storage are hosted by Noodle Seed. Signup is simulated locally; no customer backend is connected. Drafts expire within 24 hours. <a href="https://noodleseed.com/privacy" target="_blank" rel="noreferrer">Privacy</a></p>
+    </main>
+    <div id="assistant"></div>
+    <script type="module" src="/client.js"></script>
+  </body>
+</html>

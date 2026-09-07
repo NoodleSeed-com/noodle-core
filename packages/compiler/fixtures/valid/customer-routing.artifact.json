@@ -1,0 +1,65 @@
+{
+  "artifactSchemaVersion": "0.17.0",
+  "resolution": "resolved",
+  "source": {
+    "manifestName": "customer_records",
+    "manifestVersion": "1.0.0",
+    "coreVersion": "2"
+  },
+  "server": {
+    "name": "customer_records",
+    "version": "1.0.0",
+    "title": "Customer Records",
+    "auth": {
+      "issuer": "https://id.noodleseed.dev",
+      "audience": "https://org.cloud.noodleseed.dev/app/mcp",
+      "routing": {
+        "endpoints": {
+          "customer_api": {
+            "claim": "tenant.api_base_url"
+          }
+        }
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "list_records",
+      "description": "List customer records.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "fulfilment": {
+        "kind": "operation",
+        "operationRef": {
+          "alias": "api",
+          "connectorId": "customer_records",
+          "connectorVersion": "1.0.0",
+          "operation": "list_records",
+          "signatureHash": "sha256v2:ca9de3be7bf4b48b4bb39f1c9ca1518a4015e497d199cbfadbe4d7dc7c762c0f",
+          "customerEndpoint": "customer_api",
+          "customerEndpointDependencies": [
+            "customer_api"
+          ],
+          "resolved": true
+        },
+        "args": {}
+      }
+    }
+  ],
+  "capabilities": {
+    "tools": [
+      "list_records"
+    ]
+  },
+  "customerEndpoints": {
+    "customer_api": {
+      "allowedHttpsHostSuffixes": [
+        "noodleseed.dev"
+      ]
+    }
+  }
+}

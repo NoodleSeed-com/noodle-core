@@ -1,0 +1,406 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`service route surface lock > locks the tenant action surface 1`] = `
+{
+  "access": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "alerts": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "auth/doctor": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "auth/google-workload-identity": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "auth/google-workload-identity/doctor": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "deploy/preflight": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "deployment-lock": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "events": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "inspect": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "intent-capture": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "intents": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "logs": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "metrics": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "rollback": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "smoke": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+  "status": {
+    "app": "shop",
+    "env": "prod",
+    "org": "acme",
+  },
+}
+`;
+
+exports[`service route surface lock > resolves every corpus URL to the same parsers and refs 1`] = `
+{
+  "/": {},
+  "/healthz": {},
+  "/v1/github/runs/run-01/claim": {},
+  "/v1/github/runs/run-01/status": {},
+  "/v1/orgs": {},
+  "/v1/orgs/acme": {
+    "parseOrgPath": {
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps": {
+    "parseAppsPath": {
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop": {
+    "parseAppItemPath": {
+      "app": "shop",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/archive": {
+    "parseAppArchivePath": {
+      "app": "shop",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs": {
+    "parseEnvsPath": {
+      "app": "shop",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod": {
+    "parseEnvItemPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/../../../etc/passwd": {},
+  "/v1/orgs/acme/apps/shop/envs/prod/access": {
+    "parseTenantAccessPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/alerts": {
+    "parseTenantAlertsPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/alerts/0f8fad5b-d9cb-469f-a165-70867728950e": {
+    "parseTenantAlertItemPath": {
+      "id": "0f8fad5b-d9cb-469f-a165-70867728950e",
+      "ref": {
+        "app": "shop",
+        "env": "prod",
+        "org": "acme",
+      },
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/alerts/0f8fad5b-d9cb-469f-a165-70867728950e/test": {
+    "parseTenantAlertTestPath": {
+      "id": "0f8fad5b-d9cb-469f-a165-70867728950e",
+      "ref": {
+        "app": "shop",
+        "env": "prod",
+        "org": "acme",
+      },
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/assets/preflight": {
+    "parseTenantAssetPreflightPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/assistant/usage": {
+    "parseTenantAssistantUsagePath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/auth/doctor": {
+    "parseTenantAuthDoctorPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/auth/google-workload-identity": {
+    "parseGoogleWorkloadIdentityPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/auth/google-workload-identity/doctor": {
+    "parseGoogleWorkloadIdentityDoctorPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/config": {},
+  "/v1/orgs/acme/apps/shop/envs/prod/deploy": {
+    "parseTenantDeployPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/deploy/preflight": {
+    "parseTenantDeployPreflightPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/deployment-lock": {
+    "parseTenantDeploymentLockPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/events": {
+    "parseTenantEventsPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/inspect": {
+    "parseTenantInspectPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/intent-capture": {
+    "parseIntentCapturePath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/intents": {
+    "parseTenantIntentsPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/logs": {
+    "parseTenantLogsPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/metrics": {
+    "parseTenantMetricsPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/rollback": {
+    "parseTenantRollbackPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/sessions/sess-01": {
+    "parseTenantSessionPath": {
+      "ref": {
+        "app": "shop",
+        "env": "prod",
+        "org": "acme",
+      },
+      "sessionId": "sess-01",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/smoke": {
+    "parseTenantSmokePath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/envs/prod/status": {
+    "parseTenantStatusPath": {
+      "app": "shop",
+      "env": "prod",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/github/connection": {},
+  "/v1/orgs/acme/apps/shop/github/runs": {},
+  "/v1/orgs/acme/apps/shop/production-environment": {
+    "parseProductionEnvironmentPath": {
+      "app": "shop",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/apps/shop/restore": {
+    "parseAppRestorePath": {
+      "app": "shop",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/audit/events": {
+    "parseAuditEventsPath": {
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/deployments": {
+    "parseDeploymentsPath": {
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/deployments/dep-01": {
+    "parseDeploymentItemPath": {
+      "deploymentId": "dep-01",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/deployments/dep-01/package": {
+    "parseDeploymentPackagePath": {
+      "deploymentId": "dep-01",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/domains": {
+    "parseOrgDomainsPath": {
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/invitations": {
+    "parseInvitationsPath": {
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/mcp-subdomain": {
+    "parseOrgMcpSubdomainPath": {
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/members": {
+    "parseMembersPath": {
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/members/user_123": {
+    "parseMembersPath": {
+      "org": "acme",
+      "subject": "user_123",
+    },
+  },
+  "/v1/orgs/acme/openai-apps-challenge": {
+    "parseOrgOpenAIAppsChallengePath": {
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/service-principals": {
+    "parseServicePrincipalPath": {
+      "kind": "collection",
+      "org": "acme",
+    },
+  },
+  "/v1/orgs/acme/service-principals/spn_0f8fad5b-d9cb-469f-a165-70867728950e": {
+    "parseServicePrincipalPath": {
+      "kind": "principal",
+      "org": "acme",
+      "principalId": "spn_0f8fad5b-d9cb-469f-a165-70867728950e",
+    },
+  },
+  "/v1/orgs/acme/service-principals/spn_0f8fad5b-d9cb-469f-a165-70867728950e/credentials": {
+    "parseServicePrincipalPath": {
+      "kind": "credentials",
+      "org": "acme",
+      "principalId": "spn_0f8fad5b-d9cb-469f-a165-70867728950e",
+    },
+  },
+  "/v1/orgs/acme/service-principals/spn_0f8fad5b-d9cb-469f-a165-70867728950e/credentials/spc_0f8fad5b-d9cb-469f-a165-70867728950e": {
+    "parseServicePrincipalPath": {
+      "credentialId": "spc_0f8fad5b-d9cb-469f-a165-70867728950e",
+      "kind": "credential",
+      "org": "acme",
+      "principalId": "spn_0f8fad5b-d9cb-469f-a165-70867728950e",
+    },
+  },
+  "/v1/orgs/acme/service-principals/spn_0f8fad5b-d9cb-469f-a165-70867728950e/grants": {
+    "parseServicePrincipalPath": {
+      "kind": "grants",
+      "org": "acme",
+      "principalId": "spn_0f8fad5b-d9cb-469f-a165-70867728950e",
+    },
+  },
+  "/v1/orgs/acme/service-principals/spn_0f8fad5b-d9cb-469f-a165-70867728950e/grants/spg_0f8fad5b-d9cb-469f-a165-70867728950e": {
+    "parseServicePrincipalPath": {
+      "grantId": "spg_0f8fad5b-d9cb-469f-a165-70867728950e",
+      "kind": "grant",
+      "org": "acme",
+      "principalId": "spn_0f8fad5b-d9cb-469f-a165-70867728950e",
+    },
+  },
+}
+`;

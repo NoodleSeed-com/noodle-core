@@ -1,0 +1,36 @@
+{
+  "ok": true,
+  "data": {
+    "schemaVersion": 1,
+    "ready": true,
+    "organizations": [
+      {
+        "org": "legacy",
+        "ownerCandidates": [{ "subject": "owner-sub", "email": "owner@example.com" }],
+        "mappedOwnerSubject": "owner-sub",
+        "productionApps": []
+      }
+    ],
+    "linkedOrganizations": [],
+    "fundingSets": [
+      {
+        "destination": {
+          "kind": "proposed_default",
+          "identityIssuer": "https://accounts.google.com",
+          "subject": "owner-sub"
+        },
+        "organizations": ["legacy"],
+        "productionApps": [],
+        "missingProductionClassifications": []
+      }
+    ],
+    "blockers": [],
+    "grantPolicy": {
+      "durationDays": 90,
+      "startsAt": "billing_enforcement_cutover",
+      "expiresAt": null,
+      "eligibility": "account_cohort_above_capacity"
+    },
+    "previewChecksum": "e3cec919c8ea5a35df534fc3a1cd796f650e767cc0378df7a7623963ac46b558"
+  }
+}

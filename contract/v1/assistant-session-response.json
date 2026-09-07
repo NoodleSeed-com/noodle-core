@@ -1,0 +1,29 @@
+{
+  "token": "nss_2f9c1f6e8a6b4d5c9e1f3a7b5d8c0e2f",
+  "expiresAt": "2026-07-13T12:34:56.000Z",
+  "endpoints": {
+    "turns": "https://cloud.noodleseed.dev/v1/assistant/turns",
+    "toolConfirmations": "https://cloud.noodleseed.dev/v1/assistant/tool-confirmations",
+    "interactions": "https://cloud.noodleseed.dev/v1/assistant/interactions",
+    "apps": "https://cloud.noodleseed.dev/v1/assistant/apps",
+    "sandbox": "https://cloud.noodleseed.dev/v1/assistant/sandbox",
+    "transcript": "https://cloud.noodleseed.dev/v1/assistant/transcript",
+    "suggestions": "https://cloud.noodleseed.dev/v1/assistant/suggestions"
+  },
+  "configuration": {
+    "branding": {
+      "name": "Acme Assistant",
+      "accent": "#112233"
+    },
+    "assistant": {
+      "layout": {
+        "mode": "floating",
+        "position": "bottom-right"
+      },
+      "suggestedPrompts": ["Show my open tasks"]
+    }
+  },
+  "resume": {
+    "tool": "my_orders"
+  }
+}

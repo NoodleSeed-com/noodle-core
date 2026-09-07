@@ -1,0 +1,5 @@
+{
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32002,\"message\":\"MCP error -32002: resource not found: missing://resource\"}}"
+}

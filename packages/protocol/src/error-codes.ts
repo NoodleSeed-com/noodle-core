@@ -1,0 +1,11 @@
+/** Existing implementation-defined legacy error codes. Never renumber: clients observe these values. */
+export const LEGACY_MCP_ERROR = {
+  TOOL_AUTHORIZATION_DENIED: -32001,
+  ADMISSION_DENIED: -32001,
+  RESOURCE_NOT_FOUND: -32002,
+  ADMISSION_QUOTA_EXCEEDED: -32002,
+  ADMISSION_RATE_LIMITED: -32003,
+} as const;
+
+export const TOOL_AUTHORIZATION_DENIED = LEGACY_MCP_ERROR.TOOL_AUTHORIZATION_DENIED;
+export const RESOURCE_NOT_FOUND = LEGACY_MCP_ERROR.RESOURCE_NOT_FOUND;

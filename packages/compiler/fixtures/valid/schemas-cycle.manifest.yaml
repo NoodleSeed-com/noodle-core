@@ -1,0 +1,36 @@
+# Valid: $use cycles. `node` self-references; `ping` and `pong` reference each other. Because $use
+# compiles to a local $ref (never inlined), these are legal recursive schemas and resolution must
+# terminate, bundling each member into $defs exactly once.
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+schemas:
+  node:
+    type: object
+    properties:
+      next:
+        $use: node
+  ping:
+    type: object
+    properties:
+      pong:
+        $use: pong
+  pong:
+    type: object
+    properties:
+      ping:
+        $use: ping
+tools:
+  - name: walk
+    description: Walk a recursive structure.
+    inputSchema:
+      type: object
+      properties:
+        root:
+          $use: node
+        a:
+          $use: ping
+    fulfilment:
+      use: acme.walk

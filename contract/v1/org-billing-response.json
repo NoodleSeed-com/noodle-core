@@ -1,0 +1,20 @@
+{
+  "ok": true,
+  "data": {
+    "org": "acme",
+    "state": "linked",
+    "plan": {
+      "code": "free",
+      "version": 1,
+      "effectiveFrom": "2026-07-15T00:00:00.000Z"
+    },
+    "entitlements": {
+      "usage.mcp_calls.included": 1000000,
+      "usage.mcp_calls.overage": false,
+      "apps.production.max": 1
+    },
+    "enforcement": { "state": "legacy_unchanged" },
+    "metering": { "state": "not_started" },
+    "productionApps": { "state": "reporting", "active": 0, "limit": 1 }
+  }
+}

@@ -1,0 +1,26 @@
+# Invalid (resolution): alias `spare` is declared but no tool references it. Only surfaces when
+# compiling with a catalog (docs/SPEC.md "Validation Requirements").
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+connectors:
+  acme:
+    id: acme_orders
+    version: 1.2.0
+  spare:
+    id: acme_orders
+    version: 1.2.0
+tools:
+  - name: get_order
+    description: Look up an order by its ID.
+    inputSchema:
+      type: object
+      properties:
+        order_id:
+          type: string
+    fulfilment:
+      use: acme.get_order
+      args:
+        id: ${input.order_id}

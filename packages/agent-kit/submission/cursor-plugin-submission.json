@@ -1,0 +1,41 @@
+{
+  "format": "noodle-cursor-marketplace-worksheet",
+  "format_version": 1,
+  "portal_uploadable": false,
+  "verified_on": "2026-07-18",
+  "listing": {
+    "name": "Noodle Seed",
+    "tagline": "Build and operate MCP apps on Noodle Cloud",
+    "description": "The developer's coding agent writes the application source while Noodle guides, validates, deploys, inspects, diagnoses, and rolls back apps on Noodle Cloud. The Cursor plugin combines the Noodle Seed authoring skill, a pinned managed CLI, local Build Readiness, and authenticated Noodle Cloud operations.",
+    "category": "developer-tools",
+    "documentation_url": "https://docs.noodleseed.dev",
+    "privacy_policy_url": "https://noodleseed.com/privacy",
+    "terms_url": "https://noodleseed.com/terms",
+    "support_url": "https://noodleseed.com/support"
+  },
+  "bundle": {
+    "manifest": ".cursor-plugin/plugin.json",
+    "mcp_config": "mcp.json",
+    "skill": "skills/noodle-seed/SKILL.md"
+  },
+  "capabilities": {
+    "native_editor_plugin": true,
+    "headless_cli_mode": "projected-plugin-capabilities",
+    "rendered_mcp_app_ui": "requires-live-host-evidence"
+  },
+  "data_handling": {
+    "source_code_upload": false,
+    "credentials_in_bundle": false,
+    "oauth_grant_boundary": "One resource-scoped consent follows live organization memberships and roles; every scoped Cloud operation names its organization explicitly."
+  },
+  "review_assets": {
+    "icon": "required-before-submission",
+    "screenshots": "required-before-submission",
+    "live_editor_smoke": "required-before-support-claim"
+  },
+  "official_sources": [
+    "https://cursor.com/docs/plugins",
+    "https://github.com/cursor/plugins",
+    "https://cursor.com/marketplace/publish"
+  ]
+}

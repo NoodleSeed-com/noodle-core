@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "data": {
+    "schemaVersion": 1,
+    "operationId": "boto_00000000-0000-0000-0000-000000000001",
+    "organization": { "slug": "acme", "displayName": "Acme" },
+    "destination": {
+      "id": "ba_00000000-0000-0000-0000-000000000001",
+      "displayName": "Acme Scale",
+      "state": "active",
+      "plan": { "code": "scale", "version": 1 },
+      "linkedOrganizationCount": 3
+    },
+    "resultingPlan": { "code": "scale", "version": 1 },
+    "productionCapacity": {
+      "current": 3,
+      "organizationContribution": 1,
+      "prospective": 4,
+      "limit": 10
+    },
+    "fallback": "home_free",
+    "resultingLinkVersion": 5,
+    "effectiveAt": "2026-09-02T12:00:01.000Z",
+    "recordedAt": "2026-09-02T12:00:01.000Z",
+    "warnings": ["currently_paid_elsewhere"],
+    "replayed": false
+  }
+}

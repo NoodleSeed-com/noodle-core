@@ -1,0 +1,13 @@
+# Invalid: manifestVersion is not the supported "1" (Core v1, ADR 0150).
+manifestVersion: "0.9"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+tools:
+  - name: get_order
+    description: Look up an order.
+    inputSchema:
+      type: object
+    fulfilment:
+      use: acme.get_order

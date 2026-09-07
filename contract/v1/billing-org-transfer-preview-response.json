@@ -1,0 +1,30 @@
+{
+  "ok": true,
+  "data": {
+    "schemaVersion": 1,
+    "organization": { "slug": "acme", "displayName": "Acme" },
+    "destination": {
+      "id": "ba_00000000-0000-0000-0000-000000000001",
+      "displayName": "Acme Scale",
+      "state": "active",
+      "plan": { "code": "scale", "version": 1 },
+      "linkedOrganizationCount": 2
+    },
+    "currentPlan": { "code": "pro", "version": 1 },
+    "resultingPlan": { "code": "scale", "version": 1 },
+    "linkedOrganizationCounts": { "current": 2, "prospective": 3 },
+    "productionCapacity": {
+      "current": 3,
+      "organizationContribution": 1,
+      "prospective": 4,
+      "limit": 10
+    },
+    "lostCapabilityIds": [],
+    "fallback": "home_free",
+    "warnings": ["currently_paid_elsewhere"],
+    "blockers": [],
+    "expectedLinkVersion": 4,
+    "previewChecksum": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "previewedAt": "2026-09-02T12:00:00.000Z"
+  }
+}

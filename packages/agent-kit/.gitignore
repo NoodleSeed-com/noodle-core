@@ -1,0 +1,4 @@
+# Rendered at publish time from the bundled renderers (see scripts/render-agent-kit-publish.mjs and
+# package.json "files"); never committed.
+/skills/
+/manifest.json

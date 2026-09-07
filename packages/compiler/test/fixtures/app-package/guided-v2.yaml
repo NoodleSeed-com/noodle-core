@@ -1,0 +1,61 @@
+manifestVersion: '2'
+server:
+  name: acme_tasks
+  title: Acme Tasks
+  version: 1.0.0
+  branding:
+    name: Acme Tasks
+    accent: '#7C3AED'
+    surface: '#F5F3FF'
+    surfaceDark: '#161228'
+    logo:
+      uri: { kind: asset, sourcePath: assets/acme-logo.png, logicalId: acme_logo }
+      darkUri: { kind: asset, sourcePath: assets/acme-logo-dark.png, logicalId: acme_logo_dark }
+      alt: Acme Tasks logo
+    mark:
+      uri: https://deployment.acme.example/assets/mark.png
+      alt: Acme Tasks mark
+    radius: lg
+    density: comfortable
+    typography: system
+    colorScheme: auto
+  agentGuide:
+    description: Use Acme Tasks to review and complete work.
+    useWhen: [A user asks about team tasks.]
+    workflows:
+      - id: review_tasks
+        title: Review tasks
+        steps:
+          - capability: { kind: tool, name: list_tasks }
+          - capability: { kind: resource, name: task_details }
+          - capability: { kind: prompt, name: summarize_task }
+    examples: [{ prompt: Review a task., workflow: review_tasks }]
+tools:
+  - name: app_helper
+    description: Refresh app-only state.
+    visibility: [app]
+    inputSchema: { type: object, properties: {}, additionalProperties: false }
+    fulfilment: { steps: [], output: { ok: true } }
+  - name: list_tasks
+    description: List team tasks.
+    inputSchema: { type: object, properties: {}, additionalProperties: false }
+    fulfilment: { steps: [], output: { ok: true } }
+  - name: complete_task
+    description: Complete a task.
+    visibility: [model]
+    inputSchema: { type: object, properties: { id: { type: string } }, required: [id], additionalProperties: false }
+    fulfilment: { steps: [], output: { ok: true } }
+resources:
+  - name: task_details
+    uri: tasks://details
+    description: Task details.
+    fulfilment: { steps: [], output: { value: details } }
+prompts:
+  - name: summarize_task
+    description: Summarize a task.
+    arguments: [{ name: id, required: true }]
+    fulfilment: { steps: [], output: { value: summary } }
+widgets:
+  - name: task_widget
+    tool: list_tasks
+    html: <main>Tasks</main>

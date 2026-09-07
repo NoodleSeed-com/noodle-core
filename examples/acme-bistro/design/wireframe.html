@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acme Bistro × ChatGPT — End-to-End Wireframes</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, sans-serif; background: #f4f5f7; color: #1a1211; line-height: 1.55; }
+
+  /* ── Acme Bistro brand tokens (from server branding) ── */
+  :root {
+    --acme-red: #B91C1C;
+    --acme-red-deep: #991B1B;
+    --acme-red-soft: #FEF3F2;
+    --acme-red-border: #FBD5D2;
+    --acme-dark: #1A1211;
+    --green: #15803D; --green-soft: #F0FDF4; --green-border: #BBF7D0;
+    --amber: #B45309; --amber-soft: #FFFBEB; --amber-border: #FDE68A;
+  }
+
+  /* ── Page Header ── */
+  .page-header { background: #fff; border-bottom: 1px solid #e0dddb; padding: 30px 48px; position: sticky; top: 0; z-index: 100; }
+  .page-header h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.4px; }
+  .page-header h1 .brand { color: var(--acme-red); }
+  .page-header p { font-size: 13px; color: #8a8580; margin-top: 4px; }
+  .page-header .scope { display: inline-block; margin-top: 10px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; padding: 5px 13px; background: var(--acme-dark); color: #fff; border-radius: 5px; }
+  .page-header .scope b { color: var(--acme-red-border); }
+
+  /* ── Section Nav ── */
+  .section-nav { background: #fff; border-bottom: 1px solid #eee; padding: 11px 48px; display: flex; gap: 22px; font-size: 12px; font-weight: 600; position: sticky; top: 92px; z-index: 99; }
+  .section-nav a { color: #8a8580; text-decoration: none; }
+  .section-nav a:hover { color: var(--acme-red); }
+
+  .container { max-width: 1440px; margin: 0 auto; padding: 36px 48px 80px; }
+
+  /* ── Legend ── */
+  .vocab { display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 20px; padding: 14px 18px; background: #fff; border: 1px solid #e6e3e0; border-radius: 12px; font-size: 12px; color: #555; }
+  .vocab-item { display: flex; align-items: center; gap: 8px; }
+  .vocab-sw { width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.08); }
+  .sw-red { background: var(--acme-red); } .sw-green { background: var(--green); }
+  .sw-amber { background: var(--amber); } .sw-dark { background: var(--acme-dark); }
+  .sw-grey { background: #cfcac5; } .sw-dash { background: repeating-linear-gradient(45deg,#fff,#fff 3px,#cfcac5 3px,#cfcac5 5px); }
+
+  /* ── Section ── */
+  .section { margin-bottom: 56px; }
+  .section-label { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #a39d97; margin-bottom: 8px; display: block; }
+  .section-title { font-size: 27px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; }
+  .section-subtitle { font-size: 14px; color: #6b655f; margin-bottom: 22px; max-width: 820px; }
+
+  /* ── Rationale Block ── */
+  .rationale { background: #fff; border: 1px solid #e6e3e0; border-left: 3px solid var(--acme-red); border-radius: 10px; padding: 16px 20px; margin-bottom: 22px; max-width: 960px; }
+  .rationale h4 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #a39d97; margin-bottom: 9px; }
+  .rationale p { font-size: 13px; color: #46413c; line-height: 1.65; margin-bottom: 8px; }
+  .rationale p:last-child { margin-bottom: 0; }
+  .r-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; margin-right: 4px; letter-spacing: 0.3px; }
+  .r-tag.ux { background: #EEF2FF; color: #4338CA; }
+  .r-tag.ui { background: #ECFEFF; color: #0E7490; }
+  .r-tag.acme { background: var(--acme-red-soft); color: var(--acme-red-deep); }
+  .r-tag.trust { background: var(--green-soft); color: var(--green); }
+  code { background: #f1efec; padding: 1px 5px; border-radius: 3px; font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+
+  /* ── Phone Row ── */
+  .phones-row { display: flex; gap: 24px; overflow-x: auto; padding-bottom: 12px; align-items: flex-start; }
+  .phone-step { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; }
+  .step-label { font-size: 11px; font-weight: 700; color: #8a8580; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 12px; text-align: center; max-width: 300px; }
+  .step-label small { display: block; font-weight: 400; letter-spacing: 0; text-transform: none; color: #b0aaa4; margin-top: 3px; }
+  .phone { width: 300px; min-height: 600px; background: #fff; border: 2px solid var(--acme-dark); border-radius: 30px; overflow: hidden; display: flex; flex-direction: column; }
+  .phone.offapp { border: 2px dashed #b0aaa4; }
+  .phone-notch { width: 90px; height: 22px; background: var(--acme-dark); border-radius: 0 0 12px 12px; margin: 0 auto; flex-shrink: 0; }
+  .phone.offapp .phone-notch { background: #b0aaa4; }
+  .phone-screen { padding: 14px; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+  .step-arrow { display: flex; align-items: center; justify-content: center; flex-shrink: 0; align-self: center; width: 32px; font-size: 22px; color: #cfcac5; padding-top: 260px; }
+
+  /* ── Chrome ── */
+  .chatgpt-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 0 9px; border-bottom: 1px solid #eee; }
+  .chatgpt-header .model-name { font-size: 13px; font-weight: 600; }
+  .chatgpt-header .dots { font-size: 17px; color: #b0aaa4; letter-spacing: 2px; }
+  .browser-header { display: flex; align-items: center; gap: 7px; padding: 7px 9px; background: #f1efec; border-radius: 8px; font-size: 10px; color: #6b655f; }
+  .browser-header .lock { font-size: 10px; }
+  .browser-header .url { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #46413c; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ── Messages ── */
+  .msg { max-width: 92%; font-size: 12.5px; line-height: 1.55; }
+  .msg.user { align-self: flex-end; background: var(--acme-dark); color: #fff; padding: 9px 13px; border-radius: 16px 16px 4px 16px; margin-left: auto; }
+  .msg.assistant { color: #1a1211; padding: 2px 0; }
+  .msg.assistant strong { font-weight: 600; }
+
+  /* ── Tool Call ── */
+  .tool-call { display: flex; align-items: center; gap: 8px; padding: 7px 11px; background: #faf8f6; border: 1px solid #e6e3e0; border-radius: 9px; font-size: 10.5px; color: #6b655f; }
+  .tool-call .icon { width: 19px; height: 19px; background: var(--acme-red); border-radius: 5px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .tool-call .icon svg { width: 12px; height: 12px; stroke: #fff; fill: none; stroke-width: 2; }
+  .tool-call .label { font-weight: 700; color: var(--acme-dark); font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+  .tool-call .mono-tool { font-family: 'JetBrains Mono', monospace; font-size: 9.5px; color: #8a8580; }
+
+  /* ── MenuCart widget ── */
+  .wcard { border: 1.5px solid var(--acme-red-border); border-radius: 14px; overflow: hidden; background: #fff; }
+  .wcard-head { display: flex; align-items: center; gap: 9px; padding: 11px 13px; background: var(--acme-red-soft); border-bottom: 1px solid var(--acme-red-border); }
+  .wcard-head .logo { width: 26px; height: 26px; border-radius: 7px; background: var(--acme-red); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .wcard-head .logo svg { width: 15px; height: 15px; stroke: #fff; fill: none; stroke-width: 1.7; }
+  .wc-title { font-size: 13px; font-weight: 800; }
+  .wc-status { font-size: 10px; color: #8a8580; margin-top: 1px; line-height: 1.35; }
+  .wc-chip { margin-left: auto; font-size: 9.5px; font-weight: 700; padding: 3px 8px; background: #fff; border: 1px solid var(--acme-red-border); color: var(--acme-red-deep); border-radius: 20px; white-space: nowrap; }
+  .menu-row { display: flex; align-items: center; gap: 8px; padding: 9px 13px; border-bottom: 1px solid #f4f2ef; }
+  .mr-main { flex: 1; }
+  .mr-name { font-size: 12px; font-weight: 600; }
+  .mr-kind { font-size: 9.5px; color: #a39d97; text-transform: uppercase; letter-spacing: 0.4px; }
+  .mr-price { font-size: 12px; font-weight: 700; color: #46413c; }
+  .mr-qty { display: flex; align-items: center; gap: 7px; }
+  .step-btn { width: 20px; height: 20px; border: 1px solid #d8d3ce; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #46413c; background: #fff; }
+  .step-btn.on { border-color: var(--acme-red); color: var(--acme-red); }
+  .step-btn.dis { opacity: 0.3; }
+  .mr-count { font-size: 12px; font-weight: 700; min-width: 12px; text-align: center; }
+  .wc-foot { display: flex; align-items: center; gap: 10px; padding: 12px 13px 8px; }
+  .wc-total { font-size: 13px; color: #46413c; }
+  .wc-total strong { font-size: 16px; font-weight: 800; color: var(--acme-dark); margin-left: 4px; }
+  .wc-cta { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 9px 15px; background: var(--acme-red); color: #fff; border: none; border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .wc-cta svg { width: 14px; height: 14px; stroke: #fff; fill: none; stroke-width: 2; }
+  .wc-cta.dis { opacity: 0.4; }
+  .wc-note { padding: 0 13px 12px; font-size: 9.5px; color: #a39d97; line-height: 1.45; }
+  .wc-note b { color: var(--green); }
+
+  /* ── Handoff card ── */
+  .handoff-card { border: 1.5px solid var(--acme-red-border); border-radius: 14px; background: #fff; text-align: center; padding: 16px 15px 13px; }
+  .handoff-card .glyph { width: 42px; height: 42px; margin: 0 auto 8px; border-radius: 11px; background: var(--acme-red-soft); display: flex; align-items: center; justify-content: center; }
+  .handoff-card .glyph svg { width: 22px; height: 22px; stroke: var(--acme-red); fill: none; stroke-width: 1.6; }
+  .handoff-card h4 { font-size: 13.5px; font-weight: 800; margin-bottom: 4px; }
+  .handoff-card p { font-size: 11px; color: #6b655f; margin-bottom: 11px; line-height: 1.5; }
+  .mini-sum { background: #faf8f6; border: 1px solid #eae7e3; border-radius: 9px; padding: 9px 11px; margin: 0 0 11px; text-align: left; }
+  .mini-sum .row { display: flex; justify-content: space-between; font-size: 11px; color: #6b655f; padding: 2px 0; }
+  .mini-sum .row.total { font-size: 12.5px; font-weight: 800; color: var(--acme-dark); border-top: 1px solid #eae7e3; margin-top: 4px; padding-top: 5px; }
+  .pay-link { font-size: 9px; color: #a39d97; margin-top: 10px; line-height: 1.55; }
+  .pay-link code { font-size: 8.5px; }
+  .pay-link b { color: var(--acme-dark); }
+
+  .cta-primary { display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: 100%; padding: 10px; background: var(--acme-red); color: #fff; border: none; border-radius: 10px; font-size: 12.5px; font-weight: 700; cursor: pointer; margin-bottom: 6px; }
+  .cta-ghost { display: block; width: 100%; padding: 9px; background: transparent; color: var(--acme-dark); border: 1.5px solid #d8d3ce; border-radius: 10px; font-size: 12px; font-weight: 600; cursor: pointer; }
+
+  /* ── Off-app checkout body ── */
+  .checkout-body { flex: 1; display: flex; flex-direction: column; gap: 9px; padding-top: 4px; }
+  .co-brand { font-size: 14px; font-weight: 800; color: var(--acme-red); }
+  .co-sub { font-size: 10px; color: #8a8580; }
+  .co-field { border: 1px solid #e6e3e0; border-radius: 9px; padding: 9px 11px; }
+  .co-field .lbl { font-size: 9px; color: #a39d97; text-transform: uppercase; letter-spacing: 0.5px; }
+  .co-field .val { font-size: 12px; color: #46413c; margin-top: 3px; font-family: 'JetBrains Mono', monospace; }
+  .co-field.card { background: var(--amber-soft); border-color: var(--amber-border); }
+  .co-line { display: flex; justify-content: space-between; font-size: 11px; color: #6b655f; padding: 2px 0; }
+  .co-line.total { font-weight: 800; color: var(--acme-dark); font-size: 13px; border-top: 1px solid #eee; padding-top: 5px; margin-top: 3px; }
+  .co-pay { padding: 11px; background: var(--acme-red); color: #fff; border: none; border-radius: 10px; font-size: 13px; font-weight: 700; text-align: center; margin-top: auto; }
+  .co-secure { font-size: 9.5px; color: #a39d97; text-align: center; margin-top: 7px; }
+
+  /* ── Composer ── */
+  .composer { margin-top: auto; padding: 9px 0 2px; border-top: 1px solid #eee; }
+  .composer-bar { display: flex; align-items: center; background: #f1efec; border-radius: 20px; padding: 8px 12px; font-size: 11.5px; color: #a39d97; }
+  .composer-bar .send { width: 24px; height: 24px; background: var(--acme-dark); border-radius: 50%; margin-left: auto; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; }
+
+  /* ── Widget Gallery ── */
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px,1fr)); gap: 22px; }
+  .sf { }
+  .sf-name { font-size: 12px; font-weight: 700; margin-bottom: 8px; color: #46413c; }
+  .sf-name span { font-weight: 400; color: #a39d97; }
+
+  /* ── API appendix ── */
+  .api-panel { background: #fff; border: 1px solid #e6e3e0; border-radius: 12px; overflow: hidden; margin-bottom: 18px; }
+  .api-panel-header { background: var(--acme-dark); color: #fff; padding: 12px 18px; font-size: 13px; font-weight: 700; }
+  .api-step { padding: 14px 18px; border-bottom: 1px solid #f1efec; }
+  .api-step:last-child { border-bottom: none; }
+  .api-step-label { font-size: 10.5px; font-weight: 700; color: #a39d97; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 7px; }
+  .api-endpoint { background: #faf8f6; border: 1px solid #eae7e3; border-radius: 8px; padding: 9px 12px; margin-bottom: 7px; }
+  .api-endpoint .kind { display: inline-block; font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 3px; margin-right: 6px; letter-spacing: 0.4px; font-family: 'JetBrains Mono', monospace; }
+  .kind.read { background: var(--green-soft); color: var(--green); }
+  .kind.write { background: #ECFEFF; color: #0E7490; }
+  .kind.link { background: var(--acme-red-soft); color: var(--acme-red-deep); }
+  .api-endpoint .path { font-size: 12.5px; font-weight: 700; color: var(--acme-dark); font-family: 'JetBrains Mono', monospace; }
+  .api-endpoint .desc { font-size: 11px; color: #8a8580; margin-top: 3px; }
+  .api-note { font-size: 11px; color: #5f594f; background: var(--amber-soft); border-left: 3px solid var(--amber-border); padding: 8px 12px; border-radius: 0 6px 6px 0; margin-top: 6px; }
+  .api-note strong { color: #46413c; }
+
+  /* ── Audit table ── */
+  .audit-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 14px; }
+  .audit-table th { text-align: left; padding: 9px 13px; background: #faf8f6; font-weight: 700; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; color: #a39d97; border-bottom: 1px solid #e6e3e0; }
+  .audit-table td { padding: 9px 13px; border-bottom: 1px solid #f1efec; vertical-align: top; color: #46413c; }
+  .audit-table td:first-child { font-weight: 600; color: #2d2825; }
+  .audit-pass { color: var(--green); font-weight: 700; white-space: nowrap; }
+  .audit-guard td:first-child { color: var(--acme-red-deep); }
+
+  .page-divider { border: none; border-top: 2px solid #e6e3e0; margin: 48px 0; }
+  .footer { text-align: center; font-size: 11px; color: #b0aaa4; padding: 24px 0 8px; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1><span class="brand">Acme Bistro</span> × ChatGPT App — End-to-End Wireframes</h1>
+  <p>Prepared by Noodle Seed · Browse → Build order → Confirm → Hand off to pay · Single-restaurant storefront</p>
+  <span class="scope">FUNNEL BOUNDARY: menu, order &amp; confirmation IN CHATGPT · <b>PAYMENT ONLY OFF-APP</b> (pay.acme.example) · no per-user auth</span>
+</div>
+
+<div class="section-nav">
+  <a href="#legend">Legend</a>
+  <a href="#flow">End-to-End Flow</a>
+  <a href="#build">Build &amp; Total</a>
+  <a href="#handoff">Payment Handoff</a>
+  <a href="#gallery">Widget Gallery</a>
+  <a href="#api">MCP Tools</a>
+  <a href="#compliance">Compliance Audit</a>
+</div>
+
+<div class="container">
+
+  <!-- ── LEGEND ── -->
+  <div class="section" id="legend">
+    <div class="vocab">
+      <div class="vocab-item"><div class="vocab-sw sw-red"></div><strong>Acme Red</strong> — primary CTA + logo mark only</div>
+      <div class="vocab-item"><div class="vocab-sw sw-green"></div><strong>Green</strong> — trust / "card never in chat"</div>
+      <div class="vocab-item"><div class="vocab-sw sw-amber"></div><strong>Amber</strong> — off-app payment surface</div>
+      <div class="vocab-item"><div class="vocab-sw sw-dark"></div><strong>Dark</strong> — text, user bubbles</div>
+      <div class="vocab-item"><div class="vocab-sw sw-grey"></div><strong>Grey</strong> — neutral / host UI</div>
+      <div class="vocab-item"><div class="vocab-sw sw-dash"></div><strong>Dashed frame</strong> — off-app destination</div>
+    </div>
+    <div class="rationale">
+      <h4>How to read these wireframes</h4>
+      <p><span class="r-tag ui">UI</span> <strong>Solid-border phones are the ChatGPT App</strong> (the Noodle Seed <code>MenuCart</code> widget rendered inline). <strong>Dashed-border phones are off-app</strong> — reached only after the payment hand-off, on Acme's own checkout. Every widget is preceded by its <code>tool-call</code> chip so you can see exactly which tool the model invoked.</p>
+      <p><span class="r-tag trust">TRUST</span> <strong>The app never guesses and never touches a card.</strong> Menu, prices, and totals are grounded in the <code>show_menu</code> data; the diner's card is entered only on the amber off-app checkout. This is the whole safety story of the app, and it is visible in the pixels.</p>
+    </div>
+  </div>
+
+  <!-- ═══ SECTION 1: END-TO-END FLOW ═══ -->
+  <div class="section" id="flow">
+    <span class="section-label">The whole journey</span>
+    <div class="section-title">One conversation, from craving to a paid-ready cart</div>
+    <div class="section-subtitle">A diner names Acme and their order in plain language; the model renders the menu, reflects the order into a live cart, confirms the total, and mints a signed payment link. Only the final step — entering a card — leaves ChatGPT.</div>
+
+    <div class="phones-row">
+
+      <!-- Step 1: Menu -->
+      <div class="phone-step">
+        <div class="step-label">1 · Show the menu<small>show_menu → MenuCart</small></div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+          <div class="msg user">Order me two margheritas and a lemon tart from Acme Bistro.</div>
+          <div class="tool-call"><span class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></span><span><span class="label">show_menu</span> <span class="mono-tool">{customer:"Guest"}</span></span></div>
+          <div class="msg assistant">Here's your Acme Bistro order — building it now:</div>
+          <div class="wcard">
+            <div class="wcard-head">
+              <span class="logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></span>
+              <div><div class="wc-title">Acme Bistro</div><div class="wc-status">Menu ready. Build the order here; pay at checkout.</div></div>
+              <span class="wc-chip">0 in cart</span>
+            </div>
+            <div class="menu-row"><span class="mr-main"><span class="mr-name">Stone-baked Margherita</span> <span class="mr-kind">Mains</span></span><span class="mr-price">$14</span><span class="mr-qty"><span class="step-btn dis">−</span><span class="mr-count">0</span><span class="step-btn">+</span></span></div>
+            <div class="menu-row"><span class="mr-main"><span class="mr-name">Harvest Roast Bowl</span> <span class="mr-kind">Mains</span></span><span class="mr-price">$13</span><span class="mr-qty"><span class="step-btn dis">−</span><span class="mr-count">0</span><span class="step-btn">+</span></span></div>
+            <div class="menu-row"><span class="mr-main"><span class="mr-name">House Garden Salad</span> <span class="mr-kind">Starters</span></span><span class="mr-price">$11</span><span class="mr-qty"><span class="step-btn dis">−</span><span class="mr-count">0</span><span class="step-btn">+</span></span></div>
+            <div class="menu-row"><span class="mr-main"><span class="mr-name">Lemon Tart</span> <span class="mr-kind">Desserts</span></span><span class="mr-price">$8</span><span class="mr-qty"><span class="step-btn dis">−</span><span class="mr-count">0</span><span class="step-btn">+</span></span></div>
+            <div class="menu-row"><span class="mr-main"><span class="mr-name">Sparkling Water</span> <span class="mr-kind">Drinks</span></span><span class="mr-price">$4</span><span class="mr-qty"><span class="step-btn dis">−</span><span class="mr-count">0</span><span class="step-btn">+</span></span></div>
+            <div class="wc-foot"><span class="wc-total">Total <strong>$0</strong></span><button class="wc-cta dis"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>Check out &amp; pay</button></div>
+            <div class="wc-note">Payment happens on acme.example — <b>your card is never entered in chat.</b></div>
+          </div>
+          <div class="composer"><div class="composer-bar">Message<span class="send">↑</span></div></div>
+        </div></div>
+      </div>
+      <div class="step-arrow">→</div>
+
+      <!-- Step 2: NL order reflected -->
+      <div class="phone-step">
+        <div class="step-label">2 · Parse the order<small>add_to_cart ×2 from language</small></div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+          <div class="tool-call"><span class="icon"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span><span class="label">add_to_cart</span> <span class="mono-tool">{item:"stone_pizza", quantity:2}</span></span></div>
+          <div class="tool-call"><span class="icon"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span><span class="label">add_to_cart</span> <span class="mono-tool">{item:"lemon_tart", quantity:1}</span></span></div>
+          <div class="msg assistant">Two Stone-baked Margheritas and a Lemon Tart — <strong>$36</strong> so far. Want a drink or a side, or shall I take you to checkout?</div>
+          <div class="wcard">
+            <div class="wcard-head">
+              <span class="logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></span>
+              <div><div class="wc-title">Acme Bistro</div><div class="wc-status">Added 2 × Stone-baked Margherita.</div></div>
+              <span class="wc-chip">3 in cart</span>
+            </div>
+            <div class="menu-row"><span class="mr-main"><span class="mr-name">Stone-baked Margherita</span> <span class="mr-kind">Mains</span></span><span class="mr-price">$14</span><span class="mr-qty"><span class="step-btn on">−</span><span class="mr-count">2</span><span class="step-btn">+</span></span></div>
+            <div class="menu-row"><span class="mr-main"><span class="mr-name">Harvest Roast Bowl</span> <span class="mr-kind">Mains</span></span><span class="mr-price">$13</span><span class="mr-qty"><span class="step-btn dis">−</span><span class="mr-count">0</span><span class="step-btn">+</span></span></div>
+            <div class="menu-row"><span class="mr-main"><span class="mr-name">House Garden Salad</span> <span class="mr-kind">Starters</span></span><span class="mr-price">$11</span><span class="mr-qty"><span class="step-btn dis">−</span><span class="mr-count">0</span><span class="step-btn">+</span></span></div>
+            <div class="menu-row"><span class="mr-main"><span class="mr-name">Lemon Tart</span> <span class="mr-kind">Desserts</span></span><span class="mr-price">$8</span><span class="mr-qty"><span class="step-btn on">−</span><span class="mr-count">1</span><span class="step-btn">+</span></span></div>
+            <div class="menu-row"><span class="mr-main"><span class="mr-name">Sparkling Water</span> <span class="mr-kind">Drinks</span></span><span class="mr-price">$4</span><span class="mr-qty"><span class="step-btn dis">−</span><span class="mr-count">0</span><span class="step-btn">+</span></span></div>
+            <div class="wc-foot"><span class="wc-total">Total <strong>$36</strong></span><button class="wc-cta"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>Check out &amp; pay</button></div>
+            <div class="wc-note">Payment happens on acme.example — <b>your card is never entered in chat.</b></div>
+          </div>
+          <div class="composer"><div class="composer-bar">"add a sparkling water"<span class="send">↑</span></div></div>
+        </div></div>
+      </div>
+      <div class="step-arrow">→</div>
+
+      <!-- Step 3: Edit + confirm total -->
+      <div class="phone-step">
+        <div class="step-label">3 · Edit &amp; confirm total<small>add / remove · live sum</small></div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+          <div class="msg user">Add a sparkling water too.</div>
+          <div class="tool-call"><span class="icon"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span><span class="label">add_to_cart</span> <span class="mono-tool">{item:"sparkling", quantity:1}</span></span></div>
+          <div class="msg assistant">Added a Sparkling Water — your total is <strong>$40</strong> for four items. Ready to pay whenever you are.</div>
+          <div class="wcard">
+            <div class="wcard-head">
+              <span class="logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></span>
+              <div><div class="wc-title">Acme Bistro</div><div class="wc-status">Added Sparkling Water.</div></div>
+              <span class="wc-chip">4 in cart</span>
+            </div>
+            <div class="menu-row"><span class="mr-main"><span class="mr-name">Stone-baked Margherita</span> <span class="mr-kind">Mains</span></span><span class="mr-price">$14</span><span class="mr-qty"><span class="step-btn on">−</span><span class="mr-count">2</span><span class="step-btn">+</span></span></div>
+            <div class="menu-row"><span class="mr-main"><span class="mr-name">Lemon Tart</span> <span class="mr-kind">Desserts</span></span><span class="mr-price">$8</span><span class="mr-qty"><span class="step-btn on">−</span><span class="mr-count">1</span><span class="step-btn">+</span></span></div>
+            <div class="menu-row"><span class="mr-main"><span class="mr-name">Sparkling Water</span> <span class="mr-kind">Drinks</span></span><span class="mr-price">$4</span><span class="mr-qty"><span class="step-btn on">−</span><span class="mr-count">1</span><span class="step-btn">+</span></span></div>
+            <div class="wc-foot"><span class="wc-total">Total <strong>$40</strong></span><button class="wc-cta"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>Check out &amp; pay</button></div>
+            <div class="wc-note">Payment happens on acme.example — <b>your card is never entered in chat.</b></div>
+          </div>
+          <div class="composer"><div class="composer-bar">"check out and pay"<span class="send">↑</span></div></div>
+        </div></div>
+      </div>
+      <div class="step-arrow">→</div>
+
+      <!-- Step 4: Checkout handoff card -->
+      <div class="phone-step">
+        <div class="step-label">4 · Mint the payment link<small>create_checkout (in-chat)</small></div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+          <div class="msg user">Check out and pay.</div>
+          <div class="tool-call"><span class="icon"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg></span><span><span class="label">create_checkout</span> <span class="mono-tool">{total:40, cartToken:"…"}</span></span></div>
+          <div class="msg assistant">Your order's ready — I've opened Acme's secure checkout to take payment:</div>
+          <div class="handoff-card">
+            <div class="glyph"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg></div>
+            <h4>Pay on Acme Bistro checkout</h4>
+            <p>Your order is staged and ready. Enter your card on <strong>acme.example</strong> — it's never typed in chat.</p>
+            <div class="mini-sum">
+              <div class="row"><span>2 × Stone-baked Margherita</span><span>$28</span></div>
+              <div class="row"><span>1 × Lemon Tart</span><span>$8</span></div>
+              <div class="row"><span>1 × Sparkling Water</span><span>$4</span></div>
+              <div class="row total"><span>Total</span><span>$40</span></div>
+            </div>
+            <button class="cta-primary"><svg viewBox="0 0 24 24" style="width:14px;height:14px;stroke:#fff;fill:none;stroke-width:2"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Pay $40 on acme.example ↗</button>
+            <button class="cta-ghost">Keep editing</button>
+            <div class="pay-link">Opens <code>pay.acme.example/checkout?cart=…&amp;total=40&amp;src=chatgpt</code><br>Signed link · expires in <b>15 min</b> · 🔒 payment handled by Acme</div>
+          </div>
+          <div class="composer"><div class="composer-bar">Message<span class="send">↑</span></div></div>
+        </div></div>
+      </div>
+      <div class="step-arrow">→</div>
+
+      <!-- Step 5: OFF-APP checkout -->
+      <div class="phone-step">
+        <div class="step-label">5 · Pay (OFF-APP)<small>pay.acme.example · Acme PCI checkout</small></div>
+        <div class="phone offapp"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="browser-header"><span class="lock">🔒</span><span class="url">pay.acme.example/checkout?cart=…&amp;total=40&amp;src=chatgpt</span></div>
+          <div class="checkout-body">
+            <div><div class="co-brand">Acme Bistro</div><div class="co-sub">Secure checkout · order from ChatGPT</div></div>
+            <div class="co-field"><div class="lbl">Order</div><div class="val" style="font-family:'Inter'">2 Margherita · 1 Lemon Tart · 1 Sparkling</div></div>
+            <div class="co-field card"><div class="lbl">Card number</div><div class="val">•••• •••• •••• ____</div></div>
+            <div class="co-field"><div class="lbl">Contact (optional)</div><div class="val" style="font-family:'Inter'">name@example.com</div></div>
+            <div style="padding:2px 2px 0">
+              <div class="co-line"><span>Subtotal</span><span>$40.00</span></div>
+              <div class="co-line"><span>Tax (recomputed by Acme)</span><span>$3.30</span></div>
+              <div class="co-line total"><span>Total</span><span>$43.30</span></div>
+            </div>
+            <button class="co-pay">Pay $43.30</button>
+            <div class="co-secure">🔒 PCI-scoped · card stays on acme.example · the ChatGPT App never sees it</div>
+          </div>
+        </div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <hr class="page-divider">
+
+  <!-- ═══ SECTION 2: BUILD & TOTAL (deep dive) ═══ -->
+  <div class="section" id="build">
+    <span class="section-label">Capability · Order building</span>
+    <div class="section-title">Build the order in language, confirm it in pixels</div>
+    <div class="section-subtitle">The whole menu, the cart, the running total, and the pay button live in one inline widget. The diner drives it two ways — by talking to the model or by tapping the steppers — and both land in the same place.</div>
+
+    <div class="rationale">
+      <h4>Why this approach</h4>
+      <p><span class="r-tag acme">ACME</span> <strong>One kitchen, one widget.</strong> A single restaurant with five items doesn't need discovery, carousels, or a fullscreen menu — it needs the fastest path from craving to a confirmed cart. <code>MenuCart</code> collapses menu, cart, and checkout into one card the diner never scrolls out of.</p>
+      <p><span class="r-tag ux">UX</span> <strong>Language is the input; the widget is the receipt.</strong> "Two margheritas and a lemon tart" parses into two <code>add_to_cart</code> calls — no tapping required — and the widget instantly shows the result so the diner can trust what the model heard. Editing works the same in both directions.</p>
+      <p><span class="r-tag ui">UI</span> <strong>Inline Card, brand accent on the CTA only.</strong> Acme red (<code>#B91C1C</code>) appears only on the header mark and the <strong>Check out &amp; pay</strong> button; everything else uses host theme tokens via cascade layers, so the widget is native in ChatGPT light or dark. No nested scroll — five rows fit.</p>
+      <p><span class="r-tag trust">TRUST</span> <strong>The total is honest and display-only.</strong> The widget sums line items live, but the amount that charges is recomputed by Acme at checkout. The reassurance line ("your card is never entered in chat") is present in every frame, not just the last one.</p>
+    </div>
+  </div>
+
+  <hr class="page-divider">
+
+  <!-- ═══ SECTION 3: PAYMENT HANDOFF ═══ -->
+  <div class="section" id="handoff">
+    <span class="section-label">Capability · The one handoff</span>
+    <div class="section-title">Payment is the only step that leaves ChatGPT</div>
+    <div class="section-subtitle">When the order is right, <code>create_checkout</code> mints a signed, expiring link carrying the cart token, the total, and an attribution tag. ChatGPT opens Acme's own PCI checkout. The MCP server is never in the payment path.</div>
+
+    <div class="rationale">
+      <h4>Why this approach</h4>
+      <p><span class="r-tag trust">TRUST</span> <strong>The card never touches the app.</strong> No in-chat card field, no wallet, no stored payment method. Keeping capture on <code>pay.acme.example</code> means the ChatGPT surface adds zero PCI scope — the single most important safety property of the design.</p>
+      <p><span class="r-tag acme">ACME</span> <strong>The link is signed, expiring, and attributable.</strong> Acme signs the URL server-side, sets an <code>expires_at</code> (proposed 15 min), and carries <code>src=chatgpt</code> so ChatGPT-sourced revenue is measurable. <code>handoff.allowedDomains</code> lists <code>pay.acme.example</code> and <code>acme.example</code> so the compiler derives the redirect domain and the link opens without a safe-link warning.</p>
+      <p><span class="r-tag ux">UX</span> <strong>Context survives the jump.</strong> The cart token (<code>stone_pizzax2-lemon_tartx1-sparklingx1</code>) rehydrates the exact order on Acme's checkout — the diner never re-enters what they already told the model. State is re-validated past the boundary: Acme recomputes pricing and tax and enforces its own total.</p>
+    </div>
+
+    <div class="phones-row">
+      <div class="phone-step">
+        <div class="step-label">In-chat: the hand-off card<small>CheckoutHandoff · create_checkout</small></div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+          <div class="msg assistant">Your $40 order is staged. Tap to pay on Acme's checkout:</div>
+          <div class="handoff-card">
+            <div class="glyph"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg></div>
+            <h4>Pay on Acme Bistro checkout</h4>
+            <p>Sign in (if you like) and pay with your card on <strong>acme.example</strong>.</p>
+            <div class="mini-sum">
+              <div class="row"><span>4 items</span><span>$40</span></div>
+              <div class="row total"><span>Pay on acme.example</span><span>$40+tax</span></div>
+            </div>
+            <button class="cta-primary">Pay $40 on acme.example ↗</button>
+            <div class="pay-link">Signed · <b>expires 15 min</b> · <code>src=chatgpt</code></div>
+          </div>
+          <div class="composer"><div class="composer-bar">Message<span class="send">↑</span></div></div>
+        </div></div>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="phone-step">
+        <div class="step-label">Off-app: Acme checkout<small>dashed = not our app</small></div>
+        <div class="phone offapp"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="browser-header"><span class="lock">🔒</span><span class="url">pay.acme.example/checkout?cart=stone_pizzax2-lemon_tartx1-sparklingx1&amp;total=40&amp;src=chatgpt</span></div>
+          <div class="checkout-body">
+            <div><div class="co-brand">Acme Bistro</div><div class="co-sub">Secure checkout</div></div>
+            <div class="co-field"><div class="lbl">Order (rehydrated from token)</div><div class="val" style="font-family:'Inter'">2 Margherita · 1 Lemon Tart · 1 Sparkling</div></div>
+            <div class="co-field card"><div class="lbl">Card number · PCI-scoped</div><div class="val">•••• •••• •••• ____</div></div>
+            <div style="padding:2px 2px 0">
+              <div class="co-line"><span>Subtotal (re-validated)</span><span>$40.00</span></div>
+              <div class="co-line"><span>Tax</span><span>$3.30</span></div>
+              <div class="co-line total"><span>Total</span><span>$43.30</span></div>
+            </div>
+            <button class="co-pay">Pay $43.30</button>
+            <div class="co-secure">🔒 card never leaves acme.example · app has no post-handoff visibility in v1</div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="page-divider">
+
+  <!-- ═══ WIDGET GALLERY ═══ -->
+  <div class="section" id="gallery">
+    <span class="section-label">Specimen grid</span>
+    <div class="section-title">Widget Gallery</div>
+    <div class="section-subtitle">Every widget state rendered once at rest. One widget ships: <code>MenuCart</code>. This is what engineers screenshot against the build.</div>
+
+    <div class="gallery">
+      <div class="sf">
+        <div class="sf-name">MenuCart <span>· empty (CTA disabled)</span></div>
+        <div class="wcard">
+          <div class="wcard-head"><span class="logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></span><div><div class="wc-title">Acme Bistro</div><div class="wc-status">Build your order, then check out to pay.</div></div><span class="wc-chip">0 in cart</span></div>
+          <div class="menu-row"><span class="mr-main"><span class="mr-name">Stone-baked Margherita</span> <span class="mr-kind">Mains</span></span><span class="mr-price">$14</span><span class="mr-qty"><span class="step-btn dis">−</span><span class="mr-count">0</span><span class="step-btn">+</span></span></div>
+          <div class="menu-row"><span class="mr-main"><span class="mr-name">House Garden Salad</span> <span class="mr-kind">Starters</span></span><span class="mr-price">$11</span><span class="mr-qty"><span class="step-btn dis">−</span><span class="mr-count">0</span><span class="step-btn">+</span></span></div>
+          <div class="wc-foot"><span class="wc-total">Total <strong>$0</strong></span><button class="wc-cta dis"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>Check out &amp; pay</button></div>
+          <div class="wc-note">Payment happens on acme.example — <b>your card is never entered in chat.</b></div>
+        </div>
+      </div>
+
+      <div class="sf">
+        <div class="sf-name">MenuCart <span>· filled ($40, 4 items)</span></div>
+        <div class="wcard">
+          <div class="wcard-head"><span class="logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></span><div><div class="wc-title">Acme Bistro</div><div class="wc-status">Added Sparkling Water.</div></div><span class="wc-chip">4 in cart</span></div>
+          <div class="menu-row"><span class="mr-main"><span class="mr-name">Stone-baked Margherita</span> <span class="mr-kind">Mains</span></span><span class="mr-price">$14</span><span class="mr-qty"><span class="step-btn on">−</span><span class="mr-count">2</span><span class="step-btn">+</span></span></div>
+          <div class="menu-row"><span class="mr-main"><span class="mr-name">Lemon Tart</span> <span class="mr-kind">Desserts</span></span><span class="mr-price">$8</span><span class="mr-qty"><span class="step-btn on">−</span><span class="mr-count">1</span><span class="step-btn">+</span></span></div>
+          <div class="menu-row"><span class="mr-main"><span class="mr-name">Sparkling Water</span> <span class="mr-kind">Drinks</span></span><span class="mr-price">$4</span><span class="mr-qty"><span class="step-btn on">−</span><span class="mr-count">1</span><span class="step-btn">+</span></span></div>
+          <div class="wc-foot"><span class="wc-total">Total <strong>$40</strong></span><button class="wc-cta"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg>Check out &amp; pay</button></div>
+          <div class="wc-note">Payment happens on acme.example — <b>your card is never entered in chat.</b></div>
+        </div>
+      </div>
+
+      <div class="sf">
+        <div class="sf-name">CheckoutHandoff <span>· signed link (create_checkout)</span></div>
+        <div class="handoff-card">
+          <div class="glyph"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg></div>
+          <h4>Pay on Acme Bistro checkout</h4>
+          <p>Your order is staged and ready. Card entered on <strong>acme.example</strong>, never in chat.</p>
+          <div class="mini-sum"><div class="row"><span>4 items</span><span>$40</span></div><div class="row total"><span>Total</span><span>$40+tax</span></div></div>
+          <button class="cta-primary">Pay $40 on acme.example ↗</button>
+          <div class="pay-link">Signed · expires 15 min · <code>src=chatgpt</code></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="page-divider">
+
+  <!-- ═══ MCP TOOLS APPENDIX ═══ -->
+  <div class="section" id="api">
+    <span class="section-label">Technical appendix</span>
+    <div class="section-title">MCP Tools &amp; Call Sequence</div>
+    <div class="section-subtitle">Tool mapping for each wireframe step. Four tools, served by the Noodle Seed–authored <code>acme_bistro</code> server. Concrete request/response JSON lives in <code>api-contract.md</code>.</div>
+
+    <div class="api-panel">
+      <div class="api-panel-header">Browse &amp; Build (Steps 1–3)</div>
+      <div class="api-step">
+        <div class="api-step-label">Step 1 — Show the menu</div>
+        <div class="api-endpoint"><span class="kind read">READ</span><span class="path">show_menu</span><span class="desc">— tool + view. Returns the 5-item menu and renders MenuCart.</span></div>
+        <div class="api-note"><strong>Design intent:</strong> the menu is small and static, so it ships in one read — no pagination, no follow-up call. The <code>items[]</code> array is the model's only source of dish names and prices.</div>
+      </div>
+      <div class="api-step">
+        <div class="api-step-label">Steps 2–3 — Build &amp; edit the cart</div>
+        <div class="api-endpoint"><span class="kind write">WRITE</span><span class="path">add_to_cart</span><span class="desc">— tool + app visibility. Reflects a natural-language addition (item + quantity) into the visible cart.</span></div>
+        <div class="api-endpoint"><span class="kind write">WRITE</span><span class="path">remove_from_cart</span><span class="desc">— tool + app visibility. Removes one unit; the widget's − button calls the same tool.</span></div>
+        <div class="api-note"><strong>Natural-language parsing:</strong> "two margheritas and a lemon tart" becomes <code>add_to_cart{item:"stone_pizza",quantity:2}</code> + <code>add_to_cart{item:"lemon_tart",quantity:1}</code> — the model fills the fields; no UI round-trip. The running total is summed live in the widget (React), not in a tool.</div>
+      </div>
+    </div>
+
+    <div class="api-panel">
+      <div class="api-panel-header">Confirm &amp; Hand off (Step 4 → off-app)</div>
+      <div class="api-step">
+        <div class="api-step-label">Step 4 — Mint the payment link</div>
+        <div class="api-endpoint"><span class="kind link">OPEN-LINK</span><span class="path">create_checkout</span><span class="desc">— model-visible tool. Returns a signed deep link + summary; ChatGPT opens it.</span></div>
+        <div class="api-note"><strong>No payment in-chat.</strong> The widget passes a url-safe cart token and the numeric total; <code>create_checkout</code> returns <code>checkoutUrl = https://pay.acme.example/checkout?cart=…&amp;total=…&amp;src=chatgpt</code> (production adds a signed <code>expires_at</code>). The app never sees card data. Acme recomputes pricing/tax and enforces the total past the boundary. No <code>submit_order</code> tool exists by design — fulfilment is Acme's.</div>
+      </div>
+    </div>
+  </div>
+
+  <hr class="page-divider">
+
+  <!-- ═══ COMPLIANCE AUDIT ═══ -->
+  <div class="section" id="compliance">
+    <span class="section-label">Compliance</span>
+    <div class="section-title">OpenAI Apps SDK Compliance Audit</div>
+    <div class="section-subtitle">How Acme Bistro maps to OpenAI's published ChatGPT Apps UX Principles and UI Guidelines. Verified in the build with <code>noodle check --target chatgpt</code>.</div>
+
+    <div class="rationale" style="max-width:100%">
+      <h4>Pre-publishing checklist</h4>
+      <table class="audit-table">
+        <tr><th style="width:32%">Requirement</th><th>How Acme Bistro addresses it</th><th style="width:70px">Status</th></tr>
+        <tr><td>Conversational value — relies on ChatGPT's strengths</td><td>Natural-language ordering ("two margheritas and a lemon tart") parses into <code>add_to_cart</code> calls with item + quantity — no tap-driven menu can do this. Editing by sentence ("drop a margherita") works the same way.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr><td>Beyond base ChatGPT — new knowledge/actions</td><td>Live single-restaurant menu, a running cart, and a signed checkout hand-off to Acme's real payment page. None available in base ChatGPT.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr><td>Atomic, model-friendly actions</td><td>Four tools with explicit Zod-typed input/output: <code>show_menu</code> (read), <code>add_to_cart</code>/<code>remove_from_cart</code> (local write), <code>create_checkout</code> (open-link). No ambiguity.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr><td>Helpful UI only — would plain text degrade UX?</td><td>Yes for the menu/cart — price rows and steppers are faster to scan than prose, and the running total needs a layout. <strong>No payment widget is built</strong> — card capture is off-platform, so a widget there would be wrong.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr><td>Meaningful task completion in-chat</td><td>The full order — browse, build, edit, confirm total — completes in ChatGPT. The one intentional hand-off is payment, on Acme's checkout.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr><td>Performance &amp; responsiveness</td><td>One read on entry; cart edits are local to the widget; one link mint at checkout. Static menu keeps <code>show_menu</code> well under target latency.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr><td>Discoverability</td><td>Broad natural triggers: "show me the Acme Bistro menu", "order two margheritas from Acme", "what's my Acme total?", "check out and pay".</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr><td>Platform fit</td><td>Rich prompts (order + quantity in one sentence), multi-turn cart building, in-session memory of the cart. No per-user auth needed for the pre-payment surface.</td><td class="audit-pass">✓ Pass</td></tr>
+      </table>
+    </div>
+
+    <div class="rationale" style="max-width:100%;margin-top:18px">
+      <h4>UI guidelines compliance</h4>
+      <table class="audit-table">
+        <tr><th style="width:32%">Guideline</th><th>Implementation</th><th style="width:70px">Status</th></tr>
+        <tr><td>Colour — system tokens; brand only on accents/CTA</td><td>Text, borders, and surfaces use host semantic tokens via cascade layers. Acme red <code>#B91C1C</code> appears only on the header mark and the primary <strong>Check out &amp; pay</strong> button.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr><td>Typography — inherit system fonts</td><td>System font stack; no custom Acme typeface inside the widget.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr><td>Inline Card — ≤2 actions, no nested scroll, no deep nav</td><td>MenuCart has one primary action (Check out &amp; pay) plus in-card steppers; five rows fit with no inner scroller and no drill-in.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr><td>Icons — monochromatic, outlined</td><td>Outlined plate mark and card glyph; no filled brand logo rendered in the response body.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr><td>Accessibility — WCAG AA, theme-aware</td><td>Acme red used only as a fill behind light text or as a 1px mark, never as body text on white. Widget adapts to host light/dark via <code>branding.surface</code> / <code>surfaceDark</code>.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr><td>Display mode — correct per intent</td><td>Inline Card only. No Carousel/Fullscreen/PiP — a flat 5-item menu doesn't warrant them.</td><td class="audit-pass">✓ Pass</td></tr>
+      </table>
+    </div>
+
+    <div class="rationale" style="max-width:100%;margin-top:18px">
+      <h4>Domain guardrails (Acme-specific trust rows)</h4>
+      <table class="audit-table">
+        <tr><th style="width:32%">Guardrail</th><th>How Acme Bistro enforces it</th><th style="width:70px">Status</th></tr>
+        <tr class="audit-guard"><td>No payment in chat</td><td>No card field, wallet, or stored method anywhere in the app. Card capture happens only on <code>pay.acme.example</code> after the hand-off. The MCP server never enters PCI scope. The "your card is never entered in chat" note is in every widget frame.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr class="audit-guard"><td>Allergen / dietary honesty</td><td>The model states only what the menu data holds (name, course, price). Ingredient-level or cross-contact questions are deferred to Acme directly — never "this is vegetarian/gluten-free" without a menu flag.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr class="audit-guard"><td>No invented items or prices</td><td>Grounded strictly in the <code>show_menu</code> <code>items[]</code> — only the five dishes, only their listed prices. The total is display-only; Acme recomputes the charge.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr class="audit-guard"><td>Signed, expiring, attributable hand-off</td><td>Checkout link is signed server-side, carries <code>src=chatgpt</code>, and expires (proposed 15 min). <code>handoff.allowedDomains</code> whitelists the redirect domains so the link opens without a safe-link warning.</td><td class="audit-pass">✓ Pass</td></tr>
+        <tr class="audit-guard"><td>No unseen fulfilment claims</td><td>The app builds and hands off the order; it makes no pickup-time or order-status promise it can't verify (no post-handoff visibility in v1).</td><td class="audit-pass">✓ Pass</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="footer">Acme Bistro (illustrative) · Prepared by Noodle Seed · End-to-end wireframes · matches the runnable <code>acme_bistro</code> server</div>
+
+</div>
+</body>
+</html>

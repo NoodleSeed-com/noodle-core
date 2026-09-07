@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - name: Verify DCO sign-off
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          git fetch --no-tags origin "$BASE_SHA"
+          missing="$(git log --format='%H%x00%B%x00' "$BASE_SHA..$HEAD_SHA" | \
+            awk -v RS='\0\0' 'NF && $0 !~ /(^|\n)Signed-off-by: .+ <[^>]+>($|\n)/ { print substr($0, 1, 40) }')"
+          [[ -z "$missing" ]] || { echo "commits missing DCO sign-off: $missing"; exit 1; }
+      - run: pnpm verify

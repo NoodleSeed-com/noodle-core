@@ -1,0 +1,55 @@
+{
+  "format": "noodle-claude-directory-worksheet",
+  "format_version": 1,
+  "portal_uploadable": false,
+  "verified_on": "2026-07-17",
+  "listing": {
+    "name": "Noodle Seed",
+    "tagline": "Build and operate MCP apps on Noodle Cloud",
+    "description": "The developer's coding agent writes the application source while Noodle guides, validates, deploys, inspects, diagnoses, and rolls back apps on Noodle Cloud. The connector follows the signed-in user’s current Noodle Cloud organizations and roles so Claude can inspect apps and deployments, read redacted logs and events, diagnose failures, and perform an explicit owner-only deployment rollback.",
+    "categories": ["Developer Tools", "Productivity"],
+    "documentation_url": "https://docs.noodleseed.dev",
+    "privacy_policy_url": "https://noodleseed.com/privacy",
+    "terms_url": "https://noodleseed.com/terms",
+    "support_url": "https://noodleseed.com/support",
+    "slug_preference": "noodle-seed"
+  },
+  "connection": {
+    "url": "https://cloud.noodleseed.dev/developer/mcp",
+    "transport": "streamable-http",
+    "url_mode": "same-for-every-user"
+  },
+  "authentication": {
+    "type": "oauth-2.0",
+    "account_requirement": "A Noodle Seed account with access to at least one organization.",
+    "grant_boundary": "One resource-scoped consent follows the user’s live organization memberships and roles; every organization-scoped tool requires an explicit organization."
+  },
+  "capabilities": {
+    "headless_workflows": "complete",
+    "rendered_mcp_app_ui": "requires-live-host-evidence",
+    "verified_widgets": ["app-overview", "deployment-detail", "operations", "analytics"],
+    "reads_data": true,
+    "writes_data": true
+  },
+  "use_cases": [
+    "Inspect apps and deployments in an explicit organization from current user access.",
+    "Investigate redacted logs, request events, metrics, and session chronology.",
+    "Diagnose application failures from bounded operational evidence.",
+    "Reactivate an eligible deployment after an explicit rollback request."
+  ],
+  "data_handling": {
+    "api_ownership": "first-party",
+    "health_data": false,
+    "sponsored_content": false,
+    "source_code_upload": false
+  },
+  "review_assets": {
+    "icon": "required-in-portal",
+    "mcp_app_screenshots": "three-to-five-required-before-submission",
+    "test_account_credentials": "provide-outside-source-control"
+  },
+  "official_sources": [
+    "https://claude.com/docs/connectors/building",
+    "https://claude.com/docs/connectors/building/submission"
+  ]
+}

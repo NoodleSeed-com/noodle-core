@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acme Tasks × ChatGPT — Two-Way App Wireframes</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, sans-serif; background: #f4f5f7; color: #1f1f1f; line-height: 1.55; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* ── Acme Tasks branding + host-compliant tokens ── */
+  :root {
+    --accent: #7C3AED;          /* branding.accent — CTAs, logo, high-priority emphasis only */
+    --accent-soft: #EDE9FE;
+    --accent-border: #DDD6FE;
+    --ink: #161228;             /* branding.surfaceDark — ChatGPT / system surface */
+    --hi: #DC2626;              /* priority: high */
+    --med: #D97706;             /* priority: medium */
+    --low: #6B7280;             /* priority: low */
+    --green: #059669;
+    --green-soft: #E7F6EF;
+    --green-border: #A7E0C6;
+    --amber: #B45309;
+    --amber-soft: #FBF1E2;
+    --amber-border: #EBD7A8;
+    --blue-soft: #E8EEFB;
+    --line: #ececeb;
+  }
+
+  .page-header { background: var(--ink); color: #fff; border-bottom: 3px solid var(--accent); padding: 30px 48px; position: sticky; top: 0; z-index: 100; }
+  .page-header h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.4px; }
+  .page-header h1 .brand { color: #b79bff; }
+  .page-header p { font-size: 13px; color: #b3b3c2; margin-top: 4px; }
+  .page-header .scope { display: inline-block; margin-top: 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.4px; padding: 4px 12px; background: var(--accent); color: #fff; border-radius: 4px; }
+
+  .section-nav { background: #fff; border-bottom: 1px solid #e6e8ec; padding: 12px 48px; display: flex; gap: 22px; font-size: 12px; font-weight: 600; position: sticky; top: 100px; z-index: 99; overflow-x: auto; }
+  .section-nav a { color: #8a929c; text-decoration: none; white-space: nowrap; }
+  .section-nav a:hover { color: var(--accent); }
+
+  .container { max-width: 1480px; margin: 0 auto; padding: 40px 48px 90px; }
+
+  /* ── Legend ── */
+  .vocab { display: flex; gap: 18px; flex-wrap: wrap; margin: 0 0 24px; padding: 14px 18px; background: #fff; border: 1px solid #e6e8ec; border-radius: 12px; font-size: 12px; color: #555; }
+  .vocab-item { display: flex; align-items: center; gap: 8px; }
+  .vocab-sw { width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1); }
+  .vocab-sw.accent { background: var(--accent); }
+  .vocab-sw.hi { background: var(--hi); } .vocab-sw.med { background: var(--med); } .vocab-sw.low { background: var(--low); }
+  .vocab-sw.green { background: var(--green); }
+  .vocab-sw.ink { background: var(--ink); }
+  .vocab-sw.grey { background: #cdd2d8; }
+
+  .section { margin-bottom: 72px; }
+  .section-label { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); margin-bottom: 8px; display: block; }
+  .section-title { font-size: 27px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; color: var(--ink); }
+  .section-subtitle { font-size: 14px; color: #5c6570; margin-bottom: 24px; max-width: 880px; }
+
+  /* ── Rationale block ── */
+  .rationale { background: #fff; border: 1px solid #e6e8ec; border-left: 3px solid var(--accent); border-radius: 10px; padding: 16px 20px; margin-bottom: 24px; max-width: 960px; }
+  .rationale h4 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #8a929c; margin-bottom: 8px; }
+  .rationale p { font-size: 13px; color: #3d454e; line-height: 1.6; margin-bottom: 8px; }
+  .rationale p:last-child { margin-bottom: 0; }
+  .r-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; margin-right: 4px; }
+  .r-tag.ux { background: var(--green-soft); color: #15734d; }
+  .r-tag.ui { background: var(--blue-soft); color: #1d4fa0; }
+  .r-tag.acme { background: var(--accent-soft); color: #5b21b6; }
+  .r-tag.trust { background: var(--amber-soft); color: #8a5a0a; }
+
+  /* ── Phones ── */
+  .phones-row { display: flex; gap: 26px; overflow-x: auto; padding-bottom: 16px; align-items: stretch; }
+  .phone-step { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; }
+  .step-label { font-size: 11px; font-weight: 600; color: #99a1ab; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; text-align: center; max-width: 320px; }
+  .step-label small { font-weight: 400; letter-spacing: 0; text-transform: none; color: #b3bac2; display: block; margin-top: 2px; }
+  .phone { width: 322px; min-height: 660px; background: #fff; border: 2px solid var(--ink); border-radius: 32px; overflow: hidden; display: flex; flex-direction: column; }
+  .phone.offapp { border-color: #b9c0c8; border-style: dashed; }
+  .phone-notch { width: 100px; height: 24px; background: var(--ink); border-radius: 0 0 14px 14px; margin: 0 auto; flex-shrink: 0; }
+  .phone.offapp .phone-notch { background: #b9c0c8; }
+  .phone-screen { padding: 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+  .step-arrow { display: flex; align-items: center; justify-content: center; flex-shrink: 0; align-self: center; width: 34px; font-size: 24px; color: #c6ccd3; }
+
+  .chatgpt-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 0 10px; border-bottom: 1px solid #eef0f2; }
+  .chatgpt-header .model-name { font-size: 14px; font-weight: 600; }
+  .chatgpt-header .dots { font-size: 18px; color: #aab; letter-spacing: 2px; }
+  .browser-header { display: flex; align-items: center; gap: 8px; padding: 8px 0 10px; border-bottom: 1px solid #eef0f2; }
+  .browser-header .url { flex: 1; font-size: 9.5px; color: #8a929c; background: #f1f3f5; border-radius: 12px; padding: 6px 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .browser-header .lock { color: var(--green); font-size: 11px; }
+
+  .msg { max-width: 94%; font-size: 13px; line-height: 1.55; }
+  .msg.user { align-self: flex-end; background: #ece9e3; color: #1f1f1f; padding: 10px 14px; border-radius: 18px 18px 4px 18px; margin-left: auto; }
+  .msg.assistant { color: #1f1f1f; padding: 2px 0; }
+  .msg.assistant strong { font-weight: 600; }
+  .msg.assistant .ok { color: var(--green); font-weight: 600; }
+
+  .tool-call { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #f7f8f9; border: 1px solid #e6e8ec; border-radius: 10px; font-size: 11px; color: #5c6570; }
+  .tool-call .icon { width: 20px; height: 20px; background: var(--accent); border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; font-weight: 800; color: #fff; }
+  .tool-call .label { font-weight: 700; color: #3d454e; }
+  .mono-tool { font-family: 'JetBrains Mono', monospace; color: #8a929c; }
+
+  /* ── Widget card (TaskList) ── */
+  .wcard { border: 1.5px solid #e0e3e7; border-radius: 14px; background: #fff; overflow: hidden; }
+  .wcard-head { padding: 11px 14px; background: #fbfbfa; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 8px; }
+  .wcard-head .wc-logo { width: 18px; height: 18px; background: var(--accent); border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; color: #fff; }
+  .wcard-head .wc-title { font-size: 12.5px; font-weight: 700; letter-spacing: 0.2px; color: #1f1f1f; }
+  .wcard-head .wc-sub { font-size: 10px; color: #a0a4a8; margin-left: auto; font-family: 'JetBrains Mono', monospace; }
+  .wcard-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* ── Capture input ── */
+  .capture { display: flex; gap: 8px; }
+  .capture .cinput { flex: 1; font-size: 12px; color: #6b7280; background: #f6f7f9; border: 1px solid #e3e6ea; border-radius: 8px; padding: 8px 10px; }
+  .capture .cinput.typed { color: #1f1f1f; }
+  .capture .cadd { font-size: 12px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 8px; padding: 8px 14px; }
+
+  /* ── Task rows ── */
+  .task { display: flex; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid #f2f2f0; }
+  .task:last-child { border-bottom: none; }
+  .tcheck { width: 18px; height: 18px; border-radius: 50%; border: 1.6px solid #c6ccd3; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; }
+  .tcheck.done { background: var(--green); border-color: var(--green); color: #fff; }
+  .ttitle { flex: 1; font-size: 12.5px; color: #202020; line-height: 1.35; min-width: 0; }
+  .ttitle.done { text-decoration: line-through; color: #a8adb2; }
+  .pri { font-size: 9.5px; font-weight: 700; padding: 2px 8px; border-radius: 5px; flex-shrink: 0; display: inline-flex; align-items: center; gap: 3px; }
+  .pri.hi { background: rgba(220,38,38,0.10); color: var(--hi); }
+  .pri.med { background: rgba(217,119,6,0.10); color: var(--med); }
+  .pri.low { background: rgba(107,114,128,0.12); color: var(--low); }
+  .pri .caret { font-size: 8px; opacity: 0.7; }
+
+  .note { font-size: 11px; color: #5c6570; background: #f7f8f9; border-radius: 8px; padding: 8px 10px; line-height: 1.5; }
+  .note.why { border-left: 3px solid var(--accent); }
+  .note.ok { background: var(--green-soft); color: #146b32; border-left: 3px solid var(--green); }
+  .caution { display: flex; gap: 6px; font-size: 10.5px; font-weight: 600; padding: 7px 9px; background: var(--amber-soft); color: #8a5a0a; border: 1px solid var(--amber-border); border-radius: 8px; line-height: 1.45; }
+  .disclaimer { font-size: 9.5px; color: #a0a4a8; font-style: italic; line-height: 1.45; padding-top: 2px; }
+  .footnote { font-size: 10px; color: #8a929c; text-align: center; padding-top: 4px; }
+
+  .cta { padding: 9px 10px; background: var(--accent); border-radius: 9px; text-align: center; font-size: 12px; font-weight: 700; color: #fff; }
+  .cta.ghost { background: #fff; border: 1.5px solid #d4d8dd; color: #4a525c; }
+  .cta-row { display: flex; gap: 8px; }
+  .cta-row .cta { flex: 1; }
+
+  /* ── Connect / customerAuth ── */
+  .connect { text-align: center; padding: 6px 4px; }
+  .connect .ci { width: 46px; height: 46px; background: var(--accent); border-radius: 12px; margin: 6px auto 12px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 22px; font-weight: 800; }
+  .connect .ctitle { font-size: 14px; font-weight: 800; color: var(--ink); }
+  .scopes { text-align: left; font-size: 10.5px; color: #4a525c; display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+  .scopes .sc { display: flex; gap: 7px; align-items: flex-start; }
+  .scopes .sc .k { color: var(--green); font-weight: 800; min-width: 34px; }
+
+  .dest { border: 1.5px solid #e0e3e7; border-radius: 10px; padding: 11px; }
+  .dest .dh { font-size: 12px; font-weight: 800; color: var(--ink); margin-bottom: 6px; }
+  .dest .dl { font-size: 11px; color: #5c6570; line-height: 1.5; }
+
+  .empty { text-align: center; padding: 8px 4px; }
+  .empty .ei { width: 44px; height: 44px; background: var(--green); border-radius: 12px; margin: 4px auto 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+  .empty .et { font-size: 13px; font-weight: 800; color: var(--ink); }
+
+  /* ── Gallery ── */
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 22px; }
+  .spec-frame { display: flex; flex-direction: column; gap: 8px; }
+  .spec-frame .sf-name { font-size: 12px; font-weight: 700; color: var(--ink); }
+  .spec-frame .sf-name span { font-weight: 400; color: #8a929c; }
+
+  /* ── API appendix ── */
+  .api-panel { background: #fff; border: 1px solid #e6e8ec; border-radius: 12px; padding: 18px 22px; margin-bottom: 18px; max-width: 1040px; }
+  .api-panel h4 { font-size: 13px; font-weight: 800; color: var(--ink); margin-bottom: 10px; }
+  .api-step { display: flex; gap: 10px; align-items: baseline; padding: 7px 0; border-bottom: 1px dashed #eceef1; font-size: 12.5px; }
+  .api-step:last-child { border-bottom: none; }
+  .api-step .verb { font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700; color: #fff; background: var(--accent); padding: 2px 7px; border-radius: 4px; flex-shrink: 0; }
+  .api-step .verb.read { background: #64748b; }
+  .api-step .tname { font-family: 'JetBrains Mono', monospace; font-weight: 700; color: #3d454e; }
+  .api-note { font-size: 11px; color: #6b7280; padding: 4px 0 2px 0; line-height: 1.5; }
+
+  /* ── Audit table ── */
+  .audit-table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e6e8ec; border-radius: 12px; overflow: hidden; font-size: 12.5px; }
+  .audit-table th { text-align: left; background: #fafbfc; color: #5c6570; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; padding: 11px 14px; border-bottom: 1px solid #e6e8ec; }
+  .audit-table td { padding: 11px 14px; border-bottom: 1px solid #f0f1f3; vertical-align: top; color: #3d454e; line-height: 1.5; }
+  .audit-table tr:last-child td { border-bottom: none; }
+  .audit-table .req { font-weight: 700; color: var(--ink); width: 22%; }
+  .verdict { font-weight: 800; font-size: 11px; padding: 2px 8px; border-radius: 5px; white-space: nowrap; }
+  .verdict.pass { background: var(--green-soft); color: #146b32; }
+  .verdict.flag { background: var(--amber-soft); color: #8a5a0a; }
+
+  .footer { text-align: center; font-size: 11px; color: #99a1ab; padding: 30px; border-top: 1px solid #e6e8ec; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1><span class="brand">Acme Tasks</span> × ChatGPT — Two-Way App Wireframes</h1>
+  <p>Prepared by Noodle Seed · a two-way (read + write) task manager — capture, prioritize &amp; complete, all in chat · three core flows</p>
+  <span class="scope">SCOPE: two-way in chat — Capture · Prioritize · Complete · OFF-APP: one-time scoped account link (customerAuth) only</span>
+</div>
+
+<div class="section-nav">
+  <a href="#legend">Legend</a>
+  <a href="#connect">First-run · Connect</a>
+  <a href="#flow">End-to-End Flow</a>
+  <a href="#capture">1 · Capture</a>
+  <a href="#prioritize">2 · Prioritize</a>
+  <a href="#complete">3 · Complete</a>
+  <a href="#gallery">Widget Gallery</a>
+  <a href="#api">MCP Tools</a>
+  <a href="#audit">Compliance Audit</a>
+</div>
+
+<div class="container">
+
+  <!-- LEGEND -->
+  <div class="section" id="legend">
+    <div class="vocab">
+      <div class="vocab-item"><span class="vocab-sw accent"></span> Acme accent — primary CTAs, logo &amp; checks only</div>
+      <div class="vocab-item"><span class="vocab-sw hi"></span> high</div>
+      <div class="vocab-item"><span class="vocab-sw med"></span> medium</div>
+      <div class="vocab-item"><span class="vocab-sw low"></span> low</div>
+      <div class="vocab-item"><span class="vocab-sw green"></span> Completed / success</div>
+      <div class="vocab-item"><span class="vocab-sw ink"></span> ChatGPT system surface</div>
+      <div class="vocab-item"><span class="vocab-sw grey"></span> Off-app (dashed phone → account link only)</div>
+    </div>
+    <div class="rationale">
+      <h4>How to read these wireframes</h4>
+      <p>Solid-border phones are the <strong>in-ChatGPT app</strong>. Acme Tasks is a <strong>two-way (read + write) app</strong>, not a discovery funnel: every widget reflects the user's real list, and each action — capture, re-prioritize, complete — is <strong>recorded through a tool call</strong> and confirmed in-chat. The single dashed phone is the <strong>one-time account link</strong> (<span class="mono">customerAuth</span>); there is no transactional off-app step.</p>
+      <p>Widgets are built with the Noodle Seed authoring SDK — <span class="mono">tool + view</span> renders <span class="mono">TaskList</span>; <span class="mono">tool + app visibility</span> powers the in-widget re-prioritize. Styling uses host/Noodle Seed semantic tokens via CSS cascade layers; the brand accent (<span class="mono">#7C3AED</span>) is reserved for the logo, checks, primary CTA and <em>high</em> emphasis. Priority uses fixed semantic colors: high red · medium amber · low slate.</p>
+      <p><span class="r-tag ux">UX</span> flow rationale &nbsp; <span class="r-tag ui">UI</span> interface rationale &nbsp; <span class="r-tag acme">ACME</span> product-model fit &nbsp; <span class="r-tag trust">TRUST</span> write-safety / grounding guardrail</p>
+    </div>
+  </div>
+
+  <!-- CONNECT -->
+  <div class="section" id="connect">
+    <span class="section-label">First-run</span>
+    <h2 class="section-title">Connect Acme Tasks — scoped, once</h2>
+    <p class="section-subtitle">Because the app writes to the user's tasks, the very first interaction is a scoped account connection. It names exactly what the app can read and change, is dismissed forever after, and the original request resumes automatically. <em>(This flagship seeds the list so the flows stay in focus; the connect screen is the production pattern — see <span class="mono">customer-auth</span>.)</em></p>
+    <div class="rationale">
+      <h4>Why it's built this way</h4>
+      <p><span class="r-tag trust">TRUST</span> An app that can complete and re-prioritize your tasks needs unambiguous, plain-language consent — the scope card names read vs. write in the user's words and links the revoke path, rather than burying it in an OAuth redirect.</p>
+      <p><span class="r-tag acme">ACME</span> Uses Noodle Seed's <span class="mono">customerAuth</span> end-user OAuth. One connection powers all three flows; the delegated credential is held by the credential broker, never surfaced to the model, the widget, or logs.</p>
+    </div>
+    <div class="phones-row">
+      <div class="phone-step">
+        <div class="step-label">Connect prompt</div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT · Acme Tasks</span><span class="dots">···</span></div>
+          <div class="msg user">What's on my plate today?</div>
+          <div class="msg assistant">I can pull your live Acme Tasks list — let's connect it first (takes a few seconds).</div>
+          <div class="wcard"><div class="wcard-body">
+            <div class="connect">
+              <div class="ci">✓</div>
+              <div class="ctitle">Connect Acme Tasks</div>
+            </div>
+            <div class="scopes">
+              <div class="sc"><span class="k">Read</span><span>your tasks and their priorities</span></div>
+              <div class="sc"><span class="k">Write</span><span>add, re-prioritize &amp; complete tasks you ask me to</span></div>
+            </div>
+            <div class="cta">Connect Acme Tasks</div>
+            <div class="disclaimer">Scoped end-user OAuth (customerAuth) · read + write · revoke anytime in Acme Tasks → Settings → Connections.</div>
+          </div></div>
+        </div></div>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="phone-step">
+        <div class="step-label">Authorize (off-app)</div>
+        <div class="phone offapp"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="browser-header"><span class="lock">🔒</span><span class="url">tasks.acme.example/oauth/authorize?scope=tasks.read+tasks.write</span></div>
+          <div class="dest">
+            <div class="dh">Acme Tasks authorization</div>
+            <div class="dl">User signs in and approves read + write. Acme redirects back with a token held by the connector, not the model. <strong>Happens once.</strong></div>
+          </div>
+          <div class="note" style="margin-top:8px;">↩ On return, the original request ("what's on my plate today?") resumes automatically — no re-typing.</div>
+        </div></div>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="phone-step">
+        <div class="step-label">Connected → request resumes</div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT · Acme Tasks</span><span class="dots">···</span></div>
+          <div class="note ok">✓ Acme Tasks connected — I'll keep it linked for next time.</div>
+          <div class="tool-call"><span class="icon read">✓</span><span><span class="label">list_today</span> <span class="mono-tool">{ focus: "today" }</span></span></div>
+          <div class="msg assistant">Here's today 👇 <span style="color:#8a929c;">(see Flow 2)</span></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- END TO END FLOW -->
+  <div class="section" id="flow">
+    <span class="section-label">The whole loop</span>
+    <h2 class="section-title">End-to-end: read today → capture → re-prioritize → complete</h2>
+    <p class="section-subtitle">One connected session touching all three flows. The user reads the grounded list, captures a new task, bumps a priority, and checks work off — never leaving the conversation, every change recorded and confirmed in place.</p>
+    <div class="phones-row">
+
+      <!-- Step 1 · read -->
+      <div class="phone-step">
+        <div class="step-label">1 · Read today<small>grounded list</small></div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT · Acme Tasks</span><span class="dots">···</span></div>
+          <div class="msg user">What's on my plate today?</div>
+          <div class="tool-call"><span class="icon read">✓</span><span><span class="label">list_today</span></span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo">✓</span><span class="wc-title">Today's tasks · 3 open</span><span class="wc-sub">TaskList</span></div><div class="wcard-body">
+            <div class="capture"><span class="cinput">Add a task…</span><span class="cadd">Add</span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Email the vendor about the Q3 quote</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Review the analytics pull request</div><span class="pri med">medium <span class="caret">▾</span></span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Book flights for the team offsite</div><span class="pri low">low <span class="caret">▾</span></span></div>
+            <div class="footnote">Two-way in chat: read, capture, re-prioritize, complete.</div>
+          </div></div>
+        </div></div>
+      </div>
+
+      <div class="step-arrow">→</div>
+
+      <!-- Step 2 · capture -->
+      <div class="phone-step">
+        <div class="step-label">2 · Capture<small>natural language</small></div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT · Acme Tasks</span><span class="dots">···</span></div>
+          <div class="msg user">Add "draft the board update", high priority.</div>
+          <div class="tool-call"><span class="icon">✓</span><span><span class="label">add_task</span> <span class="mono-tool">{ title:"Draft the board update", priority:"high" }</span></span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo">✓</span><span class="wc-title">Today's tasks · 4 open</span><span class="wc-sub">TaskList</span></div><div class="wcard-body">
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Draft the board update</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Email the vendor about the Q3 quote</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Review the analytics pull request</div><span class="pri med">medium <span class="caret">▾</span></span></div>
+            <div class="note ok">✓ Added "Draft the board update" (high).</div>
+          </div></div>
+        </div></div>
+      </div>
+
+      <div class="step-arrow">→</div>
+
+      <!-- Step 3 · prioritize -->
+      <div class="phone-step">
+        <div class="step-label">3 · Prioritize<small>in-widget re-order</small></div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT · Acme Tasks</span><span class="dots">···</span></div>
+          <div class="msg user">Bump the PR review to high.</div>
+          <div class="tool-call"><span class="icon">✓</span><span><span class="label">set_priority</span> <span class="mono-tool">{ task:"review_pr", priority:"high" }</span></span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo">✓</span><span class="wc-title">Today's tasks · 4 open</span><span class="wc-sub">TaskList</span></div><div class="wcard-body">
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Draft the board update</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Email the vendor about the Q3 quote</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Review the analytics pull request</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+            <div class="note ok">✓ Set review_pr to high priority.</div>
+          </div></div>
+        </div></div>
+      </div>
+
+      <div class="step-arrow">→</div>
+
+      <!-- Step 4 · complete -->
+      <div class="phone-step">
+        <div class="step-label">4 · Complete<small>checked &amp; confirmed</small></div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT · Acme Tasks</span><span class="dots">···</span></div>
+          <div class="msg user">I finished the vendor email — mark it done.</div>
+          <div class="tool-call"><span class="icon">✓</span><span><span class="label">complete_task</span> <span class="mono-tool">{ task:"email_vendor", title:"Email the vendor…" }</span></span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo">✓</span><span class="wc-title">Today's tasks · 3 open</span><span class="wc-sub">TaskList</span></div><div class="wcard-body">
+            <div class="task"><div class="tcheck done">✓</div><div class="ttitle done">Email the vendor about the Q3 quote</div><span class="pri hi">high</span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Draft the board update</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Review the analytics pull request</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+            <div class="note ok">✓ Completed "Email the vendor about the Q3 quote". 3 left today.</div>
+          </div></div>
+        </div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- FLOW 1 : CAPTURE -->
+  <div class="section" id="capture">
+    <span class="section-label">Flow 1 · lowest friction</span>
+    <h2 class="section-title">Capture — a spoken thought becomes a task, instantly</h2>
+    <p class="section-subtitle">The moment a task is mentioned it lands on the list. The model parses the prose into a title and priority, the row appears optimistically, and <span class="mono">add_task</span> records it — no form, no app-switch.</p>
+    <div class="rationale">
+      <h4>Why it's built this way</h4>
+      <p><span class="r-tag ux">UX</span> Capture must be the fastest path in the app — the thought is fragile. "Add X, high" is one turn: the model fills <span class="mono">{ title, priority }</span> from natural language, so the user never fills a field by hand.</p>
+      <p><span class="r-tag ui">UI</span> The new row renders immediately (optimistic), then the tool call confirms with a spoken-ready status. The capture input lives at the top of <span class="mono">TaskList</span> so keyboard capture and voice capture converge on the same widget.</p>
+      <p><span class="r-tag trust">TRUST</span> Priority is the user's: the model may <em>suggest</em> ("sounds high?") but sets what the user says, and defaults to <span class="mono">medium</span> when unstated — it never silently ranks work.</p>
+    </div>
+    <div class="phones-row">
+      <div class="phone-step">
+        <div class="step-label">Say it</div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT · Acme Tasks</span><span class="dots">···</span></div>
+          <div class="msg user">Remind me to book flights for the team offsite — low priority.</div>
+          <div class="tool-call"><span class="icon">✓</span><span><span class="label">add_task</span> <span class="mono-tool">{ title:"Book flights for the team offsite", priority:"low" }</span></span></div>
+          <div class="msg assistant">Added it to today's list at low priority.</div>
+        </div></div>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="phone-step">
+        <div class="step-label">Row appears (optimistic + recorded)</div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT · Acme Tasks</span><span class="dots">···</span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo">✓</span><span class="wc-title">Today's tasks · 3 open</span><span class="wc-sub">TaskList</span></div><div class="wcard-body">
+            <div class="capture"><span class="cinput typed">Book flights for the team offsite</span><span class="cadd">Add</span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Email the vendor about the Q3 quote</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Review the analytics pull request</div><span class="pri med">medium <span class="caret">▾</span></span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Book flights for the team offsite</div><span class="pri low">low <span class="caret">▾</span></span></div>
+            <div class="note ok">✓ Added "Book flights for the team offsite" (low).</div>
+          </div></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FLOW 2 : PRIORITIZE -->
+  <div class="section" id="prioritize">
+    <span class="section-label">Flow 2 · the hub</span>
+    <h2 class="section-title">Prioritize — read the day, then re-order it in place</h2>
+    <p class="section-subtitle"><span class="mono">list_today</span> renders the grounded list, highest priority first; the per-row priority control (a <span class="mono">tool + app visibility</span> helper hidden from the model) lets the user re-rank without describing the task twice. This is the widget the other two flows write into.</p>
+    <div class="rationale">
+      <h4>Why it's built this way</h4>
+      <p><span class="r-tag ux">UX</span> "What's on my plate?" wants an answer <em>and</em> a next move. The list is grouped high → low so the triager sees the real order at a glance and adjusts with one tap.</p>
+      <p><span class="r-tag acme">ACME</span> Re-prioritize is <span class="mono">set_priority</span> as <span class="mono">tool + app visibility</span> — <strong>widget-only</strong>, hidden from the model's tool surface. The model reasons about three tools (list, add, complete); the fourth is pure UI plumbing, keeping the model's choices clean.</p>
+      <p><span class="r-tag trust">TRUST</span> The list only ever shows tasks that exist — the app never invents a task or a priority. Every re-rank echoes a confirmation ("Set review_pr to high priority").</p>
+    </div>
+    <div class="phones-row">
+      <div class="phone-step">
+        <div class="step-label">Grounded read</div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT · Acme Tasks</span><span class="dots">···</span></div>
+          <div class="msg user">What's due today?</div>
+          <div class="tool-call"><span class="icon read">✓</span><span><span class="label">list_today</span> <span class="mono-tool">{ focus:"today" }</span></span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo">✓</span><span class="wc-title">Today's tasks · 3 open</span><span class="wc-sub">TaskList</span></div><div class="wcard-body">
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Email the vendor about the Q3 quote</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Review the analytics pull request</div><span class="pri med">medium <span class="caret">▾</span></span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Book flights for the team offsite</div><span class="pri low">low <span class="caret">▾</span></span></div>
+          </div></div>
+        </div></div>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="phone-step">
+        <div class="step-label">Re-prioritize (widget-only write)</div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT · Acme Tasks</span><span class="dots">···</span></div>
+          <div class="note why"><strong>Tapping the priority ▾</strong> on "Review the analytics pull request" → <span class="mono">high</span>. The list re-orders in place.</div>
+          <div class="tool-call"><span class="icon">✓</span><span><span class="label">set_priority</span> <span class="mono-tool">{ task:"review_pr", priority:"high" }</span></span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo">✓</span><span class="wc-title">Today's tasks · 3 open</span><span class="wc-sub">TaskList</span></div><div class="wcard-body">
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Email the vendor about the Q3 quote</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Review the analytics pull request</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Book flights for the team offsite</div><span class="pri low">low <span class="caret">▾</span></span></div>
+            <div class="note ok">✓ Set review_pr to high priority.</div>
+          </div></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FLOW 3 : COMPLETE -->
+  <div class="section" id="complete">
+    <span class="section-label">Flow 3 · the payoff</span>
+    <h2 class="section-title">Complete — check it off by voice or tap, confirmed every time</h2>
+    <p class="section-subtitle">The satisfaction loop. The user finishes work and closes it out — either by tapping the row's check or by saying "mark X done" (<span class="mono">complete_task</span> is model-visible). The row strikes through, the open count drops, and the model narrates what changed.</p>
+    <div class="rationale">
+      <h4>Why it's built this way</h4>
+      <p><span class="r-tag ux">UX</span> Completion is the reward that drives return visits, so it is friction-free two ways: the check in <span class="mono">TaskList</span> and the spoken "mark X done". Ending on an all-clear empty state nudges the next capture instead of a dead end.</p>
+      <p><span class="r-tag trust">TRUST</span> Completion is never silent: <span class="mono">complete_task</span> returns "Completed '…'" plus the remaining count, and the struck-through row is the visible receipt. The model confirms in the same turn.</p>
+      <p><span class="r-tag acme">ACME</span> <span class="mono">complete_task</span> is model-visible (unlike re-prioritize) precisely because "I finished X" is a natural sentence the user will say — the model must be able to act on it directly.</p>
+    </div>
+    <div class="phones-row">
+      <div class="phone-step">
+        <div class="step-label">Complete by voice (write + confirm)</div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT · Acme Tasks</span><span class="dots">···</span></div>
+          <div class="msg user">Done with the vendor email and the PR review.</div>
+          <div class="tool-call"><span class="icon">✓</span><span><span class="label">complete_task ×2</span> <span class="mono-tool">email_vendor · review_pr</span></span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo">✓</span><span class="wc-title">Today's tasks · 1 open</span><span class="wc-sub">TaskList</span></div><div class="wcard-body">
+            <div class="task"><div class="tcheck done">✓</div><div class="ttitle done">Email the vendor about the Q3 quote</div><span class="pri hi">high</span></div>
+            <div class="task"><div class="tcheck done">✓</div><div class="ttitle done">Review the analytics pull request</div><span class="pri med">medium</span></div>
+            <div class="task"><div class="tcheck"></div><div class="ttitle">Book flights for the team offsite</div><span class="pri low">low <span class="caret">▾</span></span></div>
+            <div class="note ok">✓ Completed 2 tasks. 1 left today.</div>
+          </div></div>
+        </div></div>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="phone-step">
+        <div class="step-label">All clear (close the loop)</div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT · Acme Tasks</span><span class="dots">···</span></div>
+          <div class="msg user">Booked the flights too — check it off.</div>
+          <div class="tool-call"><span class="icon">✓</span><span><span class="label">complete_task · list_today</span></span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo">✓</span><span class="wc-title">Today's tasks · all clear</span><span class="wc-sub">TaskList · empty</span></div><div class="wcard-body">
+            <div class="empty"><div class="ei">🎉</div><div class="et">All clear for today</div></div>
+            <div class="note ok">Everything on today's list is done — 3/3 completed this session.</div>
+            <div class="cta-row"><div class="cta">Capture tomorrow's first task</div></div>
+            <div class="disclaimer">Nudges to the next capture instead of leaving the user at a dead end.</div>
+          </div></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WIDGET GALLERY -->
+  <div class="section" id="gallery">
+    <span class="section-label">Reference</span>
+    <h2 class="section-title">Widget gallery</h2>
+    <p class="section-subtitle">One widget, <span class="mono">TaskList</span>, across its states. Compliant: system fonts, neutral surfaces, accent reserved for logo/checks/primary CTA/high emphasis; priority in fixed semantic colors (high red · medium amber · low slate).</p>
+    <div class="gallery">
+
+      <div class="spec-frame">
+        <div class="sf-name">TaskList ★ <span>· grounded read (default)</span></div>
+        <div class="wcard"><div class="wcard-head"><span class="wc-logo">✓</span><span class="wc-title">Today's tasks · 3 open</span><span class="wc-sub">TaskList</span></div><div class="wcard-body">
+          <div class="capture"><span class="cinput">Add a task…</span><span class="cadd">Add</span></div>
+          <div class="task"><div class="tcheck"></div><div class="ttitle">Email the vendor about the Q3 quote</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+          <div class="task"><div class="tcheck"></div><div class="ttitle">Review the analytics pull request</div><span class="pri med">medium <span class="caret">▾</span></span></div>
+          <div class="task"><div class="tcheck"></div><div class="ttitle">Book flights for the team offsite</div><span class="pri low">low <span class="caret">▾</span></span></div>
+        </div></div>
+      </div>
+
+      <div class="spec-frame">
+        <div class="sf-name">TaskList <span>· captured (optimistic + recorded)</span></div>
+        <div class="wcard"><div class="wcard-head"><span class="wc-logo">✓</span><span class="wc-title">Today's tasks · 4 open</span><span class="wc-sub">TaskList</span></div><div class="wcard-body">
+          <div class="task"><div class="tcheck"></div><div class="ttitle">Draft the board update</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+          <div class="task"><div class="tcheck"></div><div class="ttitle">Email the vendor about the Q3 quote</div><span class="pri hi">high <span class="caret">▾</span></span></div>
+          <div class="note ok">✓ Added "Draft the board update" (high).</div>
+        </div></div>
+      </div>
+
+      <div class="spec-frame">
+        <div class="sf-name">TaskList <span>· completed (write + confirm)</span></div>
+        <div class="wcard"><div class="wcard-head"><span class="wc-logo">✓</span><span class="wc-title">Today's tasks · 2 open</span><span class="wc-sub">TaskList</span></div><div class="wcard-body">
+          <div class="task"><div class="tcheck done">✓</div><div class="ttitle done">Email the vendor about the Q3 quote</div><span class="pri hi">high</span></div>
+          <div class="task"><div class="tcheck"></div><div class="ttitle">Review the analytics pull request</div><span class="pri med">medium <span class="caret">▾</span></span></div>
+          <div class="note ok">✓ Completed "Email the vendor…". 2 left.</div>
+        </div></div>
+      </div>
+
+      <div class="spec-frame">
+        <div class="sf-name">TaskList <span>· all-clear empty state</span></div>
+        <div class="wcard"><div class="wcard-head"><span class="wc-logo">✓</span><span class="wc-title">Today's tasks · all clear</span><span class="wc-sub">TaskList · empty</span></div><div class="wcard-body">
+          <div class="empty"><div class="ei">🎉</div><div class="et">All clear for today</div></div>
+          <div class="cta">Capture tomorrow's first task</div>
+        </div></div>
+      </div>
+
+      <div class="spec-frame">
+        <div class="sf-name">Connect / customerAuth <span>· scoped consent</span></div>
+        <div class="wcard"><div class="wcard-body">
+          <div class="connect"><div class="ci">✓</div><div class="ctitle">Connect Acme Tasks</div></div>
+          <div class="scopes"><div class="sc"><span class="k">R/W</span><span>read tasks &amp; priorities · add, re-prioritize, complete</span></div></div>
+          <div class="cta">Connect Acme Tasks</div>
+        </div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MCP TOOLS APPENDIX -->
+  <div class="section" id="api">
+    <span class="section-label">Technical appendix</span>
+    <h2 class="section-title">MCP tools &amp; call sequence</h2>
+    <p class="section-subtitle">The four tools behind the flows. <span class="mono">list_today</span> is the only widget-opening tool (<span class="mono">tool + view</span>); <span class="mono">set_priority</span> is widget-only (<span class="mono">tool + app visibility</span>, hidden from the model); <span class="mono">add_task</span> and <span class="mono">complete_task</span> are model-visible.</p>
+
+    <div class="api-panel">
+      <h4>Read &amp; render (Flow 2 · the hub)</h4>
+      <div class="api-step"><span class="verb read">READ</span><span><span class="tname">list_today</span> — returns { status, focus, tasks:[{ id, title, priority, done }] } and renders TaskList</span></div>
+      <div class="api-note">Input <span class="mono">{ focus:"today" }</span>. Read-only annotation; host status copy: invoking "Loading your tasks…", invoked "Tasks ready". This is the single widget-opening tool — the other flows write into the card it renders.</div>
+    </div>
+
+    <div class="api-panel">
+      <h4>Capture (Flow 1)</h4>
+      <div class="api-step"><span class="verb">WRITE</span><span><span class="tname">add_task</span> — returns { status, title, priority }</span></div>
+      <div class="api-note">Input <span class="mono">{ title, priority: "high"|"medium"|"low" = "medium" }</span>. Model-fillable from prose ("book flights, low" → { title, priority:"low" }); local non-destructive write. Status is spoken-ready so the model confirms in one turn.</div>
+    </div>
+
+    <div class="api-panel">
+      <h4>Prioritize (Flow 2 helper) &amp; Complete (Flow 3)</h4>
+      <div class="api-step"><span class="verb">WRITE</span><span><span class="tname">set_priority</span> — returns { status, task, priority } · tool + app visibility, hidden from the model</span></div>
+      <div class="api-note">Input <span class="mono">{ task:id, priority }</span>. Called only by the priority ▾ in TaskList — keeps the model's tool surface to the three it should reason about.</div>
+      <div class="api-step"><span class="verb">WRITE</span><span><span class="tname">complete_task</span> — returns { status, task } · model-visible</span></div>
+      <div class="api-note">Input <span class="mono">{ task:id, title:"" }</span>. Model-visible so "I finished X" completes directly; local non-destructive write, confirmed with the remaining count.</div>
+    </div>
+  </div>
+
+  <!-- COMPLIANCE AUDIT -->
+  <div class="section" id="audit">
+    <span class="section-label">Submission-ready</span>
+    <h2 class="section-title">OpenAI Apps SDK Compliance Audit</h2>
+    <p class="section-subtitle">Every row cites concrete app behavior. Built with the Noodle Seed authoring SDK and verified with <span class="mono">noodle check --target chatgpt</span>.</p>
+
+    <table class="audit-table">
+      <thead><tr><th class="req">Requirement</th><th>How Acme Tasks addresses it</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr><td class="req">Conversational value</td><td>Capture parses prose into structured fields ("book flights for the offsite, low" → { title, priority:"low" }); complete-by-voice ("I finished the vendor email") acts directly — actions no tap-only app affords.</td><td><span class="verdict pass">PASS</span></td></tr>
+        <tr><td class="req">Beyond base ChatGPT</td><td>Grounded read of the user's real list (never guessed) plus committed writes to the connected account — state the base model cannot hold.</td><td><span class="verdict pass">PASS</span></td></tr>
+        <tr><td class="req">Atomic, model-friendly tools</td><td>Four tools, explicit Zod input/output schemas, each returning a spoken-ready status. <span class="mono">list_today</span> / <span class="mono">add_task</span> / <span class="mono">complete_task</span> model-visible; <span class="mono">set_priority</span> widget-only.</td><td><span class="verdict pass">PASS</span></td></tr>
+        <tr><td class="req">Helpful UI only</td><td>One widget, <span class="mono">TaskList</span> — visual scanning of a prioritized list plus in-place capture/complete/re-prioritize. No carousel (one list) and no PiP (nothing backgrounded); omissions are deliberate.</td><td><span class="verdict pass">PASS</span></td></tr>
+        <tr><td class="req">In-chat task completion</td><td>The whole loop — read, capture, re-prioritize, complete — finishes in chat; there is no handoff. The only off-app step is the one-time account link.</td><td><span class="verdict pass">PASS</span></td></tr>
+        <tr><td class="req">Performance &amp; responsiveness</td><td>Optimistic render on capture/complete, then the tool call records; one tool call per user step. Host status copy shown while <span class="mono">list_today</span> loads.</td><td><span class="verdict pass">PASS</span></td></tr>
+        <tr><td class="req">Discoverability</td><td>Broad natural triggers: "remind me to…", "what's on my list?", "make X high priority", "mark X done". Golden-prompt set &amp; description keywords are a launch workstream.</td><td><span class="verdict flag">PLAN</span></td></tr>
+        <tr><td class="req">Design tokens &amp; theming</td><td>Host/Noodle Seed semantic tokens via CSS cascade layers; brand accent (<span class="mono">#7C3AED</span>) restricted to logo, checks, primary CTA &amp; high emphasis. Adapts to host light/dark.</td><td><span class="verdict pass">PASS</span></td></tr>
+        <tr><td class="req">System fonts, icons, WCAG AA</td><td>System font stack; single outlined monochrome check icon; contrast on priority chips and CTAs meets AA; no nested scroll (inline card → fullscreen for long lists).</td><td><span class="verdict pass">PASS</span></td></tr>
+        <tr><td class="req">≤2 primary actions on inline card</td><td>Two primaries — capture <strong>Add</strong> and the per-row <strong>complete</strong> check; re-prioritize is a lightweight inline control, not a CTA.</td><td><span class="verdict pass">PASS</span></td></tr>
+        <tr><td class="req">Write safety (domain guardrail)</td><td>No silent mutation: capture, re-prioritize &amp; complete each return a confirmation and update the widget. Completion always states the remaining count. Priority is the user's — the model suggests, never silently re-ranks.</td><td><span class="verdict pass">PASS</span></td></tr>
+        <tr><td class="req">Grounding (domain guardrail)</td><td>The list only shows tasks that exist in state; the app never invents a task. A production deployment reads from the connected account, not the model's memory.</td><td><span class="verdict pass">PASS</span></td></tr>
+        <tr><td class="req">Scoped account auth &amp; secrets</td><td>Scoped <span class="mono">customerAuth</span> (read + write), connected once, revocable. Delegated credential held by the credential broker — never in tool payloads, the widget, or logs.</td><td><span class="verdict pass">PASS</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<div class="footer">
+  Acme Tasks × ChatGPT — Two-Way App Wireframes · Noodle Seed · v1 · July 2026<br>
+  Illustrative wireframes for a fictional app. Built with the Noodle Seed authoring SDK (tool + view / tool + app visibility · customerAuth). This flagship seeds the task list; a production deployment connects the user's account. Task data shown is sample content.
+</div>
+
+</body>
+</html>

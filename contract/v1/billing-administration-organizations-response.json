@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "data": {
+    "schemaVersion": 1,
+    "items": [{ "organization": { "slug": "acme", "displayName": "Acme" } }],
+    "nextCursor": null
+  }
+}

@@ -1,0 +1,17 @@
+profile: public-saas
+
+identity:
+  admin:
+    provider: customer-oauth
+
+access:
+  mode: customer-members
+
+controls:
+  preset: public-api
+
+audit:
+  store: postgres
+
+apps:
+  enabled: true

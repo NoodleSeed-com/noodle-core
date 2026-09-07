@@ -1,0 +1,23 @@
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+tools:
+  - name: do_thing
+    description: Demonstrates the three value-expression node kinds (path, template, literal).
+    inputSchema:
+      type: object
+      properties:
+        x:
+          type: string
+      required:
+        - x
+      additionalProperties: false
+    fulfilment:
+      use: acme.do_thing
+      args:
+        a_path: ${input.x}
+        a_template: "order ${input.x}!"
+        a_number: 42
+        a_bool: ${true}

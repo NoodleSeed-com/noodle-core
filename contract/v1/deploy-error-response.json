@@ -1,0 +1,12 @@
+{
+  "ok": false,
+  "error": "invalid deploy request: \"manifest\": Too small: expected string to have >=1 characters",
+  "code": "access_mode_required",
+  "errors": [
+    {
+      "code": "unsupported_manifest_version",
+      "path": "manifestVersion",
+      "message": "expected \"1\""
+    }
+  ]
+}

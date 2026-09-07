@@ -1,0 +1,30 @@
+# A declarative connector catalog whose operation requires a bearer token. The `auth` block names the
+# secret it needs (`httpbin_token`) — it never carries the value. The value is set in managed config
+# (`noodle secrets set httpbin_token --scope env ...`) and resolved by the credential broker at call time.
+# https://httpbin.org/bearer returns 200 {authenticated, token} only when an
+# `Authorization: Bearer <token>` header is present, so a successful call proves the secret was attached.
+connectors:
+  - id: httpbin
+    version: 1.0.0
+    kind: custom
+    http:
+      baseUrl: https://httpbin.org
+      allowedOrigins:
+        - https://httpbin.org
+      auth:
+        kind: bearer
+        secret: httpbin_token
+    operations:
+      whoami:
+        type: read
+        method: GET
+        path: /bearer
+        output:
+          type: object
+          properties:
+            authenticated: { type: boolean }
+            token: { type: string }
+          additionalProperties: false
+        response:
+          authenticated: ${response.authenticated}
+          token: ${response.token}

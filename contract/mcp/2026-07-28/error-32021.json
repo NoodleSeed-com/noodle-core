@@ -1,0 +1,19 @@
+{
+  "status": 400,
+  "contentType": "application/json",
+  "json": {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "error": {
+      "code": -32021,
+      "message": "Cannot request input 'team' (elicitation/create): the request's client capabilities do not declare the required capability",
+      "data": {
+        "requiredCapabilities": {
+          "elicitation": {
+            "form": {}
+          }
+        }
+      }
+    }
+  }
+}

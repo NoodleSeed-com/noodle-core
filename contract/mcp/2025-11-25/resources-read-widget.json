@@ -1,0 +1,36 @@
+{
+  "status": 200,
+  "contentType": "application/json",
+  "bodyByteLength": 415501,
+  "bodySha256": "49b9035f7a46a6a7d513e2d6e6f6f4286741626264f81adbc6040935a4b5d0ef",
+  "json": {
+    "result": {
+      "contents": [
+        {
+          "uri": "ui://golden_server/ticket_card",
+          "mimeType": "text/html;profile=mcp-app",
+          "text": {
+            "byteLength": 402854,
+            "sha256": "16baf8b3d669ca293f5eef0dc26016cac224cfd2d5a49cb3c6edf924d02c768a"
+          },
+          "_meta": {
+            "ui": {
+              "csp": {
+                "connectDomains": ["https://api.example.com"]
+              },
+              "permissions": {
+                "clipboardWrite": {}
+              }
+            },
+            "openai/widgetCSP": {
+              "connect_domains": ["https://api.example.com"]
+            },
+            "openai/widgetDescription": "Shows the opened ticket."
+          }
+        }
+      ]
+    },
+    "jsonrpc": "2.0",
+    "id": 1
+  }
+}

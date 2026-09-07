@@ -1,0 +1,40 @@
+{
+  "name": "@noodle-borg/compiler",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "schema": "node dist/schema-export.js"
+  },
+  "dependencies": {
+    "@noodle-borg/app-package": "workspace:*",
+    "@noodle-borg/brand-kit": "workspace:*",
+    "@noodle-borg/uri-template": "workspace:*",
+    "@noodle-borg/knowledge": "workspace:*",
+    "@noodle-borg/capabilities": "workspace:*",
+    "tldts": "^7.4.9",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.1",
+    "ajv": "^8.20.0"
+  }
+}

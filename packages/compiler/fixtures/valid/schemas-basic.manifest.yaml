@@ -1,0 +1,43 @@
+# Valid: exercises $use resolution — a property reference, a reference nested inside `anyOf`, a
+# transitive reference (order -> address), an outputSchema whose root is a $use, an unused schema
+# entry (ignored), and non-sorted declaration order (output $defs must be sorted).
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+schemas:
+  order:
+    type: object
+    properties:
+      id:
+        type: string
+      address:
+        $use: address
+    required:
+      - id
+  address:
+    type: object
+    properties:
+      city:
+        type: string
+  unused_thing:
+    type: object
+tools:
+  - name: get_order
+    description: Look up an order by its ID.
+    inputSchema:
+      type: object
+      properties:
+        order:
+          $use: order
+        contact:
+          anyOf:
+            - type: "null"
+            - $use: address
+      required:
+        - order
+    outputSchema:
+      $use: order
+    fulfilment:
+      use: acme.get_order

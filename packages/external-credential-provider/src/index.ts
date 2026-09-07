@@ -1,0 +1,37 @@
+export {
+  EXTERNAL_CREDENTIAL_ASSERTION_TTL_SECONDS,
+  type ExternalCredentialAssertionReplayStore,
+  type ExternalCredentialAssertionVerifierOptions,
+  type ExternalCredentialSigningKey,
+  InMemoryAssertionReplayStore,
+  signExternalCredentialWorkloadAssertion,
+  verifyExternalCredentialWorkloadAssertion,
+} from './assertion.js';
+export {
+  canonicalizeExternalCredentialScopes,
+  EXTERNAL_CREDENTIAL_GRANT_TYPE,
+  EXTERNAL_CREDENTIAL_MAX_EXPIRES_IN_SECONDS,
+  EXTERNAL_CREDENTIAL_SCOPE_FORM_MAX_LENGTH,
+  EXTERNAL_CREDENTIAL_SUBJECT_TOKEN_TYPE,
+  type ExternalCredentialExchangeRequest,
+  type ExternalCredentialExchangeResponse,
+  type ExternalCredentialWorkloadClaims,
+  type ExternalCredentialWorkloadInput,
+  externalCredentialAudienceSchema,
+  externalCredentialExchangeRequestSchema,
+  externalCredentialExchangeResponseSchema,
+  externalCredentialHeaderNameSchema,
+  externalCredentialIdentifierSchema,
+  externalCredentialIssuerSchema,
+  externalCredentialPresentationSchema,
+  externalCredentialRequestFromForm,
+  externalCredentialScopeArraySchema,
+  externalCredentialScopeTokenSchema,
+  externalCredentialWorkloadClaimsSchema,
+  externalCredentialWorkloadInputSchema,
+} from './contract.js';
+export {
+  assertExternalCredentialProviderConformance,
+  createFakeExternalCredentialProvider,
+  type ExternalCredentialProvider,
+} from './provider.js';

@@ -1,0 +1,5 @@
+{
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"result\":{\"protocolVersion\":\"2025-11-25\",\"capabilities\":{\"tools\":{},\"resources\":{},\"prompts\":{}},\"serverInfo\":{\"name\":\"golden_server\",\"title\":\"Golden Server\",\"version\":\"1.2.3\"},\"instructions\":\"Use the golden tools exactly as described.\"},\"jsonrpc\":\"2.0\",\"id\":1}"
+}

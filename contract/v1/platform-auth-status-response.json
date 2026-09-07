@@ -1,0 +1,50 @@
+{
+  "ok": true,
+  "data": {
+    "schemaVersion": 1,
+    "releaseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "rollout": {
+      "generation": 4,
+      "workosPercentage": 10,
+      "lifecycle": "workos",
+      "canaryClientSetHash": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "canaryClientCount": 1,
+      "recoveryClientSetHash": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "recoveryClientCount": 1,
+      "workosDefaultSince": null
+    },
+    "inventory": {
+      "state": "ready",
+      "phase": "completed",
+      "remotePages": 2,
+      "remoteUsers": 12,
+      "localSubjects": 15,
+      "candidateCount": 12,
+      "excludedCount": 3,
+      "checksum": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "blockers": []
+    },
+    "import": {
+      "state": "running",
+      "total": 12,
+      "pending": 2,
+      "reconcileRequired": 1,
+      "linked": 9,
+      "blocked": 0,
+      "failed": 0,
+      "activeLeases": 0,
+      "nextRetryAt": null
+    },
+    "synchronization": {
+      "outbox": { "status": "ready", "pending": 0, "lastSuccessAgeSeconds": 12 },
+      "events": { "status": "ready", "lastSuccessAgeSeconds": 12 }
+    },
+    "remoteVerification": {
+      "state": "running",
+      "checkedCount": 9,
+      "candidateCount": 12,
+      "verifiedCount": 9,
+      "retryAt": null
+    }
+  }
+}

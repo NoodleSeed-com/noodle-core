@@ -1,0 +1,44 @@
+{
+  "status": 200,
+  "contentType": "application/json",
+  "json": {
+    "result": {
+      "contents": [
+        {
+          "uri": "ui://golden_server/ticket_card",
+          "mimeType": "text/html;profile=mcp-app",
+          "text": {
+            "byteLength": 402854,
+            "sha256": "16baf8b3d669ca293f5eef0dc26016cac224cfd2d5a49cb3c6edf924d02c768a"
+          },
+          "_meta": {
+            "ui": {
+              "csp": {
+                "connectDomains": ["https://api.example.com"]
+              },
+              "permissions": {
+                "clipboardWrite": {}
+              }
+            },
+            "openai/widgetCSP": {
+              "connect_domains": ["https://api.example.com"]
+            },
+            "openai/widgetDescription": "Shows the opened ticket."
+          }
+        }
+      ],
+      "resultType": "complete",
+      "ttlMs": 0,
+      "cacheScope": "private",
+      "_meta": {
+        "io.modelcontextprotocol/serverInfo": {
+          "name": "golden_server",
+          "title": "Golden Server",
+          "version": "1.2.3"
+        }
+      }
+    },
+    "jsonrpc": "2.0",
+    "id": 1
+  }
+}

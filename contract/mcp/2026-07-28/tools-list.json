@@ -1,0 +1,65 @@
+{
+  "status": 200,
+  "contentType": "application/json",
+  "json": {
+    "result": {
+      "tools": [
+        {
+          "name": "open_ticket",
+          "title": "Open ticket",
+          "description": "Open a support ticket.",
+          "inputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+              "subject": {
+                "type": "string"
+              }
+            },
+            "required": ["subject"],
+            "additionalProperties": false
+          },
+          "outputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+              "ticket": {
+                "type": "string"
+              }
+            },
+            "required": ["ticket"],
+            "additionalProperties": false
+          },
+          "_meta": {
+            "ui": {
+              "resourceUri": "ui://golden_server/ticket_card"
+            },
+            "openai/outputTemplate": "ui://golden_server/ticket_card"
+          }
+        },
+        {
+          "name": "choose_team",
+          "description": "Choose the team for a request.",
+          "inputSchema": {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
+        }
+      ],
+      "resultType": "complete",
+      "ttlMs": 0,
+      "cacheScope": "private",
+      "_meta": {
+        "io.modelcontextprotocol/serverInfo": {
+          "name": "golden_server",
+          "title": "Golden Server",
+          "version": "1.2.3"
+        }
+      }
+    },
+    "jsonrpc": "2.0",
+    "id": 1
+  }
+}

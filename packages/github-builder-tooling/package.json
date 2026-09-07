@@ -1,0 +1,14 @@
+{
+  "name": "@noodle-borg/github-builder-tooling",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "description": "Trusted container-only widget build toolchain.",
+  "dependencies": {
+    "vite": "^8.1.0"
+  }
+}

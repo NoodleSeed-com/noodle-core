@@ -1,0 +1,22 @@
+{
+  "name": "stateful-draft",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "validate": "noodle validate",
+    "dev": "noodle dev",
+    "deploy": "noodle deploy",
+    "site": "node site/demo.mjs"
+  },
+  "devDependencies": {
+    "@noodleseed/assistant": "^1.33.0",
+    "@vitejs/plugin-react": "latest",
+    "@noodleseed/one": "^0.154.0",
+    "react": "latest",
+    "react-dom": "latest",
+    "vite": "latest",
+    "vitest": "latest"
+  }
+}

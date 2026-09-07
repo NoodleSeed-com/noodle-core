@@ -1,0 +1,12 @@
+{
+  "openapi": "3.1.0",
+  "servers": [{ "url": "https://offline-import.example.invalid" }],
+  "paths": { "/tickets": { "post": {
+    "operationId": "createTicket",
+    "requestBody": { "required": true, "content": { "application/json": { "schema": {
+      "type": "object", "required": ["title"], "additionalProperties": false,
+      "properties": { "title": { "type": "string" }, "count": { "type": "integer" } }
+    } } } },
+    "responses": {}
+  } } }
+}

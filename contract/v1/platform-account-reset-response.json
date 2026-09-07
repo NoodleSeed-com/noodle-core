@@ -1,0 +1,26 @@
+{
+  "ok": true,
+  "data": {
+    "schemaVersion": 1,
+    "operationId": "reset-operation-1",
+    "lifecycle": "quarantined",
+    "releaseSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "rolloutGeneration": 4,
+    "sourceEpoch": 12,
+    "previewChecksum": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "counts": {
+      "targetCount": 3,
+      "suspendedPrincipalCount": 3,
+      "personalOrganizationCount": 2,
+      "soleOwnedOrganizationCount": 1,
+      "ownerOnlyAppCount": 4,
+      "preservedSharedOrganizationCount": 1,
+      "membershipCount": 2,
+      "billingAccountCount": 3,
+      "credentialCount": 5,
+      "providerObjectCount": 3,
+      "cleanupPendingCount": 0
+    },
+    "blockers": [{ "code": "provider_cleanup_pending", "count": 0 }]
+  }
+}

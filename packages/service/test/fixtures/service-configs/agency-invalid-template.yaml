@@ -1,0 +1,8 @@
+profile: agency-managed
+
+org:
+  slug: acme
+  template: custom-dynamic
+
+audit:
+  store: postgres

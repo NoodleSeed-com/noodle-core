@@ -1,0 +1,5 @@
+{
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"{\\\"ticket\\\":\\\"T-100\\\"}\"}],\"structuredContent\":{\"ticket\":\"T-100\"},\"isError\":false},\"jsonrpc\":\"2.0\",\"id\":1}"
+}

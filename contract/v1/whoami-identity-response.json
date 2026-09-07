@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "data": {
+    "identity": {
+      "subject": "oauth-owner-123",
+      "email": "owner@example.test",
+      "superAdmin": false
+    }
+  }
+}

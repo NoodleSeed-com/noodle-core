@@ -1,0 +1,61 @@
+{
+  "ok": true,
+  "data": {
+    "account": {
+      "id": "ba_00000000-0000-0000-0000-000000000001",
+      "displayName": "Example billing",
+      "state": "active",
+      "createdAt": "2026-07-15T00:00:00.000Z",
+      "role": "owner",
+      "isDefault": true,
+      "plan": { "code": "free", "version": 1 },
+      "linkedOrganizationCount": 2,
+      "enforcement": { "state": "legacy_unchanged" },
+      "metering": { "state": "not_started" }
+    },
+    "entitlement": {
+      "snapshotId": "es_00000000-0000-0000-0000-000000000001",
+      "version": 1,
+      "plan": { "code": "free", "version": 1 },
+      "verificationStatus": "verified",
+      "effectiveFrom": "2026-07-15T00:00:00.000Z",
+      "monthlyUsageAnchor": "2026-07-15T00:00:00.000Z",
+      "entitlements": {
+        "usage.mcp_calls.included": 1000000,
+        "usage.mcp_calls.overage": false,
+        "apps.production.max": 1
+      }
+    },
+    "linkedOrganizations": [
+      {
+        "org": "acme",
+        "linkVersion": 1,
+        "linkedAt": "2026-07-15T00:00:00.000Z",
+        "homeFreeBillingAccount": { "relationship": "current" },
+        "fallbackBillingAccount": { "relationship": "current" }
+      }
+    ],
+    "enforcement": { "state": "legacy_unchanged" },
+    "metering": {
+      "state": "not_started",
+      "usedMcpCalls": null,
+      "remainingMcpCalls": null,
+      "resetAt": null
+    },
+    "productionApps": { "state": "reporting", "active": 0, "limit": 1 },
+    "commerce": { "state": "unavailable" },
+    "legacyMigration": {
+      "state": "prepared",
+      "preparedAt": "2026-07-15T00:00:00.000Z",
+      "organizationsAtPreparation": 2,
+      "productionAppsAtPreparation": 3,
+      "productionCapacityAtPreparation": 1,
+      "grant": {
+        "state": "pending_activation",
+        "durationDays": 90,
+        "startsAt": null,
+        "expiresAt": null
+      }
+    }
+  }
+}

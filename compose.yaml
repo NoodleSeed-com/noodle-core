@@ -1,0 +1,3 @@
+name: noodle-core
+include:
+  - path: ./.self-host/compose.generated.yaml

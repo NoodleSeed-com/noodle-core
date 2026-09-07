@@ -1,0 +1,30 @@
+{
+  "name": "@noodle-borg/self-host",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/main.js",
+  "types": "./dist/main.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@noodle-borg/asset-storage": "workspace:*",
+    "@noodle-borg/auth": "workspace:*",
+    "@noodle-borg/control-plane": "workspace:*",
+    "@noodle-borg/service": "workspace:*",
+    "@noodle-borg/transport-http": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.1"
+  }
+}

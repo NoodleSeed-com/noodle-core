@@ -1,0 +1,19 @@
+# Invalid: $use target uses uppercase letters (names must be lowercase/numbers/underscores).
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+schemas:
+  address:
+    type: object
+tools:
+  - name: get_order
+    description: Look up an order.
+    inputSchema:
+      type: object
+      properties:
+        x:
+          $use: Address
+    fulfilment:
+      use: acme.get_order

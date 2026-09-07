@@ -1,0 +1,4 @@
+interface:
+  display_name: "Personal Email Automation"
+  short_description: "Safely automate connected Gmail accounts"
+  default_prompt: "Use my connected Gmail accounts safely, preferring drafts and confirming every mutation."

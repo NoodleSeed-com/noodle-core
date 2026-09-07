@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Acme Getaways × ChatGPT — Discovery Top-of-Funnel Wireframes</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, sans-serif; background: #f4f5f7; color: #1a1d22; line-height: 1.55; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+
+  /* ── Acme Getaways brand tokens (from server branding) ── */
+  :root {
+    --ac-teal: #0EA5A4;
+    --ac-teal-soft: #E4FAF8;
+    --ac-teal-border: #9CE6E3;
+    --ac-ink: #0B1B1B;
+    --ac-slate: #234A48;
+    --ac-green: #1F9D6B;
+    --ac-green-soft: #E5F6EE;
+    --ac-green-border: #A7E2C7;
+    --ac-amber: #C2710C;
+    --ac-amber-soft: #FBF1DF;
+    --ac-amber-border: #F0D49A;
+    --ac-blue: #2563C9;
+    --ac-blue-soft: #E8EEFB;
+  }
+
+  /* ── Page Header ── */
+  .page-header { background: var(--ac-ink); color: #fff; border-bottom: 3px solid var(--ac-teal); padding: 30px 48px; position: sticky; top: 0; z-index: 100; }
+  .page-header h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.4px; }
+  .page-header h1 .brand { color: var(--ac-teal); }
+  .page-header p { font-size: 13px; color: #9db3b1; margin-top: 4px; }
+  .page-header .scope { display: inline-block; margin-top: 10px; font-size: 11px; font-weight: 600; letter-spacing: 0.5px; padding: 4px 12px; background: var(--ac-teal); color: #04201f; border-radius: 4px; }
+
+  /* ── Section Nav ── */
+  .section-nav { background: #fff; border-bottom: 1px solid #e6e8ec; padding: 12px 48px; display: flex; gap: 22px; font-size: 12px; font-weight: 600; position: sticky; top: 100px; z-index: 99; overflow-x: auto; }
+  .section-nav a { color: #8a929c; text-decoration: none; white-space: nowrap; }
+  .section-nav a:hover { color: var(--ac-teal); }
+
+  .container { max-width: 1480px; margin: 0 auto; padding: 40px 48px 90px; }
+
+  /* ── Visual Vocabulary ── */
+  .vocab { display: flex; gap: 18px; flex-wrap: wrap; margin: 0 0 26px; padding: 14px 18px; background: #fff; border: 1px solid #e6e8ec; border-radius: 12px; font-size: 12px; color: #555; }
+  .vocab-item { display: flex; align-items: center; gap: 8px; }
+  .vocab-sw { width: 16px; height: 16px; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1); }
+  .vocab-sw.teal { background: var(--ac-teal); }
+  .vocab-sw.green { background: var(--ac-green); }
+  .vocab-sw.amber { background: var(--ac-amber); }
+  .vocab-sw.grey { background: #cdd2d8; }
+  .vocab-sw.ink { background: var(--ac-ink); }
+
+  /* ── Section ── */
+  .section { margin-bottom: 68px; }
+  .section-label { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ac-teal); margin-bottom: 8px; display: block; }
+  .section-title { font-size: 26px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 6px; color: var(--ac-ink); }
+  .section-subtitle { font-size: 14px; color: #5c6570; margin-bottom: 22px; max-width: 900px; }
+
+  /* ── Rationale Block ── */
+  .rationale { background: #fff; border: 1px solid #e6e8ec; border-left: 3px solid var(--ac-teal); border-radius: 10px; padding: 16px 20px; margin-bottom: 22px; max-width: 960px; }
+  .rationale h4 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: #8a929c; margin-bottom: 8px; }
+  .rationale p { font-size: 13px; color: #3d454e; line-height: 1.6; margin-bottom: 8px; }
+  .rationale p:last-child { margin-bottom: 0; }
+  .r-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px; margin-right: 4px; }
+  .r-tag.ux { background: var(--ac-green-soft); color: #15734d; }
+  .r-tag.ui { background: var(--ac-blue-soft); color: #1d4fa0; }
+  .r-tag.acme { background: var(--ac-teal-soft); color: #067e7c; }
+  .r-tag.trust { background: var(--ac-amber-soft); color: #92560a; }
+
+  /* ── Phone Row ── */
+  .phones-row { display: flex; gap: 26px; overflow-x: auto; padding-bottom: 16px; align-items: stretch; }
+  .phone-step { flex-shrink: 0; display: flex; flex-direction: column; align-items: center; }
+  .step-label { font-size: 11px; font-weight: 600; color: #99a1ab; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; text-align: center; max-width: 320px; }
+  .step-label small { font-weight: 400; letter-spacing: 0; text-transform: none; color: #b3bac2; display: block; margin-top: 2px; }
+  .phone { width: 322px; min-height: 660px; background: #fff; border: 2px solid var(--ac-ink); border-radius: 32px; overflow: hidden; display: flex; flex-direction: column; }
+  .phone.offapp { border-color: #b9c0c8; border-style: dashed; }
+  .phone-notch { width: 100px; height: 24px; background: var(--ac-ink); border-radius: 0 0 14px 14px; margin: 0 auto; flex-shrink: 0; }
+  .phone.offapp .phone-notch { background: #b9c0c8; }
+  .phone-screen { padding: 16px; display: flex; flex-direction: column; gap: 12px; flex: 1; }
+  .step-arrow { display: flex; align-items: center; justify-content: center; flex-shrink: 0; align-self: center; width: 34px; font-size: 24px; color: #c6ccd3; }
+
+  /* ── ChatGPT / Browser Chrome ── */
+  .chatgpt-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 0 10px; border-bottom: 1px solid #eef0f2; }
+  .chatgpt-header .model-name { font-size: 14px; font-weight: 600; }
+  .chatgpt-header .dots { font-size: 18px; color: #aab; letter-spacing: 2px; }
+  .browser-header { display: flex; align-items: center; gap: 8px; padding: 8px 0 10px; border-bottom: 1px solid #eef0f2; }
+  .browser-header .url { flex: 1; font-size: 9.5px; color: #8a929c; background: #f1f3f5; border-radius: 12px; padding: 6px 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .browser-header .lock { color: var(--ac-green); font-size: 11px; }
+
+  /* ── Messages ── */
+  .msg { max-width: 94%; font-size: 13px; line-height: 1.55; }
+  .msg.user { align-self: flex-end; background: var(--ac-ink); color: #fff; padding: 10px 14px; border-radius: 18px 18px 4px 18px; margin-left: auto; }
+  .msg.assistant { color: #1a1d22; padding: 2px 0; }
+  .msg.assistant strong { font-weight: 600; }
+
+  /* ── Tool Call ── */
+  .tool-call { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #f7f8f9; border: 1px solid #e6e8ec; border-radius: 10px; font-size: 11px; color: #5c6570; }
+  .tool-call .icon { width: 20px; height: 20px; background: var(--ac-teal); border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 12px; flex-shrink: 0; font-weight: 800; color: #04201f; }
+  .tool-call .label { font-weight: 700; color: #3d454e; }
+  .mono-tool { font-family: 'JetBrains Mono', monospace; color: #8a929c; }
+
+  /* ── Widget card (DiscoveryCarousel shell) ── */
+  .wcard { border: 1.5px solid #e0e3e7; border-radius: 14px; background: #fff; overflow: hidden; }
+  .wcard-head { padding: 11px 14px; background: var(--ac-ink); color: #fff; display: flex; align-items: center; gap: 8px; }
+  .wcard-head .wc-logo { width: 20px; height: 20px; background: var(--ac-teal); border-radius: 5px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .wcard-head .wc-logo svg { width: 13px; height: 13px; stroke: #04201f; fill: none; stroke-width: 2; }
+  .wcard-head .wc-title { font-size: 12px; font-weight: 700; letter-spacing: 0.2px; }
+  .wcard-head .wc-sub { font-size: 10px; color: #9db3b1; margin-left: auto; }
+  .wc-status { font-size: 10px; color: #9db3b1; }
+  .wcard-body { padding: 13px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .wc-chip { font-size: 9px; font-weight: 700; padding: 2px 7px; background: rgba(255,255,255,0.14); color: #cfeeed; border-radius: 10px; }
+
+  /* ── Destination cards inside carousel ── */
+  .dest-track { display: flex; flex-direction: column; gap: 9px; }
+  .dcard { border: 1.5px solid #e6e8ec; border-radius: 11px; padding: 10px 11px; display: flex; flex-direction: column; gap: 5px; }
+  .dcard.active { border-color: var(--ac-teal); background: var(--ac-teal-soft); }
+  .dcard-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .dcard-name { font-size: 14px; font-weight: 800; color: var(--ac-ink); }
+  .dcard-price { font-size: 11px; font-weight: 700; color: var(--ac-slate); white-space: nowrap; }
+  .dcard-region { font-size: 10.5px; color: #7b838d; }
+  .dcard-why { font-size: 11px; color: #3d454e; line-height: 1.45; }
+  .dcard-btn { align-self: flex-start; font-size: 10.5px; font-weight: 700; padding: 4px 11px; border-radius: 20px; border: 1.5px solid #d4d8dd; color: #4a525c; background: #fff; }
+  .dcard-btn.on { background: var(--ac-teal); border-color: var(--ac-teal); color: #04201f; }
+
+  /* ── CTA / note ── */
+  .cta { padding: 9px 10px; background: var(--ac-teal); border-radius: 9px; text-align: center; font-size: 12px; font-weight: 700; color: #04201f; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .cta svg { width: 13px; height: 13px; stroke: #04201f; fill: none; stroke-width: 2; }
+  .cta.disabled { background: #cdeceb; color: #5f8a89; }
+  .note { font-size: 11px; color: #5c6570; background: #f7f8f9; border-radius: 8px; padding: 8px 10px; line-height: 1.5; }
+  .note.why { border-left: 3px solid var(--ac-teal); }
+  .standing { font-size: 10px; color: #8a929c; text-align: center; font-style: italic; }
+
+  /* ── Off-app destination ── */
+  .dest { border: 1.5px solid #e0e3e7; border-radius: 10px; padding: 11px; }
+  .dest .dh { font-size: 12px; font-weight: 800; color: var(--ac-ink); margin-bottom: 6px; }
+  .dest .dl { font-size: 11px; color: #5c6570; line-height: 1.5; }
+  .kv { display: flex; justify-content: space-between; gap: 10px; font-size: 11px; padding: 5px 0; border-bottom: 1px dashed #eceef1; }
+  .kv:last-child { border-bottom: none; }
+  .kv .k { color: #7b838d; }
+  .kv .v { font-weight: 600; color: #2c3540; text-align: right; }
+
+  /* ── Gallery ── */
+  .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 22px; }
+  .spec-frame { display: flex; flex-direction: column; gap: 8px; }
+  .spec-frame .sf-name { font-size: 12px; font-weight: 700; color: var(--ac-ink); }
+  .spec-frame .sf-name span { font-weight: 400; color: #8a929c; }
+
+  /* ── API appendix ── */
+  .api-panel { background: #fff; border: 1px solid #e6e8ec; border-radius: 12px; padding: 18px 20px; margin-bottom: 18px; max-width: 1040px; }
+  .api-panel h4 { font-size: 13px; font-weight: 800; color: var(--ac-ink); margin-bottom: 4px; }
+  .api-panel .ap-sub { font-size: 12px; color: #8a929c; margin-bottom: 12px; }
+  .api-step { display: flex; gap: 10px; padding: 9px 0; border-top: 1px dashed #eceef1; }
+  .api-step .an { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700; color: var(--ac-teal); flex-shrink: 0; width: 26px; }
+  .api-step .ac { flex: 1; }
+  .api-step .tool { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 700; color: #2c3540; }
+  .api-step .tool .kind { font-family: 'Inter'; font-size: 9px; font-weight: 700; color: #067e7c; background: var(--ac-teal-soft); padding: 1px 6px; border-radius: 4px; margin-left: 6px; text-transform: uppercase; letter-spacing: 0.3px; }
+  .api-note { font-size: 11px; color: #5c6570; margin-top: 3px; line-height: 1.5; }
+  .api-note code { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; background: #f1f3f5; padding: 1px 5px; border-radius: 4px; color: #3d454e; }
+
+  /* ── Audit table ── */
+  .audit-table { width: 100%; border-collapse: collapse; font-size: 12px; max-width: 1160px; background: #fff; border: 1px solid #e6e8ec; border-radius: 12px; overflow: hidden; }
+  .audit-table th { text-align: left; padding: 10px 14px; background: #f7f8f9; color: #5c6570; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 1px solid #e6e8ec; }
+  .audit-table td { padding: 11px 14px; border-bottom: 1px solid #eef0f2; vertical-align: top; color: #3d454e; line-height: 1.5; }
+  .audit-table tr:last-child td { border-bottom: none; }
+  .audit-table td.req { font-weight: 700; color: var(--ac-ink); width: 210px; }
+  .pass { font-size: 10px; font-weight: 800; padding: 2px 9px; border-radius: 20px; white-space: nowrap; }
+  .pass.ok { background: var(--ac-green-soft); color: #15734d; border: 1px solid var(--ac-green-border); }
+  .pass.flag { background: var(--ac-amber-soft); color: #92560a; border: 1px solid var(--ac-amber-border); }
+  .audit-sub { font-size: 13px; font-weight: 800; color: var(--ac-ink); margin: 26px 0 12px; }
+
+  .footer { text-align: center; font-size: 11px; color: #99a1ab; padding: 30px; border-top: 1px solid #e6e8ec; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1><span class="brand">Acme Getaways</span> × ChatGPT — Discovery Top-of-Funnel Wireframes</h1>
+  <p>Prepared by Noodle Seed · a fuzzy feeling → four grounded getaways → shortlist → signed handoff to book on Acme</p>
+  <span class="scope">FUNNEL BOUNDARY: discover &amp; shape the trip in ChatGPT · book / date / pay OFF-APP on acme.example</span>
+</div>
+
+<div class="section-nav">
+  <a href="#legend">Legend</a>
+  <a href="#flow">End-to-End Flow</a>
+  <a href="#discover">1 · Discovery</a>
+  <a href="#shortlist">2 · Shortlist &amp; Re-shape</a>
+  <a href="#handoff">3 · Handoff</a>
+  <a href="#gallery">Widget Gallery</a>
+  <a href="#tools">MCP Tools</a>
+  <a href="#audit">Compliance Audit</a>
+</div>
+
+<div class="container">
+
+  <!-- LEGEND -->
+  <div class="section" id="legend">
+    <div class="vocab">
+      <div class="vocab-item"><span class="vocab-sw teal"></span> Acme accent — primary CTA &amp; "Shortlisted" only</div>
+      <div class="vocab-item"><span class="vocab-sw green"></span> Positive / in-season fit</div>
+      <div class="vocab-item"><span class="vocab-sw amber"></span> Caution / honest limit</div>
+      <div class="vocab-item"><span class="vocab-sw ink"></span> ChatGPT system surface</div>
+      <div class="vocab-item"><span class="vocab-sw grey"></span> Off-app (dashed phone)</div>
+    </div>
+    <div class="rationale">
+      <h4>How to read these wireframes</h4>
+      <p>Solid-border phones are the <strong>in-ChatGPT app</strong> (the discovery &amp; shortlist loop — no account, no transaction). Dashed-border phones are <strong>off-app destinations</strong> (Acme's booking flow at <span class="mono">book.acme.example</span>) reached only after the handoff. Every card is <strong>grounded</strong>: the place, "from" price, best-months, region, and reason all come from Acme's own curated catalog and are shown verbatim — the app never invents a destination or a number.</p>
+      <p><span class="r-tag ux">UX</span> flow rationale &nbsp; <span class="r-tag ui">UI</span> interface rationale &nbsp; <span class="r-tag acme">ACME</span> brand / catalog fit &nbsp; <span class="r-tag trust">TRUST</span> honesty / boundary guardrail</p>
+    </div>
+  </div>
+
+  <!-- END TO END FLOW -->
+  <div class="section" id="flow">
+    <span class="section-label">The whole journey</span>
+    <h2 class="section-title">End-to-End: a fuzzy feeling → a shortlisted getaway → booked on Acme</h2>
+    <p class="section-subtitle">A traveler frames a vibe and a month, sees four grounded Acme getaways, shortlists the one they love, re-shapes if the mood changes, then hands off to Acme to pick dates and pay. Everything left of the dashed phone is account-free and transaction-free.</p>
+
+    <div class="phones-row">
+
+      <!-- Step 1 -->
+      <div class="phone-step">
+        <div class="step-label">1 · Frame the feeling<small>vibe · month · travelers</small></div>
+        <div class="phone">
+          <div class="phone-notch"></div>
+          <div class="phone-screen">
+            <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+            <div class="msg user">Where should we go for a beach trip in June? Just the two of us.</div>
+            <div class="tool-call"><span class="icon">A</span><span><span class="label">discover_getaways</span><br><span class="mono-tool">vibe=beach · month=June · travelers=2</span></span></div>
+            <div class="msg assistant">Acme's getaways, shaped for a beach June for two —</div>
+            <div class="wcard">
+              <div class="wcard-head">
+                <span class="wc-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg></span>
+                <span class="wc-title">Acme Getaways</span><span class="wc-chip">Discover</span>
+              </div>
+              <div class="wcard-body">
+                <div class="dest-track">
+                  <div class="dcard active">
+                    <div class="dcard-head"><span class="dcard-name">Coral Bay</span><span class="dcard-price">from $890</span></div>
+                    <div class="dcard-region">Adriatic coast · best May–Sep</div>
+                    <div class="dcard-why">Calm swimming coves and a walkable old town — easy for a relaxed first trip.</div>
+                    <span class="dcard-btn">Shortlist</span>
+                  </div>
+                  <div class="dcard">
+                    <div class="dcard-head"><span class="dcard-name">Old Quarter</span><span class="dcard-price">from $640</span></div>
+                    <div class="dcard-region">Central Europe · best Apr–Oct</div>
+                    <div class="dcard-why">Dense museum district and food halls, all reachable on foot.</div>
+                    <span class="dcard-btn">Shortlist</span>
+                  </div>
+                </div>
+                <div class="cta disabled">Continue on Acme · Coral Bay</div>
+                <div class="standing">Booking and payment happen on acme.example — never inside chat.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-arrow">→</div>
+
+      <!-- Step 2 -->
+      <div class="phone-step">
+        <div class="step-label">2 · Shortlist the pick<small>local, non-destructive</small></div>
+        <div class="phone">
+          <div class="phone-notch"></div>
+          <div class="phone-screen">
+            <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+            <div class="msg user">Shortlist Coral Bay.</div>
+            <div class="tool-call"><span class="icon">A</span><span><span class="label">shortlist_getaway</span><br><span class="mono-tool">destination="Coral Bay"</span></span></div>
+            <div class="wcard">
+              <div class="wcard-head">
+                <span class="wc-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg></span>
+                <span class="wc-title">Acme Getaways</span><span class="wc-chip">Discover</span>
+              </div>
+              <div class="wcard-body">
+                <div class="wc-status" style="color:#067e7c;">Shortlisted Coral Bay.</div>
+                <div class="dest-track">
+                  <div class="dcard active">
+                    <div class="dcard-head"><span class="dcard-name">Coral Bay</span><span class="dcard-price">from $890</span></div>
+                    <div class="dcard-region">Adriatic coast · best May–Sep</div>
+                    <div class="dcard-why">Calm swimming coves and a walkable old town — easy for a relaxed first trip.</div>
+                    <span class="dcard-btn on">✓ Shortlisted</span>
+                  </div>
+                  <div class="dcard">
+                    <div class="dcard-head"><span class="dcard-name">Harbor City</span><span class="dcard-price">from $980</span></div>
+                    <div class="dcard-region">Pacific rim · best Sep–Nov</div>
+                    <div class="dcard-why">Waterfront nightlife and day-trip islands a short ferry away.</div>
+                    <span class="dcard-btn">Shortlist</span>
+                  </div>
+                </div>
+                <div class="cta"><svg viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="m20 4-9 9"/><path d="M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5"/></svg>Continue on Acme · Coral Bay</div>
+                <div class="standing">Booking and payment happen on acme.example — never inside chat.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-arrow">→</div>
+
+      <!-- Step 3 -->
+      <div class="phone-step">
+        <div class="step-label">3 · Re-shape the trip<small>vibe switch → re-render</small></div>
+        <div class="phone">
+          <div class="phone-notch"></div>
+          <div class="phone-screen">
+            <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+            <div class="msg user">Hmm, actually more of a city break. What've you got?</div>
+            <div class="tool-call"><span class="icon">A</span><span><span class="label">discover_getaways</span><br><span class="mono-tool">vibe=city · month=June · travelers=2</span></span></div>
+            <div class="msg assistant">Switching to a city vibe —</div>
+            <div class="wcard">
+              <div class="wcard-head">
+                <span class="wc-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg></span>
+                <span class="wc-title">Acme Getaways</span><span class="wc-chip">Discover</span>
+              </div>
+              <div class="wcard-body">
+                <div class="dest-track">
+                  <div class="dcard active">
+                    <div class="dcard-head"><span class="dcard-name">Harbor City</span><span class="dcard-price">from $980</span></div>
+                    <div class="dcard-region">Pacific rim · best Sep–Nov</div>
+                    <div class="dcard-why">Waterfront nightlife and day-trip islands a short ferry away.</div>
+                    <span class="dcard-btn">Shortlist</span>
+                  </div>
+                  <div class="dcard">
+                    <div class="dcard-head"><span class="dcard-name">Old Quarter</span><span class="dcard-price">from $640</span></div>
+                    <div class="dcard-region">Central Europe · best Apr–Oct</div>
+                    <div class="dcard-why">Dense museum district and food halls, all reachable on foot.</div>
+                    <span class="dcard-btn">Shortlist</span>
+                  </div>
+                </div>
+                <div class="note why"><strong>Harbor City</strong> is the city fit — best Sep–Nov, so June is lively shoulder season. Month &amp; party size carried over, so you're not re-asked.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-arrow">→</div>
+
+      <!-- Step 4 -->
+      <div class="phone-step">
+        <div class="step-label">4 · Handoff<small>the funnel boundary</small></div>
+        <div class="phone">
+          <div class="phone-notch"></div>
+          <div class="phone-screen">
+            <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+            <div class="msg user">Let's do Coral Bay. Book it.</div>
+            <div class="tool-call"><span class="icon">A</span><span><span class="label">create_handoff</span><br><span class="mono-tool">dest=coral_bay · month=June · pax=2</span></span></div>
+            <div class="msg assistant">Opening Acme with Coral Bay, June, two travelers pre-filled — pick exact dates and finish there.</div>
+            <div class="wcard">
+              <div class="wcard-head">
+                <span class="wc-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg></span>
+                <span class="wc-title">Acme Getaways</span><span class="wc-sub">create_handoff</span>
+              </div>
+              <div class="wcard-body">
+                <div class="kv"><span class="k">Destination</span><span class="v">Coral Bay</span></div>
+                <div class="kv"><span class="k">Trip</span><span class="v">June · 2 travelers</span></div>
+                <div class="kv"><span class="k">Attribution</span><span class="v">src=chatgpt</span></div>
+                <div class="cta"><svg viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="m20 4-9 9"/><path d="M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5"/></svg>Continue on Acme</div>
+                <div class="standing">Booking and payment happen on acme.example — never inside chat.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step-arrow">→</div>
+
+      <!-- Step 5 off-app -->
+      <div class="phone-step">
+        <div class="step-label">5 · Off-app<small>book · date · pay on Acme</small></div>
+        <div class="phone offapp">
+          <div class="phone-notch"></div>
+          <div class="phone-screen">
+            <div class="browser-header"><span class="lock">🔒</span><span class="url">book.acme.example/plan?dest=coral_bay&amp;month=June&amp;pax=2&amp;src=chatgpt</span></div>
+            <div class="dest">
+              <div class="dh">Acme · Book Coral Bay</div>
+              <div class="dl">The shaped trip lands pre-filled — <strong>Coral Bay · June · 2 travelers</strong>. Traveler signs in, picks exact dates against live availability, and pays. <strong>Purchase happens here.</strong></div>
+            </div>
+            <div class="note" style="margin-top:8px;">⟵ The deep link carried <span class="mono">dest · month · pax</span> so nothing is re-typed, plus <span class="mono">src=chatgpt</span> so Acme credits this booking to the ChatGPT funnel.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 1 DISCOVERY -->
+  <div class="section" id="discover">
+    <span class="section-label">Surface 1 · core</span>
+    <h2 class="section-title">Discovery — a grounded catalog, never a guess</h2>
+    <p class="section-subtitle">The opening move: turn a fuzzy feeling into four real Acme getaways, each with its own "from" price, best-months window, region, and honest reason. The model narrates which fit the stated vibe; the carousel shows the full curated catalog.</p>
+    <div class="rationale">
+      <h4>Why it's built this way</h4>
+      <p><span class="r-tag ux">UX</span> A traveler at "where should we go?" wants a few credible options with a reason each — not an infinite list. Four cards scan in seconds; one tap shortlists.</p>
+      <p><span class="r-tag acme">ACME</span> Every place, price, and reason is Acme's own catalog data returned verbatim — the app is authoritative because Acme owns all four. <span class="r-tag trust">TRUST</span> Prices are shown <strong>"from $X"</strong>, never as a quote; <code>discover_getaways</code> returns the whole catalog and never filters on the input, so switching vibe is never a dead end.</p>
+    </div>
+    <div class="phones-row">
+      <div class="phone-step">
+        <div class="step-label">Budget-first intent</div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+          <div class="msg user">Honestly, what's the cheapest you'd actually recommend for two?</div>
+          <div class="tool-call"><span class="icon">A</span><span><span class="label">discover_getaways</span></span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg></span><span class="wc-title">Acme Getaways</span><span class="wc-chip">Discover</span></div><div class="wcard-body">
+            <div class="dest-track">
+              <div class="dcard active"><div class="dcard-head"><span class="dcard-name">Old Quarter</span><span class="dcard-price">from $640</span></div><div class="dcard-region">Central Europe · best Apr–Oct</div><div class="dcard-why">Dense museum district and food halls, all reachable on foot.</div><span class="dcard-btn">Shortlist</span></div>
+              <div class="dcard"><div class="dcard-head"><span class="dcard-name">Coral Bay</span><span class="dcard-price">from $890</span></div><div class="dcard-region">Adriatic coast · best May–Sep</div><div class="dcard-why">Calm swimming coves and a walkable old town.</div><span class="dcard-btn">Shortlist</span></div>
+            </div>
+            <div class="note why"><strong>Old Quarter</strong> starts lowest at from $640 — the value pick without feeling like a compromise.</div>
+          </div></div>
+        </div></div>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="phone-step">
+        <div class="step-label">Season-first intent</div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+          <div class="msg user">We've got a week in December — where's actually good then?</div>
+          <div class="tool-call"><span class="icon">A</span><span><span class="label">discover_getaways</span><span class="mono-tool"> month=December</span></span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg></span><span class="wc-title">Acme Getaways</span><span class="wc-chip">Discover</span></div><div class="wcard-body">
+            <div class="dest-track">
+              <div class="dcard active"><div class="dcard-head"><span class="dcard-name">Monte Alto</span><span class="dcard-price">from $1,120</span></div><div class="dcard-region">Northern Alps · best Dec–Mar</div><div class="dcard-why">Ski-in village with beginner slopes and long groomed runs.</div><span class="dcard-btn">Shortlist</span></div>
+            </div>
+            <div class="note why"><strong>Monte Alto</strong> is the one whose window is <strong>Dec–Mar</strong> — the in-season pick. Exact December availability is Acme's to confirm.</div>
+          </div></div>
+        </div></div>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="phone-step">
+        <div class="step-label">Fullscreen browse (same component)</div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+          <div class="msg user">Just show me everything.</div>
+          <div class="tool-call"><span class="icon">A</span><span><span class="label">discover_getaways</span></span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg></span><span class="wc-title">Acme Getaways</span><span class="wc-chip">Fullscreen</span></div><div class="wcard-body">
+            <div class="dest-track">
+              <div class="dcard"><div class="dcard-head"><span class="dcard-name">Coral Bay</span><span class="dcard-price">from $890</span></div><div class="dcard-region">Adriatic coast · May–Sep · beach</div></div>
+              <div class="dcard"><div class="dcard-head"><span class="dcard-name">Monte Alto</span><span class="dcard-price">from $1,120</span></div><div class="dcard-region">Northern Alps · Dec–Mar · mountains</div></div>
+              <div class="dcard"><div class="dcard-head"><span class="dcard-name">Old Quarter</span><span class="dcard-price">from $640</span></div><div class="dcard-region">Central Europe · Apr–Oct · culture</div></div>
+              <div class="dcard"><div class="dcard-head"><span class="dcard-name">Harbor City</span><span class="dcard-price">from $980</span></div><div class="dcard-region">Pacific rim · Sep–Nov · city</div></div>
+            </div>
+            <div class="standing">Same component, roomier layout — displayMode="fullscreen".</div>
+          </div></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2 SHORTLIST -->
+  <div class="section" id="shortlist">
+    <span class="section-label">Surface 2</span>
+    <h2 class="section-title">Shortlist &amp; re-shape — the deliberation loop</h2>
+    <p class="section-subtitle">Shortlisting is the "I like this one" gesture — a local widget-state write, not a booking. Changing the vibe, month, or party size re-runs discovery and re-renders the carousel, so the traveler can think out loud without losing context.</p>
+    <div class="rationale">
+      <h4>Why it's built this way</h4>
+      <p><span class="r-tag ux">UX</span> The loop rewards exploration: shortlist, switch vibe, compare, shortlist again. The values you didn't change persist, so a vibe switch never re-asks month or party size.</p>
+      <p><span class="r-tag ui">UI</span> One action per card (Shortlist toggle) and one shell CTA (Continue on Acme) — well inside the ≤2-actions-per-card rule; the carousel is a single track with no nested scroll. <span class="r-tag trust">TRUST</span> Shortlisting writes nothing off-app: <code>shortlist_getaway</code> is a non-destructive local action, not an account or a cart.</p>
+    </div>
+    <div class="phones-row">
+      <div class="phone-step">
+        <div class="step-label">Before — nothing held yet</div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg></span><span class="wc-title">Acme Getaways</span><span class="wc-chip">Discover</span></div><div class="wcard-body">
+            <div class="wc-status">Pick a getaway to continue.</div>
+            <div class="dest-track">
+              <div class="dcard"><div class="dcard-head"><span class="dcard-name">Coral Bay</span><span class="dcard-price">from $890</span></div><div class="dcard-region">Adriatic coast · best May–Sep</div><span class="dcard-btn">Shortlist</span></div>
+              <div class="dcard"><div class="dcard-head"><span class="dcard-name">Harbor City</span><span class="dcard-price">from $980</span></div><div class="dcard-region">Pacific rim · best Sep–Nov</div><span class="dcard-btn">Shortlist</span></div>
+            </div>
+            <div class="cta disabled">Continue on Acme</div>
+          </div></div>
+        </div></div>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="phone-step">
+        <div class="step-label">After — Coral Bay held</div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+          <div class="tool-call"><span class="icon">A</span><span><span class="label">shortlist_getaway</span><span class="mono-tool"> "Coral Bay"</span></span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg></span><span class="wc-title">Acme Getaways</span><span class="wc-chip">Discover</span></div><div class="wcard-body">
+            <div class="wc-status" style="color:#067e7c;">Shortlisted Coral Bay.</div>
+            <div class="dest-track">
+              <div class="dcard active"><div class="dcard-head"><span class="dcard-name">Coral Bay</span><span class="dcard-price">from $890</span></div><div class="dcard-region">Adriatic coast · best May–Sep</div><span class="dcard-btn on">✓ Shortlisted</span></div>
+              <div class="dcard"><div class="dcard-head"><span class="dcard-name">Harbor City</span><span class="dcard-price">from $980</span></div><div class="dcard-region">Pacific rim · best Sep–Nov</div><span class="dcard-btn">Shortlist</span></div>
+            </div>
+            <div class="cta"><svg viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="m20 4-9 9"/><path d="M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5"/></svg>Continue on Acme · Coral Bay</div>
+          </div></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3 HANDOFF -->
+  <div class="section" id="handoff">
+    <span class="section-label">Surface 3 · the funnel boundary</span>
+    <h2 class="section-title">The single, signed, attributable handoff</h2>
+    <p class="section-subtitle">One deliberate exit — no second track. <strong>Continue on Acme</strong> calls <code>create_handoff</code>, which builds a signed deep link carrying the shaped trip and the <span class="mono">src=chatgpt</span> attribution, then opens Acme's booking flow. Dates, inventory, and payment are Acme's, off-app by design.</p>
+    <div class="rationale">
+      <h4>Why it's built this way</h4>
+      <p><span class="r-tag acme">ACME</span> Acme earns on completed bookings; the app's job is to send pre-shaped, attributable demand. The deep link carries <code>dest · month · pax</code> so nothing is re-typed, plus <code>src=chatgpt</code> so Acme can measure and pay for the funnel.</p>
+      <p><span class="r-tag ui">UI</span> Every value is already URL-safe (id slug · month enum · integer), so the tool substitutes them directly — it never URL-encodes or transforms an input. <span class="r-tag trust">TRUST</span> The domain is declared in <code>handoff.allowedDomains</code>, so ChatGPT opens it without a safe-link warning; zero credentials cross the boundary.</p>
+    </div>
+    <div class="phones-row">
+      <div class="phone-step">
+        <div class="step-label">In-app — the handoff card</div>
+        <div class="phone"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="chatgpt-header"><span class="model-name">ChatGPT</span><span class="dots">···</span></div>
+          <div class="tool-call"><span class="icon">A</span><span><span class="label">create_handoff</span><br><span class="mono-tool">dest=coral_bay · month=June · pax=2</span></span></div>
+          <div class="wcard"><div class="wcard-head"><span class="wc-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg></span><span class="wc-title">Acme Getaways</span><span class="wc-sub">create_handoff</span></div><div class="wcard-body">
+            <div class="kv"><span class="k">Destination</span><span class="v">Coral Bay</span></div>
+            <div class="kv"><span class="k">Trip</span><span class="v">June · 2 travelers</span></div>
+            <div class="kv"><span class="k">Summary</span><span class="v">Coral Bay · June · 2</span></div>
+            <div class="cta"><svg viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="m20 4-9 9"/><path d="M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5"/></svg>Continue on Acme</div>
+            <div class="standing">Booking and payment happen on acme.example — never inside chat.</div>
+          </div></div>
+        </div></div>
+      </div>
+      <div class="step-arrow">→</div>
+      <div class="phone-step">
+        <div class="step-label">Off-app — Acme booking flow</div>
+        <div class="phone offapp"><div class="phone-notch"></div><div class="phone-screen">
+          <div class="browser-header"><span class="lock">🔒</span><span class="url">book.acme.example/plan?dest=coral_bay&amp;month=June&amp;pax=2&amp;src=chatgpt</span></div>
+          <div class="dest">
+            <div class="dh">Acme · Plan your Coral Bay trip</div>
+            <div class="dl">Pre-filled from the handoff: <strong>Coral Bay · June · 2 travelers</strong>. Sign in, choose exact dates against live availability, review the dated price, and pay. <strong>The transaction lives here.</strong></div>
+          </div>
+          <div class="note" style="margin-top:8px;">The <span class="mono">src=chatgpt</span> tag credits this session — and any booking that follows — to the ChatGPT funnel. It carries no PII.</div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- WIDGET GALLERY -->
+  <div class="section" id="gallery">
+    <span class="section-label">Reference</span>
+    <h2 class="section-title">Widget gallery</h2>
+    <p class="section-subtitle">The app ships <strong>one</strong> widget — <span class="mono">DiscoveryCarousel</span> — shown here at rest and in its key states. Apps SDK compliant: system fonts, monochrome outlined icons, neutral surface, Acme teal reserved for the primary CTA and the "Shortlisted" state only.</p>
+    <div class="gallery">
+
+      <div class="spec-frame">
+        <div class="sf-name">DiscoveryCarousel ★ <span>· at rest</span></div>
+        <div class="wcard"><div class="wcard-head"><span class="wc-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg></span><span class="wc-title">Acme Getaways</span><span class="wc-chip">Discover</span></div><div class="wcard-body">
+          <div class="dest-track">
+            <div class="dcard"><div class="dcard-head"><span class="dcard-name">Coral Bay</span><span class="dcard-price">from $890</span></div><div class="dcard-region">Adriatic coast · best May–Sep</div><div class="dcard-why">Calm swimming coves and a walkable old town.</div><span class="dcard-btn">Shortlist</span></div>
+          </div>
+          <div class="cta disabled">Continue on Acme</div>
+          <div class="standing">Booking and payment happen on acme.example.</div>
+        </div></div>
+      </div>
+
+      <div class="spec-frame">
+        <div class="sf-name">DiscoveryCarousel <span>· shortlisted state</span></div>
+        <div class="wcard"><div class="wcard-head"><span class="wc-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg></span><span class="wc-title">Acme Getaways</span><span class="wc-chip">Discover</span></div><div class="wcard-body">
+          <div class="wc-status" style="color:#067e7c;">Shortlisted Harbor City.</div>
+          <div class="dest-track">
+            <div class="dcard active"><div class="dcard-head"><span class="dcard-name">Harbor City</span><span class="dcard-price">from $980</span></div><div class="dcard-region">Pacific rim · best Sep–Nov</div><span class="dcard-btn on">✓ Shortlisted</span></div>
+          </div>
+          <div class="cta"><svg viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="m20 4-9 9"/><path d="M20 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h5"/></svg>Continue on Acme · Harbor City</div>
+        </div></div>
+      </div>
+
+      <div class="spec-frame">
+        <div class="sf-name">DiscoveryCarousel <span>· pending handoff</span></div>
+        <div class="wcard"><div class="wcard-head"><span class="wc-logo"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5 5-2Z"/></svg></span><span class="wc-title">Acme Getaways</span><span class="wc-chip">Discover</span></div><div class="wcard-body">
+          <div class="dest-track">
+            <div class="dcard active"><div class="dcard-head"><span class="dcard-name">Monte Alto</span><span class="dcard-price">from $1,120</span></div><div class="dcard-region">Northern Alps · best Dec–Mar</div><span class="dcard-btn on">✓ Shortlisted</span></div>
+          </div>
+          <div class="cta disabled">Opening Acme…</div>
+          <div class="standing">Booking and payment happen on acme.example.</div>
+        </div></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MCP TOOLS APPENDIX -->
+  <div class="section" id="tools">
+    <span class="section-label">Technical appendix</span>
+    <h2 class="section-title">MCP Tools &amp; Call Sequence</h2>
+    <p class="section-subtitle">Every tool that appears in a wireframe, grouped by journey phase, with the intent behind each call. Server: <span class="mono">acme_discovery</span>. Three tools, one widget.</p>
+
+    <div class="api-panel">
+      <h4>Discover &amp; Shortlist (Steps 1–3)</h4>
+      <div class="ap-sub">The in-chat loop — grounded, account-free, transaction-free.</div>
+      <div class="api-step">
+        <div class="an">1</div>
+        <div class="ac">
+          <div class="tool">discover_getaways<span class="kind">tool + view</span></div>
+          <div class="api-note">In <code>{ vibe, month, travelers }</code> → out <code>{ status, vibe, month, travelers, options[] }</code> and renders <code>DiscoveryCarousel</code>. Returns the <strong>full curated catalog verbatim</strong> (4 destinations); the model narrates fit. Host status: "Finding getaways…" → "Getaways ready". <code>read-only</code>.</div>
+        </div>
+      </div>
+      <div class="api-step">
+        <div class="an">2</div>
+        <div class="ac">
+          <div class="tool">shortlist_getaway<span class="kind">tool + app visibility</span></div>
+          <div class="api-note">In <code>{ destination, note }</code> → out <code>{ status, destination, note }</code>. Called from inside the carousel when a card's <strong>Shortlist</strong> is tapped; updates widget view-state. <code>local-action</code>, non-destructive — not a booking.</div>
+        </div>
+      </div>
+      <div class="api-step">
+        <div class="an">3</div>
+        <div class="ac">
+          <div class="tool">discover_getaways<span class="kind">re-invoke</span></div>
+          <div class="api-note">A natural-language vibe/month/party change re-invokes discovery with the updated input; unchanged values persist so the traveler isn't re-asked. The carousel re-renders in place.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="api-panel">
+      <h4>Handoff (Step 4 → off-app)</h4>
+      <div class="ap-sub">The single deliberate exit — signed, attributable, credential-free.</div>
+      <div class="api-step">
+        <div class="an">4</div>
+        <div class="ac">
+          <div class="tool">create_handoff<span class="kind">tool · open-link</span></div>
+          <div class="api-note">In <code>{ destination, destinationName, month, travelers }</code> → out <code>{ status, destination, summary, handoffUrl }</code>. Builds <code>https://book.acme.example/plan?dest=&#123;destination&#125;&amp;month=&#123;month&#125;&amp;pax=&#123;travelers&#125;&amp;src=chatgpt</code> by direct substitution of already-URL-safe values. The widget calls it, then opens <code>handoffUrl</code>. Domain declared in <code>handoff.allowedDomains</code> (<code>book.acme.example</code>, <code>acme.example</code>) so the compiler derives ChatGPT's redirect domains. <code>open-action</code>.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMPLIANCE AUDIT -->
+  <div class="section" id="audit">
+    <span class="section-label">Submission evidence</span>
+    <h2 class="section-title">OpenAI Apps SDK Compliance Audit</h2>
+    <p class="section-subtitle">Each row cites concrete app behavior, not aspiration. Reference: the OpenAI Apps SDK UX Principles + UI Guidelines. Verify against the built app with <span class="mono">noodle check --target chatgpt</span> before submission.</p>
+
+    <table class="audit-table">
+      <tr><th>OpenAI Requirement</th><th>How the Acme Getaways app addresses it</th><th>Status</th></tr>
+      <tr><td class="req">Conversational value</td><td>A traveler expresses a fuzzy feeling in natural language ("warm, walkable, June, two of us"); the model maps it to <code>vibe · month · travelers</code> and returns grounded options — something no tap-driven form does as fluidly.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">Beyond base ChatGPT</td><td>Acme's own curated catalog (places, "from" prices, best-months, reasons) and a signed, attributable handoff — knowledge and an action base ChatGPT cannot provide.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">Atomic, model-friendly actions</td><td>Three self-contained tools with explicit Zod input/output schemas: <code>discover_getaways</code>, <code>shortlist_getaway</code>, <code>create_handoff</code>. No ambiguity; all inputs fillable from language.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">Helpful UI only</td><td>The carousel earns its widget: visual scanning of four options with price/season/reason, plus a shortlist gesture. No payment or checkout widget is built — booking is off-app by design.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">In-chat task completion</td><td>The task — discover, shortlist, and shape a getaway — completes in chat; the booking is an intentional handoff, not an unfinished flow.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">Performance &amp; responsiveness</td><td>Static curated data and string-substitution handoff — no live inventory call and no AI in the tool path; carousel renders in one round-trip.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">Discoverability</td><td>Broad natural triggers ("beach trip in June", "cheapest getaway for two", "somewhere good in December"). Golden-prompt set + app-description keywords are a launch workstream.</td><td><span class="pass flag">PLAN</span></td></tr>
+      <tr><td class="req">Platform fit</td><td>Rich prompts, multi-turn deliberation (re-shape on vibe/month change), lightweight per-session memory (trip shape + shortlist). No multimodality claimed where it isn't real.</td><td><span class="pass ok">PASS</span></td></tr>
+    </table>
+
+    <div class="audit-sub">UI Guidelines Compliance</div>
+    <table class="audit-table">
+      <tr><th>Guideline</th><th>How the app addresses it</th><th>Status</th></tr>
+      <tr><td class="req">Design tokens (no vendor lock)</td><td>Styling driven by Noodle Seed server <code>branding</code> tokens (accent <code>#0EA5A4</code>, surface, radius, density) via CSS cascade layers — no app-specific global CSS.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">Accent restraint</td><td>Acme teal appears only on the primary <strong>Continue on Acme</strong> CTA, the compass logo mark, and the active "Shortlisted" state. Everything else is neutral system surface.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">System fonts</td><td>System font stack throughout the widget; no custom web font shipped to the host.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">Monochrome outlined icons</td><td>Compass (header) and external-link (CTA) are single-stroke outlined SVGs, no fills.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">WCAG AA contrast</td><td>Text/surface pairs meet AA in light and dark; the widget reads <code>theme</code> from <code>useLayout()</code> and applies <code>surfaceDark</code> (<code>#0B1B1B</code>).</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">≤2 actions on inline cards</td><td>Each destination card has one action (Shortlist toggle); the shell has one primary CTA. Never more than two.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">No nested scroll</td><td>The carousel is a single scroll surface; no scroll-within-scroll region.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">Correct display-mode usage</td><td>Inline carousel for discovery; the same component in fullscreen for full-catalog browse. No PiP (no live session), no in-chat checkout.</td><td><span class="pass ok">PASS</span></td></tr>
+    </table>
+
+    <div class="audit-sub">Domain Guardrail Rows (travel-specific)</div>
+    <table class="audit-table">
+      <tr><th>Guardrail</th><th>How the app enforces it</th><th>Status</th></tr>
+      <tr><td class="req">Never invent catalog data</td><td>Only the four curated destinations exist; every place, price, best-month, and reason is returned verbatim from Acme's catalog — the model narrates, never fabricates.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">"From" pricing, never a quote</td><td>Prices always render as "from $X"; the dated, party-sized price is computed only on Acme's booking flow.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">Honest funnel boundary</td><td>The standing note "Booking and payment happen on acme.example — never inside chat." is always visible; the CTA always reads "Continue on Acme". No availability is asserted in chat.</td><td><span class="pass ok">PASS</span></td></tr>
+      <tr><td class="req">Credential-free handoff</td><td>The deep link carries only <code>dest · month · pax · src</code> — no PII, no token; the traveler authenticates and pays on Acme.</td><td><span class="pass ok">PASS</span></td></tr>
+    </table>
+  </div>
+
+</div>
+
+<div class="footer">
+  Acme Getaways × ChatGPT — Discovery Top-of-Funnel Wireframes · Noodle Seed · v1 · 2026<br>
+  Acme Getaways is a fictional brand; catalog, prices &amp; best-months are the app's own curated data, internally consistent with <span class="mono">src/server.ts</span>. Verify Apps SDK compliance with <span class="mono">noodle check --target chatgpt</span> at build time.
+</div>
+
+</body>
+</html>

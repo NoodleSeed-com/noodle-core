@@ -1,0 +1,19 @@
+# Invalid: two tools share the name `get_order` (names must be unique within their namespace).
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+tools:
+  - name: get_order
+    description: First definition.
+    inputSchema:
+      type: object
+    fulfilment:
+      use: acme.get_order
+  - name: get_order
+    description: Second definition.
+    inputSchema:
+      type: object
+    fulfilment:
+      use: acme.get_order_again

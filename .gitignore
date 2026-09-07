@@ -1,0 +1,83 @@
+# OS metadata
+.DS_Store
+Thumbs.db
+.directory
+
+# Virtual environments & packages
+.venv/
+venv/
+env/
+ENV/
+.uv/
+node_modules/
+jspm_packages/
+.pnp/
+.pnp.js
+
+# Build/Dist directories
+dist/
+build/
+.next/
+out/
+.nuxt/
+.cache/
+coverage/
+*.tsbuildinfo
+
+# Generated artifacts
+# (packages/compiler/manifest.schema.json is generated but COMMITTED: it is the drift-gated Core v1
+# manifest contract export, ADR 0150 — regenerate with `pnpm schema` and commit the diff.)
+apps/website/public/noodle-builder-skill.zip
+noodle-publish/
+noodle-publish-*/
+.tmp-publish/
+.noodle/
+.self-host/
+.worktrees/
+.agent-handoffs/
+.superpowers/
+publish/claude-plugin/dist/
+
+# Cache files
+.pnpm-store/
+.turbo/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.eslintcache
+
+# Sensitive files & secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.cert
+*.credentials
+*.secrets.json
+secrets.json
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDEs
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# Temp folder
+tmp/.wrangler/
+
+# Playwright CLI local artifacts
+.playwright-cli/

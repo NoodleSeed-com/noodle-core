@@ -1,0 +1,135 @@
+[
+  {
+    "event": "content",
+    "data": {
+      "turnId": "turn_1",
+      "delta": "I can book that."
+    }
+  },
+  {
+    "event": "tool_started",
+    "data": {
+      "turnId": "turn_1",
+      "id": "call_1",
+      "tool": "list_time_off"
+    }
+  },
+  {
+    "event": "tool_proposed",
+    "data": {
+      "turnId": "turn_1",
+      "id": "interaction_1",
+      "tool": "submit_time_off",
+      "title": "Submit time-off request",
+      "description": "This will send the time-off request to your manager.",
+      "arguments": {
+        "type": "VACATION",
+        "start": "2026-07-23",
+        "end": "2026-07-24",
+        "team": "Noodle"
+      },
+      "reviewSchema": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Leave type"
+          },
+          "start": {
+            "type": "string",
+            "title": "Start date",
+            "format": "date"
+          },
+          "end": {
+            "type": "string",
+            "title": "End date",
+            "format": "date"
+          },
+          "team": {
+            "type": "string",
+            "title": "Team"
+          }
+        }
+      },
+      "expiresAt": "2026-07-14T10:10:00.000Z",
+      "requiresConfirmation": true
+    }
+  },
+  {
+    "event": "interaction_resolved",
+    "data": {
+      "turnId": "turn_1",
+      "id": "interaction_1",
+      "action": "accept"
+    }
+  },
+  {
+    "event": "tool_completed",
+    "data": {
+      "turnId": "turn_1",
+      "id": "interaction_1",
+      "tool": "submit_time_off",
+      "result": {
+        "requestId": "leave_123",
+        "status": "pending"
+      }
+    }
+  },
+  {
+    "event": "view_available",
+    "data": {
+      "turnId": "turn_1",
+      "id": "interaction_1",
+      "tool": "submit_time_off",
+      "resourceUri": "ui://time_off/request_status",
+      "title": "Time-off request",
+      "result": {
+        "requestId": "leave_123",
+        "status": "pending"
+      }
+    }
+  },
+  {
+    "event": "input_requested",
+    "data": {
+      "turnId": "turn_2",
+      "id": "interaction_2",
+      "message": "Which team should receive this request?",
+      "requestedSchema": {
+        "type": "object",
+        "properties": {
+          "team": {
+            "type": "string"
+          }
+        },
+        "required": ["team"]
+      },
+      "expiresAt": "2026-07-14T10:10:00.000Z"
+    }
+  },
+  {
+    "event": "suggested_prompts",
+    "data": {
+      "turnId": "turn_1",
+      "phase": "follow_up",
+      "prompts": ["Show the request details", "What happens next?"]
+    }
+  },
+  {
+    "event": "done",
+    "data": {
+      "turnId": "turn_2"
+    }
+  },
+  {
+    "event": "auth_requested",
+    "data": {
+      "turnId": "turn_1",
+      "id": "elevation_1",
+      "tool": "time_off_balance",
+      "signInTicket": "nse_5c1f6e8a6b4d5c9e1f3a7b5d8c0e2f9c",
+      "continuation": "nse_5c1f6e8a6b4d5c9e1f3a7b5d8c0e2f9c",
+      "expiresAt": "2026-07-13T12:44:56.000Z"
+    }
+  }
+]

@@ -1,0 +1,88 @@
+{
+  "artifactSchemaVersion": "0.17.0",
+  "resolution": "shape-only",
+  "source": {
+    "manifestName": "acme_support",
+    "manifestVersion": "1.0.0"
+  },
+  "server": {
+    "name": "acme_support",
+    "version": "1.0.0",
+    "title": "Acme Support"
+  },
+  "tools": [
+    {
+      "name": "do_thing",
+      "description": "Demonstrates the three value-expression node kinds (path, template, literal).",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "x": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "x"
+        ],
+        "additionalProperties": false
+      },
+      "fulfilment": {
+        "kind": "operation",
+        "operationRef": {
+          "connector": "acme",
+          "operation": "do_thing",
+          "resolved": false
+        },
+        "args": {
+          "a_path": {
+            "kind": "path",
+            "root": "input",
+            "segments": [
+              {
+                "kind": "prop",
+                "name": "x"
+              }
+            ]
+          },
+          "a_template": {
+            "kind": "template",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "order "
+              },
+              {
+                "kind": "path",
+                "root": "input",
+                "segments": [
+                  {
+                    "kind": "prop",
+                    "name": "x"
+                  }
+                ]
+              },
+              {
+                "kind": "text",
+                "value": "!"
+              }
+            ]
+          },
+          "a_number": {
+            "kind": "literal",
+            "value": 42
+          },
+          "a_bool": {
+            "kind": "literal",
+            "value": true
+          }
+        }
+      }
+    }
+  ],
+  "capabilities": {
+    "tools": [
+      "do_thing"
+    ]
+  }
+}

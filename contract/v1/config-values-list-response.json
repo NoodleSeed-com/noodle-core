@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "values": [
+    {
+      "kind": "secret",
+      "scope": { "level": "org", "org": "acme" },
+      "name": "ACME_API_KEY",
+      "updatedAt": "2026-07-12T09:30:00.000Z",
+      "updatedByEmail": "dev@acme.example"
+    },
+    {
+      "kind": "variable",
+      "scope": { "level": "env", "org": "acme", "app": "support", "env": "prod" },
+      "name": "REGION",
+      "updatedAt": "2026-07-13T12:00:00.000Z",
+      "value": "us-central1"
+    }
+  ]
+}

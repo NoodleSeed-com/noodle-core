@@ -1,0 +1,112 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`core catalog discovery snapshot > snapshots the public commands --json representation 1`] = `
+{
+  "data": {
+    "commands": [
+      {
+        "arguments": [],
+        "flags": [],
+        "helpRank": 16,
+        "local": true,
+        "name": "help",
+        "section": "account",
+        "summary": "Print CLI usage and per-command help.",
+      },
+      {
+        "arguments": [],
+        "flags": [],
+        "helpRank": 14,
+        "local": true,
+        "name": "version",
+        "section": "account",
+        "summary": "Print the installed CLI version.",
+      },
+      {
+        "arguments": [],
+        "flags": [
+          {
+            "aliases": [],
+            "conflictsWith": [],
+            "name": "json",
+            "repeatable": false,
+            "required": false,
+            "sensitive": false,
+            "summary": "Emit the command catalog.",
+            "type": "boolean",
+          },
+        ],
+        "helpRank": 15,
+        "jsonOutput": {
+          "mode": "single",
+        },
+        "local": true,
+        "name": "commands",
+        "section": "account",
+        "summary": "Print the machine-readable command catalog, or a compact human list.",
+      },
+      {
+        "arguments": [],
+        "flags": [
+          {
+            "aliases": [],
+            "conflictsWith": [],
+            "constraints": {
+              "choices": [
+                "claude",
+                "chatgpt",
+                "embedded",
+              ],
+            },
+            "name": "host",
+            "repeatable": false,
+            "required": false,
+            "sensitive": false,
+            "summary": "Filter entries by compatible host.",
+            "type": "string",
+            "value": "<host>",
+          },
+          {
+            "aliases": [],
+            "conflictsWith": [],
+            "name": "json",
+            "repeatable": false,
+            "required": false,
+            "sensitive": false,
+            "summary": "Emit the compatibility registry as JSON.",
+            "type": "boolean",
+          },
+          {
+            "aliases": [],
+            "conflictsWith": [],
+            "name": "markdown",
+            "repeatable": false,
+            "required": false,
+            "sensitive": false,
+            "summary": "Emit the compatibility registry as Markdown.",
+            "type": "boolean",
+          },
+        ],
+        "helpRank": 13,
+        "jsonOutput": {
+          "mode": "single",
+        },
+        "local": true,
+        "name": "features",
+        "section": "account",
+        "summary": "Show the public Claude, ChatGPT, and embedded-host compatibility registry.",
+      },
+    ],
+    "exitCodes": {
+      "0": "success",
+      "1": "domain/runtime failure (the request ran but did not succeed)",
+      "2": "usage error, missing target, or headless missing-answer",
+      "3": "authentication/authorization failure (HTTP 401/403)",
+      "4": "service unreachable (network error)",
+      "5": "MCP/tool-call smoke failure",
+    },
+    "version": "<version>",
+  },
+  "ok": true,
+}
+`;

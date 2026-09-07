@@ -1,0 +1,21 @@
+profile: agency-managed
+
+org:
+  slug: acme-enterprise
+  template: enterprise
+
+identity:
+  admin:
+    provider: customer-sso
+
+audit:
+  store: postgres
+
+access:
+  mode: org-members
+
+controls:
+  preset: strict
+
+apps:
+  enabled: true

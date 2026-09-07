@@ -1,0 +1,222 @@
+{
+  "artifactSchemaVersion": "0.17.0",
+  "resolution": "resolved",
+  "source": {
+    "manifestName": "acme_support",
+    "manifestVersion": "1.0.0"
+  },
+  "server": {
+    "name": "acme_support",
+    "version": "1.0.0",
+    "title": "Acme Support"
+  },
+  "tools": [
+    {
+      "name": "track_order",
+      "description": "Look up an order and, if confirmed, fetch its tracking.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "order_id"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
+      "fulfilment": {
+        "kind": "flow",
+        "steps": [
+          {
+            "id": "lookup",
+            "kind": "operation",
+            "operationRef": {
+              "alias": "acme",
+              "connectorId": "acme_orders",
+              "connectorVersion": "1.2.0",
+              "operation": "get_order",
+              "signatureHash": "sha256v2:edc7ef220d338386e5d0016fe91e862a7252df13af2ce16e35f1f45121ada620",
+              "resolved": true
+            },
+            "args": {
+              "id": {
+                "kind": "path",
+                "root": "input",
+                "segments": [
+                  {
+                    "kind": "prop",
+                    "name": "order_id"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "confirm",
+            "kind": "map",
+            "if": {
+              "kind": "cond",
+              "op": "eq",
+              "left": {
+                "kind": "path",
+                "root": "steps",
+                "segments": [
+                  {
+                    "kind": "prop",
+                    "name": "lookup"
+                  },
+                  {
+                    "kind": "prop",
+                    "name": "status"
+                  }
+                ]
+              },
+              "right": {
+                "kind": "literal",
+                "value": "open"
+              }
+            },
+            "value": {
+              "proceed": {
+                "kind": "literal",
+                "value": true
+              }
+            }
+          },
+          {
+            "id": "track",
+            "kind": "operation",
+            "if": {
+              "kind": "truthy",
+              "operand": {
+                "kind": "path",
+                "root": "steps",
+                "segments": [
+                  {
+                    "kind": "prop",
+                    "name": "confirm"
+                  },
+                  {
+                    "kind": "prop",
+                    "name": "proceed"
+                  }
+                ]
+              }
+            },
+            "operationRef": {
+              "alias": "acme",
+              "connectorId": "acme_orders",
+              "connectorVersion": "1.2.0",
+              "operation": "get_tracking",
+              "signatureHash": "sha256v2:2cbcae3987a71d096e1f8e2da947a081bb20b96aa66a3451d49a03050691978b",
+              "resolved": true
+            },
+            "args": {
+              "order_id": {
+                "kind": "path",
+                "root": "steps",
+                "segments": [
+                  {
+                    "kind": "prop",
+                    "name": "lookup"
+                  },
+                  {
+                    "kind": "prop",
+                    "name": "id"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "id": "shaped",
+            "kind": "map",
+            "value": {
+              "id": {
+                "kind": "path",
+                "root": "steps",
+                "segments": [
+                  {
+                    "kind": "prop",
+                    "name": "lookup"
+                  },
+                  {
+                    "kind": "prop",
+                    "name": "id"
+                  }
+                ]
+              },
+              "url": {
+                "kind": "path",
+                "root": "steps",
+                "segments": [
+                  {
+                    "kind": "prop",
+                    "name": "track"
+                  },
+                  {
+                    "kind": "prop",
+                    "name": "url"
+                  }
+                ]
+              }
+            }
+          }
+        ],
+        "output": {
+          "url": {
+            "kind": "path",
+            "root": "steps",
+            "segments": [
+              {
+                "kind": "prop",
+                "name": "shaped"
+              },
+              {
+                "kind": "prop",
+                "name": "url"
+              }
+            ]
+          },
+          "label": {
+            "kind": "template",
+            "parts": [
+              {
+                "kind": "text",
+                "value": "order "
+              },
+              {
+                "kind": "path",
+                "root": "input",
+                "segments": [
+                  {
+                    "kind": "prop",
+                    "name": "order_id"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "capabilities": {
+    "tools": [
+      "track_order"
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32602,\"message\":\"MCP error -32602: invalid arguments for tool \\\"open_ticket\\\"\",\"data\":{\"reason\":\"invalid_tool_arguments\",\"validation\":[{\"path\":\"subject\",\"message\":\"missing required field \\\"subject\\\"\"}]}}}"
+}

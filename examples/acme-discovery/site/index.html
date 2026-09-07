@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Acme Getaways — small-group trips</title>
+    <style>
+      :root {
+        --ac-teal: #0ea5a4;
+        --ac-ink: #0b1b1b;
+        --ac-slate: #234a48;
+        --ac-line: #e6e8ec;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #f4f5f7;
+        color: #1a1d22;
+        line-height: 1.55;
+      }
+      header {
+        background: var(--ac-ink);
+        color: #fff;
+        border-bottom: 3px solid var(--ac-teal);
+        padding: 34px 24px 30px;
+      }
+      header .wrap,
+      main {
+        max-width: 900px;
+        margin: 0 auto;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 28px;
+        letter-spacing: -0.5px;
+      }
+      header h1 span {
+        color: var(--ac-teal);
+      }
+      header p {
+        margin: 6px 0 0;
+        font-size: 14px;
+        color: #9db3b1;
+      }
+      main {
+        padding: 32px 24px 96px;
+      }
+      .lede {
+        font-size: 16px;
+        color: var(--ac-slate);
+        margin: 0 0 28px;
+        max-width: 60ch;
+      }
+      .listings {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .listing {
+        background: #fff;
+        border: 1px solid var(--ac-line);
+        border-radius: 12px;
+        padding: 18px 20px;
+      }
+      .listing-name {
+        margin: 0;
+        font-size: 18px;
+        color: var(--ac-ink);
+      }
+      .listing-region {
+        margin: 2px 0 12px;
+        font-size: 12px;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        color: var(--ac-teal);
+        font-weight: 700;
+      }
+      .listing p {
+        margin: 0 0 12px;
+        font-size: 14px;
+        color: #4a545c;
+      }
+      .listing dl {
+        display: flex;
+        gap: 20px;
+        margin: 0;
+        font-size: 13px;
+        color: var(--ac-slate);
+      }
+      .listing dt {
+        font-size: 11px;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        color: #8a929c;
+      }
+      .listing dd {
+        margin: 0;
+        font-weight: 600;
+      }
+      footer {
+        border-top: 1px solid var(--ac-line);
+        margin-top: 40px;
+        padding-top: 20px;
+        font-size: 13px;
+        color: #8a929c;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap">
+        <h1><span>Acme</span> Getaways</h1>
+        <p>Small-group trips, planned in a conversation.</p>
+      </div>
+    </header>
+
+    <main>
+      <p class="lede">
+        Four places we know well. Ask the assistant in the corner to narrow them down, or let the
+        browser agent you already run do it for you — it can call the same tools, under the same
+        rules.
+      </p>
+
+      <ul class="listings">
+        <li class="listing">
+          <h3 class="listing-name">Coral Bay</h3>
+          <p class="listing-region">Adriatic coast</p>
+          <p>Calm swimming coves and a walkable old town — easy for a relaxed first trip.</p>
+          <dl>
+            <div><dt>From</dt><dd>$890</dd></div>
+            <div><dt>Best months</dt><dd>May–Sep</dd></div>
+          </dl>
+        </li>
+        <li class="listing">
+          <h3 class="listing-name">Monte Alto</h3>
+          <p class="listing-region">Northern Alps</p>
+          <p>Ski-in village with beginner slopes and long groomed runs.</p>
+          <dl>
+            <div><dt>From</dt><dd>$1,120</dd></div>
+            <div><dt>Best months</dt><dd>Dec–Mar</dd></div>
+          </dl>
+        </li>
+        <li class="listing">
+          <h3 class="listing-name">Old Quarter</h3>
+          <p class="listing-region">Central Europe</p>
+          <p>Dense museum district and food halls, all reachable on foot.</p>
+          <dl>
+            <div><dt>From</dt><dd>$640</dd></div>
+            <div><dt>Best months</dt><dd>Apr–Oct</dd></div>
+          </dl>
+        </li>
+        <li class="listing">
+          <h3 class="listing-name">Harbor City</h3>
+          <p class="listing-region">Pacific rim</p>
+          <p>Waterfront nightlife and day-trip islands a short ferry away.</p>
+          <dl>
+            <div><dt>From</dt><dd>$980</dd></div>
+            <div><dt>Best months</dt><dd>Sep–Nov</dd></div>
+          </dl>
+        </li>
+      </ul>
+
+      <footer>
+        A fictional brand, for demonstration. Every destination, price, and link is invented.
+      </footer>
+    </main>
+
+    <!--
+      The whole integration: one line, the same one a customer pastes.
+
+      The embed mounts <noodle-assistant>, mints a session against the public surface declared in
+      `src/server.ts`, and — because that surface sets `webmcp: { enabled: true }` — registers the
+      session's projected tools with `document.modelContext` where the browser offers it. A browser
+      agent then sees `discover_getaways`, `create_handoff`, `capture_lead` and the rest, and calling
+      one carries exactly this session's authority: the same allowlist, the same confirmation cards,
+      the same budgets and audit trail as the panel. Browsers without the API ignore all of it.
+
+      The id below is fictional. Run `noodle deploy` on this example to mint your own, paste it here,
+      and add this page's origin to the `publicWebsite` origins list.
+    -->
+    <script src="https://cloud.noodleseed.dev/v1/assistant/embed.js" data-embed-id="pub_examplepublicembedid00"></script>
+  </body>
+</html>

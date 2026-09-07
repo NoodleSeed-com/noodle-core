@@ -1,0 +1,14 @@
+profile: noodle-cloud-managed
+
+identity:
+  admin:
+    provider: noodle-cloud
+
+access:
+  mode: managed-platform
+
+controls:
+  preset: managed
+
+apps:
+  enabled: true

@@ -1,0 +1,9 @@
+
+# Append-only log: auto-keep both sides on merge (every PR prepends an entry).
+docs/IMPLEMENTATION-LOG.md merge=union
+
+# Drift watch: append-only entries; parallel agents prepend without conflicts.
+docs/DRIFT-WATCH.md merge=union
+
+# Historical NUL byte removed in this slice; keep current and future reviews textual.
+apps/console/app/lib/deployment-history.ts text diff

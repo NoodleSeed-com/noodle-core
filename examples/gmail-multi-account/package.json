@@ -1,0 +1,16 @@
+{
+  "name": "gmail-multi-account",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "validate": "noodle validate",
+    "dev": "noodle dev",
+    "deploy": "noodle deploy"
+  },
+  "devDependencies": {
+    "@noodleseed/one": "latest",
+    "vitest": "latest"
+  }
+}

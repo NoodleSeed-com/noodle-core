@@ -1,0 +1,20 @@
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+tools:
+  - name: t
+    description: demo
+    inputSchema:
+      type: object
+    fulfilment:
+      steps:
+        - id: first
+          use: acme.get_order
+          args:
+            id: "${steps.second.x}"
+        - id: second
+          use: acme.get_order
+          args:
+            id: "${input.x}"

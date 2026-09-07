@@ -1,0 +1,171 @@
+{
+  "_generated": "scripts/gen-quality-gates.mjs from quality-gates.config.json; do not edit",
+  "escapeHatches": {
+    "budgets": {
+      "explicitAny": 3,
+      "tsExpectError": 2,
+      "tsIgnore": 0,
+      "biomeIgnore": 6,
+      "eslintDisable": 0
+    }
+  },
+  "packageScopes": {
+    "defaultMaxSourceLines": 8000,
+    "warningRatio": 0.9,
+    "envelopes": [
+      {
+        "path": "packages/capabilities",
+        "role": "foundation",
+        "maxSourceLines": 400,
+        "reason": "Canonical dependency-free capability vocabulary; no policy implementation."
+      },
+      {
+        "path": "packages/external-credential-provider",
+        "role": "foundation",
+        "maxSourceLines": 500,
+        "reason": "Provider-generic credential assertion and conformance boundary; no hosted lifecycle."
+      },
+      {
+        "path": "packages/module",
+        "role": "foundation",
+        "maxSourceLines": 1800,
+        "reason": "Dependency-free module contracts and small shared helpers; no composition or concrete stores."
+      },
+      {
+        "path": "packages/uri-template",
+        "role": "foundation",
+        "maxSourceLines": 250,
+        "reason": "Small shared URI-template parser with a deliberately bounded grammar."
+      },
+      {
+        "path": "packages/wire-contracts",
+        "role": "foundation",
+        "maxSourceLines": 5500,
+        "reason": "Dependency-light shared wire schemas; routes and business authority stay outside."
+      },
+      {
+        "path": "packages/asset-storage",
+        "role": "foundation",
+        "maxSourceLines": 2600,
+        "reason": "Small public filesystem storage boundary; keep the security-sensitive implementation focused."
+      },
+      {
+        "path": "packages/assistant",
+        "role": "library",
+        "maxSourceLines": 11000,
+        "reason": "One published customer SDK, including its backend-only /server entrypoint; avoid a second release boundary for session handlers."
+      },
+      {
+        "path": "packages/assistant-gateway",
+        "role": "library",
+        "maxSourceLines": 10000,
+        "reason": "One session lifecycle and turn-dispatch authority; keep continuity inside its existing release boundary."
+      },
+      {
+        "path": "packages/cli",
+        "role": "composition",
+        "maxSourceLines": 57000,
+        "reason": "One published developer/operator CLI composition; bounded command and plugin modules, not satellite packages.",
+        "modules": [
+          {
+            "path": "src/commands",
+            "maxSourceLines": 30500,
+            "reason": "Command implementations project existing public authoring and operator APIs."
+          },
+          {
+            "path": "src/plugin-mode",
+            "maxSourceLines": 3600,
+            "reason": "Plugin authentication, isolation, and compatibility boundary."
+          }
+        ]
+      },
+      {
+        "path": "packages/service",
+        "role": "composition",
+        "maxSourceLines": 47000,
+        "reason": "Portable public runtime and control-plane composition; commercial imports remain forbidden.",
+        "modules": [
+          {
+            "path": "src/routes",
+            "maxSourceLines": 12500,
+            "reason": "Public HTTP transport and portable operator API routes."
+          },
+          {
+            "path": "src/oauth",
+            "maxSourceLines": 10500,
+            "reason": "Portable end-user OAuth authority."
+          },
+          {
+            "path": "src/store",
+            "maxSourceLines": 6400,
+            "reason": "Portable runtime and control-plane persistence."
+          },
+          {
+            "path": "src/developer-mcp",
+            "maxSourceLines": 1300,
+            "reason": "Developer MCP projection of existing service operations."
+          }
+        ]
+      },
+      {
+        "path": "packages/agent-kit",
+        "role": "library",
+        "maxSourceLines": 9500,
+        "reason": "Pure agent-context and skill generation; generated bulk is loaded on demand, not into default instructions."
+      },
+      {
+        "path": "packages/compiler",
+        "role": "library",
+        "maxSourceLines": 9000,
+        "reason": "One compiler pipeline with cohesive validation and emission phases."
+      },
+      {
+        "path": "packages/authoring",
+        "role": "library",
+        "maxSourceLines": 9000,
+        "reason": "One public TypeScript authoring SDK; coherent public exports remain together."
+      }
+    ],
+    "commercialVendorDependencies": ["stripe", "@workos-inc/*", "@google-cloud/*"]
+  },
+  "packageBoundaries": {
+    "allowServiceDevDependencies": [
+      {
+        "path": "packages/asset-storage",
+        "reason": "the public asset package owns the real filesystem module/service restart integration while keeping service out of shipped runtime dependencies"
+      }
+    ],
+    "allowCrossPackageSourceImports": [
+      {
+        "from": "packages/authoring/test/**",
+        "to": "packages/compiler/src/**",
+        "reason": "authoring package tests compile through compiler internals until public test helpers exist"
+      },
+      {
+        "from": "packages/authoring/test/**",
+        "to": "packages/connector-defs/src/**",
+        "reason": "authoring package tests compile connector definitions until public test helpers exist"
+      },
+      {
+        "from": "packages/authoring/test/**",
+        "to": "packages/runtime/src/**",
+        "reason": "authoring e2e tests execute through runtime internals until public test helpers exist"
+      }
+    ]
+  },
+  "carveOutSeams": [
+    {
+      "name": "commercial-clusters",
+      "package": "packages/service",
+      "clusters": [
+        "packages/service/src/billing/**",
+        "packages/service/src/platform*",
+        "packages/service/src/github/**",
+        "packages/service/src/asset-store/**",
+        "packages/service/src/policy*"
+      ],
+      "maxEdges": 0,
+      "reason": "Commercial billing, hosted identity, deployment automation and asset adapters stay outside the public engine; zero permitted imports prevents regrowth through the retired clusters."
+    }
+  ]
+}

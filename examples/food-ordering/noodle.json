@@ -1,0 +1,5 @@
+{
+  "entrypoint": "src/server.ts",
+  "name": "food-ordering",
+  "template": "widget"
+}

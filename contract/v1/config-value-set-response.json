@@ -1,0 +1,12 @@
+{
+  "ok": true,
+  "value": {
+    "kind": "variable",
+    "scope": { "level": "env", "org": "acme", "app": "support", "env": "prod" },
+    "name": "REGION",
+    "updatedAt": "2026-07-13T12:00:00.000Z",
+    "updatedBySubject": "google-oauth2|123",
+    "updatedByEmail": "dev@acme.example",
+    "value": "us-central1"
+  }
+}

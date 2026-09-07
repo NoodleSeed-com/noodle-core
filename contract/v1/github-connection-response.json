@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "data": {
+    "githubRepositoryId": 934857201,
+    "installationId": 62881034,
+    "ownerLogin": "acme-corp",
+    "repoName": "acme-corp/widgets",
+    "defaultBranch": "main",
+    "repoRoot": "apps/widgets",
+    "orgSlug": "acme",
+    "appSlug": "widgets",
+    "enabled": true,
+    "createdBySubject": "google-oauth2|10938471029384710",
+    "createdAt": "2026-07-01T12:00:00.000Z",
+    "updatedAt": "2026-07-01T12:00:00.000Z"
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "connectors": [
+    {
+      "id": "status_api",
+      "version": "1.0.0",
+      "kind": "custom",
+      "http": {
+        "baseUrl": "https://status.acme.example",
+        "allowedOrigins": [
+          "https://status.acme.example"
+        ],
+        "auth": {
+          "kind": "bearer",
+          "secret": "STATUS_API_TOKEN"
+        }
+      },
+      "operations": {
+        "ping": {
+          "type": "read",
+          "method": "GET",
+          "path": "/ping",
+          "input": {
+            "type": "object",
+            "additionalProperties": false
+          },
+          "output": {
+            "type": "object",
+            "properties": {
+              "ok": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "response": {
+            "ok": true
+          }
+        }
+      }
+    }
+  ]
+}

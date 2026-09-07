@@ -1,0 +1,7 @@
+packages:
+  - "apps/self-host"
+  - "packages/*"
+allowBuilds:
+  esbuild: true
+  protobufjs: true
+  sharp: true

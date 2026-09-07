@@ -1,0 +1,19 @@
+{
+  "name": "sharepoint-lists",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "validate": "noodle validate",
+    "auth:doctor": "noodle auth doctor src/server.ts",
+    "dev": "noodle dev",
+    "deploy": "noodle deploy --access customers"
+  },
+  "devDependencies": {
+    "@noodleseed/one": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "vitest": "latest"
+  }
+}

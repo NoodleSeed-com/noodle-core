@@ -1,0 +1,5 @@
+{
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"result\":{\"description\":\"Triage a ticket.\",\"messages\":[{\"role\":\"user\",\"content\":{\"type\":\"text\",\"text\":\"Triage ticket T-7\"}}]},\"jsonrpc\":\"2.0\",\"id\":1}"
+}

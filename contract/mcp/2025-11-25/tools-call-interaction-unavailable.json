@@ -1,0 +1,5 @@
+{
+  "status": 200,
+  "contentType": "application/json",
+  "body": "{\"result\":{\"_meta\":{\"noodle\":{\"interaction\":{\"tool\":\"choose_team\",\"responses\":{}}}},\"content\":[{\"type\":\"text\",\"text\":\"This action is waiting for a few details. Complete the form in this app, or gather the requested fields and retry this tool with the structured continuation provided.\"}],\"structuredContent\":{\"code\":\"interaction_unavailable\",\"interaction\":\"input\",\"executed\":false,\"recoverable\":true,\"request\":{\"id\":\"team\",\"message\":\"Which team?\",\"requestedSchema\":{\"type\":\"object\",\"properties\":{\"team\":{\"type\":\"string\",\"enum\":[\"support\",\"platform\"]}},\"required\":[\"team\"]}},\"retry\":{\"tool\":\"choose_team\",\"argument\":\"__noodleInteraction.responses\"}},\"isError\":true},\"jsonrpc\":\"2.0\",\"id\":1}"
+}

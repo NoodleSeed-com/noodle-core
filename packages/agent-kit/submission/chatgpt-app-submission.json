@@ -1,0 +1,200 @@
+{
+  "$schema": "https://developers.openai.com/apps-sdk/schemas/chatgpt-app-submission.v1.json",
+  "schema_version": 1,
+  "app_info": {
+    "display_name": "Noodle Seed",
+    "subtitle": "Build and operate MCP apps",
+    "description": "The developer's coding agent writes the application source while Noodle guides, validates, deploys, inspects, diagnoses, and rolls back apps on Noodle Cloud. Use it to inspect organizations and environments the signed-in user can currently access, investigate bounded operational evidence, and reactivate an eligible deployment when the user explicitly requests a rollback.",
+    "category": "DEVELOPER_TOOLS"
+  },
+  "tools": {
+    "get_context": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only retrieves current organizations, roles, and effective capabilities for the signed-in user.",
+        "open_world_justification": "Reads authenticated Noodle Cloud state but cannot publish content or change public internet state.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform another irreversible action."
+      }
+    },
+    "list_apps": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only lists apps in the explicit organization after checking the user’s current membership.",
+        "open_world_justification": "Reads authenticated Noodle Cloud state but cannot publish content or change public internet state.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform another irreversible action."
+      }
+    },
+    "inspect_app": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only retrieves bounded details for one selected Noodle Cloud app and environment.",
+        "open_world_justification": "Reads authenticated Noodle Cloud state but cannot publish content or change public internet state.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform another irreversible action."
+      }
+    },
+    "inspect_deployment": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only retrieves bounded details for one deployment in an explicit currently accessible organization.",
+        "open_world_justification": "Reads authenticated Noodle Cloud state but cannot publish content or change public internet state.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform another irreversible action."
+      }
+    },
+    "get_logs": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only retrieves redacted and bounded application log events for one selected app environment.",
+        "open_world_justification": "Reads authenticated Noodle Cloud state but cannot publish content or change public internet state.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform another irreversible action."
+      }
+    },
+    "get_metrics": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only computes aggregates from a bounded request-event window without changing application state.",
+        "open_world_justification": "Reads authenticated Noodle Cloud state but cannot publish content or change public internet state.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform another irreversible action."
+      }
+    },
+    "list_events": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only lists redacted and bounded MCP request events for one selected app environment.",
+        "open_world_justification": "Reads authenticated Noodle Cloud state but cannot publish content or change public internet state.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform another irreversible action."
+      }
+    },
+    "get_session": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only retrieves a bounded chronological request-event sequence for one selected session.",
+        "open_world_justification": "Reads authenticated Noodle Cloud state but cannot publish content or change public internet state.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform another irreversible action."
+      }
+    },
+    "diagnose_app": {
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false
+      },
+      "justifications": {
+        "read_only_justification": "Only applies deterministic diagnostic rules to bounded Noodle Cloud evidence without changing the app.",
+        "open_world_justification": "Reads authenticated Noodle Cloud state but cannot publish content or change public internet state.",
+        "destructive_justification": "Does not delete, overwrite, revoke access, or perform another irreversible action."
+      }
+    },
+    "rollback_deployment": {
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": true
+      },
+      "justifications": {
+        "read_only_justification": "Reactivates the selected eligible deployment and therefore changes the active private app environment.",
+        "open_world_justification": "Changes only the selected private Noodle Cloud app environment and does not publish to third-party systems.",
+        "destructive_justification": "Replaces the currently active deployment with an older eligible deployment after an explicit rollback request."
+      }
+    }
+  },
+  "test_cases": [
+    {
+      "description": "Inspect an app in the connection grants.",
+      "user_prompt": "Inspect the payments app in the selected production environment and summarize its current state.",
+      "file_attachment_urls": null,
+      "tools_triggered": "inspect_app",
+      "expected_output": "Returns the selected app and environment state with bounded deployment information and no secret values.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Inspect a deployment by exact identifier.",
+      "user_prompt": "Inspect deployment dep_123 for the selected app and tell me whether it is active.",
+      "file_attachment_urls": null,
+      "tools_triggered": "inspect_deployment",
+      "expected_output": "Returns the matching deployment state or a clear scoped not-found result.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Diagnose an app from bounded operational evidence.",
+      "user_prompt": "Diagnose recent failures in the selected staging environment for my support app.",
+      "file_attachment_urls": null,
+      "tools_triggered": "diagnose_app",
+      "expected_output": "Returns deterministic findings grounded in bounded redacted evidence with practical next actions.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Aggregate recent request metrics.",
+      "user_prompt": "Show request volume and failures for the selected app environment during the last hour.",
+      "file_attachment_urls": null,
+      "tools_triggered": "get_metrics",
+      "expected_output": "Returns bounded request aggregates for the requested window without exposing raw credentials or tokens.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Reactivate an explicitly selected eligible deployment.",
+      "user_prompt": "Roll back the selected staging app to deployment dep_122.",
+      "file_attachment_urls": null,
+      "tools_triggered": "rollback_deployment",
+      "expected_output": "Reactivates only the eligible deployment in the selected environment and reports the resulting active deployment.",
+      "expected_output_url": null
+    }
+  ],
+  "negative_test_cases": [
+    {
+      "description": "Do not trigger for unrelated calendar requests.",
+      "user_prompt": "What meetings do I have tomorrow?",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "Noodle Seed should not be invoked because it does not manage calendars.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not trigger for infrastructure outside Noodle Cloud.",
+      "user_prompt": "Deploy this static website to my Vercel account.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "Noodle Seed should not be invoked because this is not a Noodle Cloud MCP app workflow.",
+      "expected_output_url": null
+    },
+    {
+      "description": "Do not reveal credentials or secret values.",
+      "user_prompt": "Show me the OAuth token used by my Noodle connection.",
+      "file_attachment_urls": null,
+      "tools_triggered": null,
+      "expected_output": "Noodle Seed should not expose connection credentials and should explain that tokens remain private.",
+      "expected_output_url": null
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "ok": true,
+  "data": {
+    "billingAccountId": "ba_00000000-0000-0000-0000-000000000001",
+    "mode": "sponsored_beta",
+    "defaultTurnsPerDay": 100,
+    "bonusTurnsPerDay": 500,
+    "totalTurnsPerDay": 600,
+    "spend": {
+      "state": "normal",
+      "allowanceUnits": 11400,
+      "usedUnitsToday": 190,
+      "turnsRemaining": 590
+    },
+    "resetAt": "2026-09-01T00:00:00.000Z",
+    "grants": [
+      {
+        "id": "masg_0000000000000001",
+        "billingAccountId": "ba_00000000-0000-0000-0000-000000000001",
+        "additionalTurnsPerDay": 500,
+        "startsAt": "2026-08-31T00:00:00.000Z",
+        "expiresAt": "2026-09-30T00:00:00.000Z",
+        "reason": "Design partner sponsored beta",
+        "status": "active",
+        "createdAt": "2026-08-31T00:00:00.000Z"
+      }
+    ],
+    "platform": {
+      "globalTurnsPerDay": 10000,
+      "spend": {
+        "state": "normal",
+        "allowanceUnits": 190000,
+        "usedUnitsToday": 1900,
+        "turnsRemaining": 9900
+      }
+    }
+  }
+}
