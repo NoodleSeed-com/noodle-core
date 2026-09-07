@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { backupSelfHostState } from './self-host-e2e-backup.mjs';
 import {
+  assertBootstrapOrganization,
   assertDeploymentPackage,
   assertExactComposeServices,
   assertLiveNonRootUid,
@@ -246,13 +247,27 @@ export async function runSelfHostE2E(input) {
     {
       name: 'bootstrap',
       run: async () => {
-        const result = await compose(
-          'bootstrap',
-          ['run', '--rm', '--no-deps', 'bootstrap'],
-          120_000,
-        );
-        parseCliJson(result.stdout);
-        return { detail: 'local organization exists' };
+        let createdAt;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          const created = await compose(
+            'bootstrap',
+            ['run', '--rm', '--no-deps', 'bootstrap'],
+            120_000,
+          );
+          const listed = await cli('bootstrap', ['orgs', 'list', '--json'], 120_000);
+          const inspected = await cli(
+            'bootstrap',
+            ['orgs', 'inspect', SELF_HOST_ORG_SLUG, '--json'],
+            120_000,
+          );
+          createdAt = assertBootstrapOrganization(
+            created.stdout,
+            listed.stdout,
+            inspected.stdout,
+            createdAt,
+          );
+        }
+        return { detail: 'two bootstraps preserved one local organization' };
       },
     },
     {

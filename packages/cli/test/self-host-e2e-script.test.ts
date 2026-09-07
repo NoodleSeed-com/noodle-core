@@ -25,6 +25,16 @@ import {
 } from '../../../scripts/lib/self-host-e2e.mjs';
 
 describe('projected self-host acceptance harness', () => {
+  const org = '{"slug":"noodle-local","displayName":"Noodle Local","createdAt":"fixed"}';
+  const changedOrg = '{"slug":"noodle-local","displayName":"Noodle Local","createdAt":"changed"}';
+  const bootstrapResponses = [
+    `{"ok":true,"data":{"service":"http://noodle:8787","org":${org}}}`,
+    `{"ok":true,"data":{"service":"http://noodle:8787","orgs":[${org}]}}`,
+    `{"ok":true,"data":${org}}`,
+  ];
+  const missingIdentityOrg = '{"slug":"noodle-local","displayName":"Noodle Local"}';
+  const wrongSlugOrg = '{"slug":"other","displayName":"Noodle Local","createdAt":"fixed"}';
+  const changedResponses = bootstrapResponses.map((value) => value.replaceAll(org, changedOrg));
   it('accepts only one bounded lowercase Compose project name', () => {
     expect(assertSelfHostProjectName('noodle-e2e-a1b2c3d4')).toBe('noodle-e2e-a1b2c3d4');
 
@@ -635,7 +645,55 @@ describe('projected self-host acceptance harness', () => {
     ).toThrow();
   });
 
-  it('drives the complete public journey and removes only its exact Compose resources', async () => {
+  it.each([
+    ['malformed response', ['not-json']],
+    ['missing stable identity', [`{"ok":true,"data":{"org":${missingIdentityOrg}}}`]],
+    ['wrong slug', [`{"ok":true,"data":{"org":${wrongSlugOrg}}}`]],
+    ['changed stable identity', [...bootstrapResponses, ...changedResponses]],
+    [
+      'duplicated organization',
+      [...bootstrapResponses, bootstrapResponses[0], `{"ok":true,"data":{"orgs":[${org},${org}]}}`],
+    ],
+  ])('stops at bootstrap for a %s', async (_case, responses) => {
+    const root = mkdtempSync(join(tmpdir(), 'noodle-self-host-bootstrap-failure-'));
+    writeFileSync(join(root, 'package.json'), '{"name":"noodle-core"}\n');
+    mkdirSync(join(root, 'examples', 'hello', 'src'), { recursive: true });
+    writeFileSync(join(root, 'examples', 'hello', 'src', 'server.ts'), '`Hello, ${input.name}!`');
+    let response = 0;
+    const runner = {
+      run: vi.fn(async (input: { readonly stage: string; readonly args: readonly string[] }) => {
+        if (input.stage === 'init') {
+          mkdirSync(join(root, '.self-host'), { recursive: true });
+          writeFileSync(
+            join(root, '.self-host', '.env'),
+            'POSTGRES_PASSWORD=postgres-secret\nDATABASE_URL=database-url\nNOODLE_SECRET_MASTER_KEY=master-secret\nNOODLE_SELF_HOST_ADMIN_TOKEN=admin-secret\nNOODLE_ASSET_IDENTITY_SALT=asset-secret\n',
+          );
+          writeFileSync(join(root, 'noodle.service.yaml'), 'profile: open-core\n');
+        }
+        const stdout =
+          input.stage === 'rendered-config-audit' && input.args.at(-1) === '--services'
+            ? 'postgres\nnoodle\nbootstrap\ncli\n'
+            : input.stage === 'bootstrap'
+              ? (responses[response++] ?? '')
+              : '';
+        return { stdout, stderr: '' };
+      }),
+    };
+    try {
+      await expect(
+        runSelfHostE2E({
+          root,
+          projectName: 'noodle-e2e-a1b2c3d4',
+          runner,
+          fetch: async (url) =>
+            new Response('', { status: String(url).endsWith('/readyz') ? 200 : 401 }),
+        }),
+      ).rejects.toMatchObject({ stage: 'bootstrap' });
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+  it('drives the complete public journey with two bootstraps and exact cleanup', async () => {
     const root = mkdtempSync(join(tmpdir(), 'noodle-self-host-e2e-unit-'));
     const trustedNode = '/opt/noodle-oss-verify/node/bin/node';
     const trustedDocker = '/opt/noodle-oss-verify/bin/docker';
@@ -716,7 +774,7 @@ describe('projected self-host acceptance harness', () => {
             input.stage === 'rendered-config-audit' && input.args.at(-1) === '--services'
               ? 'postgres\nnoodle\nbootstrap\ncli\n'
               : input.stage === 'bootstrap'
-                ? '{"ok":true,"data":{"slug":"noodle-local"}}\n'
+                ? `${bootstrapResponses[(calls.filter((call) => call.stage === 'bootstrap').length - 1) % 3]}\n`
                 : input.stage === 'hello-v1-deploy'
                   ? `${JSON.stringify({
                       ok: true,
@@ -1010,14 +1068,20 @@ describe('projected self-host acceptance harness', () => {
         ),
       ).toBe(true);
       expect(
-        calls.some(
+        calls.filter(
           (call) =>
             call.stage === 'bootstrap' &&
             call.args.includes('run') &&
             call.args.includes('--no-deps') &&
             call.args.includes('bootstrap'),
         ),
-      ).toBe(true);
+      ).toHaveLength(2);
+      expect(
+        calls.filter((call) => call.stage === 'bootstrap' && call.args.includes('list')),
+      ).toHaveLength(2);
+      expect(
+        calls.filter((call) => call.stage === 'bootstrap' && call.args.includes('inspect')),
+      ).toHaveLength(2);
       expect(calls.some((call) => call.stage === 'hello-v2-redeploy')).toBe(true);
       expect(calls.some((call) => call.stage === 'rollback-v2')).toBe(true);
       expect(

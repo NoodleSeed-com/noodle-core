@@ -36,6 +36,37 @@ export function requireString(record, key, context) {
   return record[key];
 }
 
+function selfHostOrganization(value, context) {
+  const organization = {
+    slug: requireString(value, 'slug', context),
+    displayName: requireString(value, 'displayName', context),
+    createdAt: requireString(value, 'createdAt', context),
+  };
+  if (organization.slug !== 'noodle-local' || organization.displayName !== 'Noodle Local') {
+    throw new Error(`${context} did not return the exact local organization`);
+  }
+  return organization;
+}
+
+export function assertBootstrapOrganization(createdStdout, listedStdout, inspectedStdout, prior) {
+  const created = selfHostOrganization(parseCliJson(createdStdout)?.org, 'bootstrap response');
+  const listed = parseCliJson(listedStdout)?.orgs;
+  if (!Array.isArray(listed) || listed.length !== 1) {
+    throw new Error('bootstrap organization list did not contain exactly one organization');
+  }
+  const records = [created, selfHostOrganization(listed[0], 'bootstrap organization list')];
+  records.push(
+    selfHostOrganization(parseCliJson(inspectedStdout), 'bootstrap organization inspect'),
+  );
+  if (
+    records.some((record) => record.createdAt !== created.createdAt) ||
+    (prior !== undefined && prior !== created.createdAt)
+  ) {
+    throw new Error('bootstrap changed the local organization stable identity');
+  }
+  return created.createdAt;
+}
+
 export function deploymentResult(stdout, context, expected, seenDeploymentIds) {
   const value = parseCliJson(stdout);
   const result = {
