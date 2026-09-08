@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createStaticSigningKeyProvider, mintAccessToken } from '@noodle-borg/auth';
+import { GoogleWorkloadControlPlaneGate } from '@noodle-borg/control-plane/portable';
 import { describe, expect, it, vi } from 'vitest';
 import {
   createServiceHandler,
@@ -639,7 +640,9 @@ describe('Google control-plane auth and org membership', () => {
     },
   };
 
-  async function listenControlPlane(options: { signupMode?: 'public' } = {}): Promise<{
+  async function listenControlPlane(
+    options: { signupMode?: 'public'; workload?: boolean } = {},
+  ): Promise<{
     url: string;
     artifacts: InMemoryArtifactStore;
     registry: ServerRegistry;
@@ -668,12 +671,24 @@ describe('Google control-plane auth and org membership', () => {
       createServiceHandler(registry, {
         audit,
         controlPlaneStore: store,
-        deployGate: new GoogleControlPlaneGate({
-          audience: 'client-id',
-          admins: ['admin@noodleseed.com'],
-          verifier,
-          ...(options.signupMode === undefined ? {} : { signupMode: options.signupMode }),
-        }),
+        deployGate: options.workload
+          ? new GoogleWorkloadControlPlaneGate({
+              audience: 'client-id',
+              subjects: ['109876543210987654321'],
+              admins: [],
+              verifier: {
+                verify: async () => ({
+                  subject: '109876543210987654321',
+                  email: 'release@example.iam.gserviceaccount.com',
+                }),
+              },
+            })
+          : new GoogleControlPlaneGate({
+              audience: 'client-id',
+              admins: ['admin@noodleseed.com'],
+              verifier,
+              ...(options.signupMode === undefined ? {} : { signupMode: options.signupMode }),
+            }),
         ...(options.signupMode === undefined ? {} : { controlPlaneSignupMode: options.signupMode }),
       }),
     );
@@ -743,6 +758,26 @@ describe('Google control-plane auth and org membership', () => {
         });
         await response.text();
         expect(response.status, query).toBe(400);
+      }
+    } finally {
+      await srv.close();
+    }
+  });
+
+  it('keeps verified workload provenance internal in both whoami projections', async () => {
+    const srv = await listenControlPlane({ workload: true });
+    try {
+      for (const suffix of ['', '?scope=identity']) {
+        const response = await fetch(`${srv.url}/v1/whoami${suffix}`, {
+          headers: { authorization: 'Bearer workload' },
+        });
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(suffix ? body.data.identity : body.identity).toEqual({
+          subject: '109876543210987654321',
+          email: 'release@example.iam.gserviceaccount.com',
+          superAdmin: false,
+        });
       }
     } finally {
       await srv.close();

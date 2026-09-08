@@ -192,6 +192,7 @@ export class GoogleWorkloadControlPlaneGate implements DeployAuthGate {
       identity: {
         subject: identity.subject,
         email,
+        authenticationKind: 'google-workload',
         // Workload authority is bound only to the exact immutable Google subject. Email is profile data.
         superAdmin: this.#admins.has(identity.subject.toLowerCase()),
       },

@@ -33,6 +33,7 @@ describe('exact Google workload control-plane gate', () => {
         subject: '109876543210987654321',
         email: 'github-deployer@example.iam.gserviceaccount.com',
         superAdmin: true,
+        authenticationKind: 'google-workload',
       },
     });
     expect(verify).toHaveBeenCalledWith('google-id-token', 'control-plane-client');
@@ -53,7 +54,11 @@ describe('exact Google workload control-plane gate', () => {
 
     await expect(gate.authorize(bearer())).resolves.toMatchObject({
       ok: true,
-      identity: { subject: '109876543210987654321', superAdmin: false },
+      identity: {
+        subject: '109876543210987654321',
+        superAdmin: false,
+        authenticationKind: 'google-workload',
+      },
     });
   });
 
@@ -76,10 +81,9 @@ describe('exact Google workload control-plane gate', () => {
       }),
     ]);
 
-    await expect(gate.authorize(bearer())).resolves.toMatchObject({
-      ok: true,
-      identity: { subject: 'human-google-sub' },
-    });
+    const result = await gate.authorize(bearer());
+    expect(result).toMatchObject({ ok: true, identity: { subject: 'human-google-sub' } });
+    if (result.ok) expect(result.identity).not.toHaveProperty('authenticationKind');
   });
 
   it('definitively blocks an unlisted service account instead of falling through to human auth', async () => {
@@ -134,5 +138,24 @@ describe('exact Google workload control-plane gate', () => {
         canonicalIdentityConfigured: true,
       }),
     ).not.toThrow();
+  });
+});
+
+it('never produces workload provenance when verification rejects the pinned audience', async () => {
+  const gate = new GoogleWorkloadControlPlaneGate({
+    audience: 'expected-audience',
+    subjects: ['109876543210987654321'],
+    admins: [],
+    verifier: {
+      verify: async (_token, audience) => {
+        expect(audience).toBe('expected-audience');
+        throw new Error('wrong audience');
+      },
+    },
+  });
+  await expect(gate.authorize(bearer())).resolves.toEqual({
+    ok: false,
+    status: 401,
+    message: 'invalid bearer token',
   });
 });

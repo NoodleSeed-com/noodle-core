@@ -311,7 +311,20 @@ export async function handleWhoami(
   const orgs = identity.superAdmin
     ? await controlPlane.listOrgs()
     : await controlPlane.listOrgsForSubject(identity.subject);
-  return sendJson(res, 200, { ok: true, identity, orgs });
+  return sendJson(res, 200, {
+    ok: true,
+    identity: {
+      subject: identity.subject,
+      email: identity.email,
+      identityIssuer: identity.identityIssuer,
+      givenName: identity.givenName,
+      superAdmin: identity.superAdmin,
+      developerGrantId: identity.developerGrantId,
+      oauthClientId: identity.oauthClientId,
+      authTime: identity.authTime,
+    },
+    orgs,
+  });
 }
 
 export async function authorizeTenantControl(

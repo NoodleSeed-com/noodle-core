@@ -111,6 +111,8 @@ export interface SignupAllowlistRecord {
 
 /** Verified actor authorized to use the deployment and organization control plane. */
 export interface ControlPlaneIdentity {
+  /** Server-produced provenance from the exact Google workload verifier; never request data. */
+  readonly authenticationKind?: 'google-workload';
   readonly subject: string;
   readonly email: string;
   readonly identityIssuer?: string;

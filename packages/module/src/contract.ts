@@ -61,6 +61,8 @@ export interface ControlPlaneAuthorizer {
 }
 
 export interface ControlPlaneIdentity {
+  /** Server-produced provenance from the exact Google workload verifier; never request data. */
+  readonly authenticationKind?: 'google-workload';
   readonly subject: string;
   readonly email: string;
   readonly superAdmin: boolean;
