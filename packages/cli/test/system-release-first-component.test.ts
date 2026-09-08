@@ -2,7 +2,62 @@ import { describe, expect, it, vi } from 'vitest';
 import { createOptionalServiceState } from '../../../scripts/lib/system-release-component-state.mjs';
 import { promoteSystemRelease } from '../../../scripts/system-release-promote.mjs';
 import { validateExpectedState } from '../../../scripts/system-release-status.mjs';
-import { harness, manifest } from './system-release-harness.js';
+import { harness, manifest, names } from './system-release-harness.js';
+
+const optionalNames = ['portal', 'calendarAdapter'] as const;
+type OptionalComponent = (typeof optionalNames)[number];
+
+function firstComponentHarness(absent: OptionalComponent[], failAt: string) {
+  const h = harness({ failAt });
+  Object.assign(h.state.service, { businessSourceIdentityKeyRef: '' });
+  Object.assign(h.state.website, {
+    websiteBusinessApiUrl: '',
+    websiteDogfoodPublicId: '',
+    siteAssistantLeadTokenRef: 'site-assistant-lead-token:latest',
+  });
+  const prior = structuredClone(h.state);
+  const targets = { portal: 'noodleseed-portal', calendarAdapter: 'calendar-adapter' };
+  const inventory = new Set(
+    optionalNames.filter((name) => !absent.includes(name)).map((name) => targets[name]),
+  );
+  const removed: string[] = [];
+  const optional = createOptionalServiceState({
+    targetFor: (name: OptionalComponent) => targets[name],
+    list: (target: string) => (inventory.has(target) ? [{ metadata: { name: target } }] : []),
+    describe: (target: string) => {
+      const name = optionalNames.find((name) => targets[name] === target);
+      if (!name) throw new Error('unknown test target');
+      return structuredClone(h.state[name]);
+    },
+    remove: (target: string) => {
+      removed.push(target);
+      inventory.delete(target);
+    },
+  });
+  const adapter = {
+    ...h.adapter,
+    async captureState(phase: string) {
+      const observed = await h.adapter.captureState(phase);
+      return {
+        components: {
+          ...observed.components,
+          portal: optional.capture('portal', phase),
+          calendarAdapter: optional.capture('calendarAdapter', phase),
+        },
+      };
+    },
+    async deploy(...args: Parameters<typeof h.adapter.deploy>) {
+      const [name, image, stamps, phase] = args;
+      if (phase === 'promote') optional.prepareDeployment(name, image, stamps);
+      await h.adapter.deploy(...args);
+      if (name === 'portal' || name === 'calendarAdapter') inventory.add(targets[name]);
+    },
+    async removeNewService(name: string) {
+      optional.removeNewService(name);
+    },
+  };
+  return { h, prior, targets, inventory, removed, adapter };
+}
 
 describe('first deployment of stateless solution surfaces', () => {
   it.each([
@@ -161,5 +216,77 @@ describe('first deployment of stateless solution surfaces', () => {
     expect(
       h.deployments.some((entry) => entry.phase === 'rollback' && entry.name === 'portal'),
     ).toBe(false);
+  });
+
+  it.each([
+    { absent: ['portal'], failAt: 'smoke:service' },
+    { absent: ['calendarAdapter'], failAt: 'smoke:service' },
+    { absent: ['portal', 'calendarAdapter'], failAt: 'smoke:service' },
+    { absent: ['portal'], failAt: 'smoke:portal' },
+    { absent: ['calendarAdapter'], failAt: 'smoke:portal' },
+    { absent: ['portal', 'calendarAdapter'], failAt: 'smoke:portal' },
+  ] satisfies {
+    absent: OptionalComponent[];
+    failAt: string;
+  }[])('restores existing components with $absent absent when $failAt fails', async ({
+    absent,
+    failAt,
+  }) => {
+    const { h, prior, targets, inventory, removed, adapter } = firstComponentHarness(
+      absent,
+      failAt,
+    );
+    await expect(
+      promoteSystemRelease({ manifest: manifest(), publish: [] }, adapter),
+    ).rejects.toMatchObject({
+      cause: { message: `injected ${failAt}` },
+      rollbackFailures: [],
+    });
+    for (const name of names.filter((name) => !absent.includes(name as OptionalComponent))) {
+      expect(h.state[name]).toEqual(
+        name === 'service'
+          ? { ...prior.service, organizationAgreement: h.adapter.organizationAgreement }
+          : prior[name],
+      );
+    }
+    for (const name of absent) expect(inventory.has(targets[name])).toBe(false);
+    expect(removed).toEqual(failAt === 'smoke:portal' ? absent.map((name) => targets[name]) : []);
+    expect(
+      h.deployments.filter((entry) => entry.phase === 'rollback').map((entry) => entry.name),
+    ).toEqual(names.filter((name) => !absent.includes(name as OptionalComponent)));
+  });
+
+  it.each(
+    optionalNames,
+  )('preserves a concurrent %s replacement while restoring other components', async (replaced) => {
+    const { h, prior, targets, inventory, removed, adapter } = firstComponentHarness(
+      [...optionalNames],
+      'smoke:portal',
+    );
+    const capture = adapter.captureState;
+    const replacementImage = `registry/replacement@sha256:${'f'.repeat(64)}`;
+    adapter.captureState = async (phase) => {
+      if (phase === 'before-rollback')
+        Object.assign(h.state[replaced], {
+          image: replacementImage,
+          imageDigest: `sha256:${'f'.repeat(64)}`,
+        });
+      return capture(phase);
+    };
+    await expect(
+      promoteSystemRelease({ manifest: manifest(), publish: [] }, adapter),
+    ).rejects.toMatchObject({
+      rollbackFailures: [replaced, `convergence: ${replaced}: expected absence after rollback`],
+    });
+    expect(h.state[replaced].image).toBe(replacementImage);
+    expect([...inventory]).toEqual([targets[replaced]]);
+    expect(removed).toEqual([targets[replaced === 'portal' ? 'calendarAdapter' : 'portal']]);
+    for (const name of ['service', 'githubBuilder', 'website', 'docs', 'console']) {
+      expect(h.state[name]).toEqual(
+        name === 'service'
+          ? { ...prior.service, organizationAgreement: h.adapter.organizationAgreement }
+          : prior[name],
+      );
+    }
   });
 });

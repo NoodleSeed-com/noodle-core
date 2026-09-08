@@ -2,8 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   activateBillingCatalogRelease,
   prepareBillingCatalogRelease,
-  readBillingCatalogImageReader,
 } from '../../../scripts/lib/system-release-billing-catalog.mjs';
+import { createImageMetadataResolver } from '../../../scripts/lib/system-release-image-metadata.mjs';
 
 const digest = (c: string) => `sha256:${c.repeat(64)}`;
 const sha = 'a'.repeat(40);
@@ -54,19 +54,25 @@ function setup(
   });
   const execute = vi.fn((command: string, args: string[]) => {
     const call = args.join(' ');
-    if (command === 'docker')
-      return args[0] === 'pull'
-        ? ''
-        : JSON.stringify([
-            {
-              Config: {
-                Labels:
-                  args[2] === image('d') || (args[2] === image('c') && options.oldRollback)
-                    ? {}
-                    : { 'io.noodleseed.billing-catalog-reader': '2' },
-              },
-            },
-          ]);
+    if (command === 'docker') {
+      if (args.includes('--raw'))
+        return JSON.stringify({
+          schemaVersion: 2,
+          mediaType: 'application/vnd.oci.image.manifest.v1+json',
+          config: { digest: digest('a') },
+          layers: [],
+        });
+      return JSON.stringify({
+        os: 'linux',
+        architecture: 'amd64',
+        config: {
+          Labels:
+            args.at(-1) === image('d') || (args.at(-1) === image('c') && options.oldRollback)
+              ? null
+              : { 'io.noodleseed.billing-catalog-reader': '2' },
+        },
+      });
+    }
     if (call.startsWith('run revisions list'))
       return JSON.stringify([
         revision('b'),
@@ -103,7 +109,8 @@ function setup(
       return JSON.stringify(options.runningJob ? [{ status: { runningCount: 1 } }] : []);
     throw new Error(`unexpected ${command} ${call}`);
   });
-  return { execute };
+  const executeAsync = async (command: string, args: string[]) => execute(command, args);
+  return { execute, executeAsync, resolveImageMetadata: createImageMetadataResolver(executeAsync) };
 }
 describe('protected billing catalog release', () => {
   it('mints a fresh token at activation and does not expose it in the response', () => {
@@ -145,14 +152,18 @@ describe('protected billing catalog release', () => {
       }),
     ).toThrow(/^billing catalog activation request failed$/);
   });
-  it('leaves catalog unchanged during the first compatible reader release', () => {
-    const { execute } = setup({ oldRollback: true });
-    expect(prepareBillingCatalogRelease({ manifest, previous, config, execute })).toBeUndefined();
-    expect(execute.mock.calls.some(([, args]) => args.includes('delete'))).toBe(false);
+  it('leaves catalog unchanged during the first compatible reader release', async () => {
+    const fixture = setup({ oldRollback: true });
+    expect(
+      await prepareBillingCatalogRelease({ manifest, previous, config, ...fixture }),
+    ).toBeUndefined();
+    expect(fixture.execute.mock.calls.some(([, args]) => args.includes('delete'))).toBe(false);
   });
-  it('retires only idle incompatible revisions and proves absence before constructing evidence', () => {
-    const { execute } = setup();
-    expect(prepareBillingCatalogRelease({ manifest, previous, config, execute })).toMatchObject({
+  it('retires only idle incompatible revisions and proves absence before constructing evidence', async () => {
+    const fixture = setup();
+    expect(
+      await prepareBillingCatalogRelease({ manifest, previous, config, ...fixture }),
+    ).toMatchObject({
       schemaVersion: 1,
       retiredRevisions: ['service-d'],
       revisions: [{ name: 'service-b', gitSha: sha }],
@@ -164,14 +175,16 @@ describe('protected billing catalog release', () => {
     { tag: true },
     { remains: true },
     { runningJob: true },
-  ])('fails closed for incomplete drain %j', (options) => {
-    expect(() =>
+  ])('fails closed for incomplete drain %j', async (options) => {
+    await expect(
       prepareBillingCatalogRelease({ manifest, previous, config, ...setup(options) }),
-    ).toThrow();
+    ).rejects.toThrow();
   });
-  it('rejects mutable image names and never invents metadata', () => {
+  it('rejects mutable image names and never invents metadata', async () => {
     const execute = vi.fn();
-    expect(() => readBillingCatalogImageReader('service:latest', execute)).toThrow('immutable');
+    await expect(createImageMetadataResolver(execute)('service:latest')).rejects.toThrow(
+      'immutable',
+    );
     expect(execute).not.toHaveBeenCalled();
   });
   it('does not call the activation API for a readers-only release', () => {
@@ -182,4 +195,12 @@ describe('protected billing catalog release', () => {
     });
     expect(execute).not.toHaveBeenCalled();
   });
+});
+
+it('validates running jobs before retiring any historical revision', async () => {
+  const fixture = setup({ runningJob: true });
+  await expect(
+    prepareBillingCatalogRelease({ manifest, previous, config, ...fixture }),
+  ).rejects.toThrow('executions');
+  expect(fixture.execute.mock.calls.filter(([, args]) => args.includes('delete'))).toHaveLength(0);
 });
