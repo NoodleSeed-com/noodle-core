@@ -1,10 +1,27 @@
 import { describe, expect, it } from 'vitest';
+import type { SolutionDefinitionSnapshot } from '../src/business-information/contracts.js';
 import { InMemoryBusinessInformationStore } from '../src/business-information/in-memory-store.js';
+
+// Capacity semantics are profile-independent, so avoid managed profile resolution in this fixture.
+const definition: SolutionDefinitionSnapshot = {
+  reference: {
+    kind: 'private',
+    publisherOrg: 'acme',
+    app: 'capacity',
+    env: 'prod',
+    deploymentId: 'dep_capacity_v1',
+    version: '1.0.0',
+    digest: 'a'.repeat(64),
+  },
+  title: 'Capacity fixture',
+  description: 'Minimal generic definition for retained installation capacity tests.',
+  collections: [],
+};
 
 const input = (org: string, index: number) => ({
   scope: { org, app: `app-${index}`, env: 'prod', installationId: `install-${index}` },
-  profileKey: 'travel' as const,
-  managedCollections: ['travel_requests'],
+  definition,
+  managedCollections: [],
   actorSubject: 'owner',
 });
 describe('retained installation capacity', () => {
