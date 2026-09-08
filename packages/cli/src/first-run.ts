@@ -15,6 +15,7 @@
  * module. It is idempotent and resumable: already-done steps are detected and skipped.
  */
 import { basename, extname } from 'node:path';
+import { printBanner } from './banner.js';
 import {
   completeDeployResume,
   prepareCanonicalDeploy,
@@ -123,6 +124,7 @@ const out = (s: string): void => {
 
 /** The orientation header: teach the model + key hints. Interactive only. */
 async function orientation(): Promise<void> {
+  printBanner();
   out(
     `${paint(DIM, 'You author one ')}${paint(INK, 'server.ts')}${paint(DIM, '. Noodle compiles it and runs it for you:')}`,
   );

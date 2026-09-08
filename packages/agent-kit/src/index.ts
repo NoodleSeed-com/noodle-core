@@ -25,6 +25,7 @@ export * from './product-skill-ownership.js';
 export * from './product-skill-renderer.js';
 export * from './skill-registry.js';
 export { AGENT_KIT_VERSION } from './version.js';
+export { NOODLE_WORDMARK } from './welcome-wordmark.js';
 
 export const MANAGED_BEGIN = '<!-- BEGIN NOODLE AGENT CONTEXT -->';
 export const MANAGED_END = '<!-- END NOODLE AGENT CONTEXT -->';

@@ -1,5 +1,6 @@
 import { contentHash } from './index.js';
 import { PLUGIN_WINDOWS_SUPPORT } from './plugin-platform-support.js';
+import { NOODLE_WORDMARK } from './welcome-wordmark.js';
 
 /** The plugin identifier — matches the project-local skill used after bootstrap. */
 export const PLUGIN_NAME = 'noodle-seed';
@@ -15,6 +16,15 @@ function bootstrapRouterBody(): string {
     '# Noodle Seed bootstrap',
     '',
     'Noodle Seed turns one TypeScript file (`server.ts`) into a production MCP server or app: authored locally with the `noodle` CLI, validated and tested offline, and deployed to a governed hosted MCP endpoint reachable from supported AI clients and every MCP client. Use this skill whenever the user wants an MCP server or app, AI app or connector, or wants their product, API, or SaaS reachable by AI agents.',
+    '',
+    '## First-use welcome',
+    '',
+    'On first use of this plugin, show the following welcome to the user once per conversation, before project-local handoff or tool execution. Render the wordmark verbatim in a fenced text block in your conversational response, followed by the welcome sentence. Then continue the requested task immediately. Skip it if this conversation already contains the welcome, or the user requests machine-readable output or no branding. Never put the wordmark in command output or JSON, and never run an extra command just to display it. This is a first-use greeting, not evidence that installation, authentication, or setup succeeded.',
+    '',
+    '```text',
+    ...NOODLE_WORDMARK,
+    '```',
+    'Welcome to Noodle Seed!',
     '',
     '## Defer to the project-local skill',
     '',

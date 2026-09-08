@@ -9,6 +9,7 @@ import {
   runExportOpenAiPlugin as runOpenAi,
 } from '@noodle-borg/plugin-distribution/command';
 import { setupAgentsWithResolvedSkills } from '../agents.js';
+import { printBanner } from '../banner.js';
 import type { ConfigLocation } from '../config.js';
 import { type AccessMode, readDeployInput } from '../deploy.js';
 import { errorMessage, printRecovery } from '../diagnostics.js';
@@ -133,6 +134,7 @@ export async function runInit(
             ? launch !== undefined && launch !== 'none'
             : install),
     );
+    printBanner({ json });
     const result = await bootstrapProject(
       {
         ...(dir !== undefined ? { dir } : {}),
