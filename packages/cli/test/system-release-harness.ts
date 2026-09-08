@@ -222,6 +222,9 @@ export function harness(
     async prepareBillingCatalog() {
       return undefined;
     },
+    async preflightWorkloadIdentity() {
+      fail('preflight:workload-identity');
+    },
     async activateBillingCatalog() {},
     async assertBusinessInformationReaderFloor() {
       fail('compatibility:business-information');

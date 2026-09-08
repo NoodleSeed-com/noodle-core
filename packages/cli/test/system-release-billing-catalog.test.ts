@@ -106,6 +106,45 @@ function setup(
   return { execute };
 }
 describe('protected billing catalog release', () => {
+  it('mints a fresh token at activation and does not expose it in the response', () => {
+    const mintIdentityToken = vi.fn(() => 'fresh-billing-token');
+    const result = { ok: true, data: { version: 2, revision: digest('b') } };
+    const execute = vi.fn((_command: string, _args: string[]) => JSON.stringify(result));
+    expect(
+      activateBillingCatalogRelease({
+        proof: { checked: true },
+        config,
+        execute,
+        mintIdentityToken,
+      }),
+    ).toEqual(result.data);
+    expect(mintIdentityToken).toHaveBeenCalledOnce();
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute.mock.calls[0]?.[1]).toContain('Authorization: Bearer fresh-billing-token');
+  });
+  it('does not call the activation API if fresh token generation fails', () => {
+    const execute = vi.fn();
+    const mintIdentityToken = () => {
+      throw new Error('release workload identity token generation failed');
+    };
+    expect(() =>
+      activateBillingCatalogRelease({ proof: {}, config, execute, mintIdentityToken }),
+    ).toThrow('identity token generation failed');
+    expect(execute).not.toHaveBeenCalled();
+  });
+  it('does not leak a bearer token through a failed activation command', () => {
+    const execute = () => {
+      throw new Error('curl Authorization: Bearer private-token');
+    };
+    expect(() =>
+      activateBillingCatalogRelease({
+        proof: {},
+        config,
+        execute,
+        mintIdentityToken: () => 'private-token',
+      }),
+    ).toThrow(/^billing catalog activation request failed$/);
+  });
   it('leaves catalog unchanged during the first compatible reader release', () => {
     const { execute } = setup({ oldRollback: true });
     expect(prepareBillingCatalogRelease({ manifest, previous, config, execute })).toBeUndefined();

@@ -24,23 +24,48 @@ describe('System Release business-information reader floor', () => {
   });
 
   it('uses a workload identity token without returning it in the proof', () => {
-    const execute = vi.fn((command: string) =>
-      command === 'gcloud' ? 'secret-identity-token\n' : JSON.stringify(proof),
-    );
+    const execute = vi.fn((_command: string, _args: string[]) => JSON.stringify(proof));
     expect(
       readManagedReaderFloorProof({
         serviceUrl: 'https://cloud.example',
         workloadAudience: 'release-audience',
+        identityToken: 'secret-identity-token',
         execute,
       }),
     ).toEqual(proof);
-    expect(execute).toHaveBeenNthCalledWith(1, 'gcloud', [
-      'auth',
-      'print-identity-token',
-      '--audiences',
-      'release-audience',
-    ]);
-    expect(execute.mock.calls[1]?.[1]).toContain('Authorization: Bearer secret-identity-token');
+    expect(execute).toHaveBeenCalledOnce();
+    expect(execute.mock.calls[0]?.[1]).toContain('Authorization: Bearer secret-identity-token');
     expect(JSON.stringify(proof)).not.toContain('secret-identity-token');
+  });
+
+  it('does not send an unauthenticated request when token preflight supplies no token', () => {
+    const execute = vi.fn();
+    expect(() =>
+      readManagedReaderFloorProof({ workloadAudience: 'audience', identityToken: '', execute }),
+    ).toThrow(/identity token is empty/);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('never includes bearer tokens or response bodies in a failed request diagnostic', () => {
+    const execute = () => {
+      throw new Error('curl --header Authorization: Bearer sensitive-token private-body');
+    };
+    expect(() =>
+      readManagedReaderFloorProof({
+        workloadAudience: 'audience',
+        identityToken: 'sensitive-token',
+        execute,
+      }),
+    ).toThrow(/^business-information reader-floor request failed$/);
+  });
+
+  it('does not expose a malformed response body in parsing errors', () => {
+    expect(() =>
+      readManagedReaderFloorProof({
+        workloadAudience: 'audience',
+        identityToken: 'sensitive-token',
+        execute: () => 'sensitive-response-body',
+      }),
+    ).toThrow(/^business-information reader-floor response is invalid$/);
   });
 });

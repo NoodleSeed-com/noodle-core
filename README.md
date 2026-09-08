@@ -1,5 +1,7 @@
 # Noodle Core
 
+[![CI](https://github.com/NoodleSeed-com/noodle-core/actions/workflows/ci.yml/badge.svg?branch=main&event=push)](https://github.com/NoodleSeed-com/noodle-core/actions/workflows/ci.yml?query=branch%3Amain+event%3Apush)
+
 Noodle Core is the Apache-2.0 TypeScript authoring SDK, compiler, runtime, CLI, and self-host service behind
 Noodle Seed. This repository is a single-node, single-operator beta that you can run locally without a
 Noodle Seed account or license key.
