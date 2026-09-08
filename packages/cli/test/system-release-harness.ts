@@ -140,6 +140,7 @@ export function harness(
       throw new Error(`injected ${point}`);
   };
   const adapter = {
+    jobDeadlineMs: Date.now() + 30 * 60_000,
     websitePortalUrl: 'https://portal.example.test',
     organizationAgreement: agreementCatalog,
     billingEnforcementMode: 'free_v1',

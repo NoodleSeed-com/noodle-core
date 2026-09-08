@@ -22,6 +22,7 @@ import {
   renderReleaseMarketplace,
 } from '../../../scripts/render-plugin-marketplace.mjs';
 import {
+  assertNpmPackagePreflight,
   assessBaselineConvergence,
   classifyPlannedPackage,
   preflightReleaseBundlePackages,
@@ -723,20 +724,39 @@ describe('system release bundle npm preflight', () => {
     ).toThrow(/missing from npm.*publication plan/i);
   });
 
-  it('rejects a published candidate when npm latest points to a different version', () => {
+  it.each(['0.33.0', null])('allows an exact planned retry while latest is %s', (latest) => {
     const bundle = createBundle();
-
     expect(() =>
       preflightReleaseBundlePackages(
         bundle.root,
         npmStateFor(bundle, {
           '@noodleseed/one': {
             published: true,
-            latest: '0.33.0',
+            latest,
           },
         }),
       ),
-    ).toThrow(/npm latest is 0\.33\.0, expected 0\.34\.0/i);
+    ).not.toThrow();
+  });
+
+  it.each(['0.33.0', null, 'invalid'])('rejects unplanned package latest drift %s', (latest) => {
+    const expected = { version: '0.34.0', integrity: 'sha512-expected' };
+    expect(() =>
+      assertNpmPackagePreflight('@noodleseed/one', expected, undefined, {
+        ...expected,
+        latest,
+      }),
+    ).toThrow();
+  });
+
+  it('rejects invalid latest values even for an exact planned retry', () => {
+    const expected = { version: '0.34.0', integrity: 'sha512-expected' };
+    expect(() =>
+      assertNpmPackagePreflight('@noodleseed/one', expected, expected, {
+        ...expected,
+        latest: 'invalid',
+      }),
+    ).toThrow();
   });
 });
 

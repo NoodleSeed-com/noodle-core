@@ -203,18 +203,48 @@ describe('complete protected release command', () => {
     );
   });
 
-  it('waits for both the npm read index and latest tag while retaining exact bytes', () => {
+  it('submits all exact packages before waiting thirteen minutes for visibility and delayed latest', () => {
     const f = fixture({ fail: 'npm-delayed' });
     const result = f.run();
     expect(result.stderr).toBe('');
     expect(result.status).toBe(0);
+    const effects = f.effects();
+    const firstWait = effects.findIndex((event) => event.kind === 'clock-wait');
+    expect(firstWait).toBeGreaterThan(0);
     expect(
-      f
-        .effects()
-        .filter((event) => event.kind === 'stale-npm-read')
-        .map((event) => event.name),
-    ).toEqual(['versions', 'latest', 'latest', 'latest']);
-    expect(f.effects().filter((event) => event.kind === 'npm-publish')).toHaveLength(3);
+      effects.slice(0, firstWait).filter((event) => event.kind === 'npm-publish'),
+    ).toHaveLength(3);
+    for (const name of Object.keys(f.manifest.packages)) {
+      const staleFields = effects
+        .filter((event) => event.kind === 'stale-npm-read' && event.package === name)
+        .map((event) => event.name);
+      expect(staleFields).toContain('versions');
+      expect(staleFields).toContain('latest');
+    }
+    const elapsedMs = effects.findLast((event) => event.kind === 'clock-wait')?.elapsedMs ?? 0;
+    expect(elapsedMs).toBeGreaterThanOrEqual(13 * 60_000);
+    expect(elapsedMs).toBeLessThan(20 * 60_000);
+    expect(effects.filter((event) => event.kind === 'npm-publish')).toHaveLength(3);
+    expect(effects.filter((event) => event.kind === 'remove-service')).toEqual([]);
+    expect(f.state().catalog).toBe(1);
+  });
+
+  it('stops unavailable publications within one shared budget and keeps the converged hosted release', () => {
+    const f = fixture({ fail: 'npm-never-visible' });
+    const result = f.run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('did not converge within the shared publication deadline');
+    const effects = f.effects();
+    expect(effects.filter((event) => event.kind === 'npm-publish')).toHaveLength(3);
+    expect(effects.filter((event) => event.kind === 'remove-service')).toEqual([]);
+    expect(
+      effects.filter((event) => event.kind === 'deploy').every((event) => event.release === 'r42'),
+    ).toBe(true);
+    const elapsedMs = effects.findLast((event) => event.kind === 'clock-wait')?.elapsedMs ?? 0;
+    expect(elapsedMs).toBeGreaterThan(19 * 60_000);
+    expect(elapsedMs).toBeLessThanOrEqual(20 * 60_000);
+    expect(Object.keys(f.state().components)).toHaveLength(7);
+    expect(f.state().catalog).toBe(1);
   });
 
   it('rejects a changed immutable bundle on retry before further deployment or publication', () => {
