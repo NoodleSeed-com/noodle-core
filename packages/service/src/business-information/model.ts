@@ -89,15 +89,18 @@ export function businessGrantAllows(
   );
 }
 
-export function normalizeInstallationInput(input: {
-  scope: InstallationScope;
-  profileKey?: SolutionInstallation['profileKey'];
-  definition?: SolutionDefinitionSnapshot;
-  managedCollections: readonly string[];
-  retentionDays?: number;
-  actorSubject: string;
-  actorEmail?: string;
-}): {
+export function normalizeInstallationInput(
+  input: {
+    scope: InstallationScope;
+    profileKey?: SolutionInstallation['profileKey'];
+    definition?: SolutionDefinitionSnapshot;
+    managedCollections: readonly string[];
+    retentionDays?: number;
+    actorSubject: string;
+    actorEmail?: string;
+  },
+  resolveManaged: ManagedDefinitionResolver = builtInDefinition,
+): {
   scope: InstallationScope;
   profileKey: SolutionInstallation['profileKey'];
   profileVersion: number;
@@ -113,7 +116,7 @@ export function normalizeInstallationInput(input: {
   }
   const definition =
     input.definition ??
-    builtInDefinition(input.profileKey as Parameters<typeof builtInDefinition>[0]);
+    resolveManaged(input.profileKey as Parameters<ManagedDefinitionResolver>[0]);
   validateDefinition(definition);
   const managedCollections = [...new Set(input.managedCollections)].sort();
   for (const collectionKey of managedCollections) {

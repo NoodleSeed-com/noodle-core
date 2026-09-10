@@ -64,7 +64,7 @@ export class PostgresInstallationStore implements SolutionInstallationStore {
   async createInstallation(
     input: Parameters<SolutionInstallationStore['createInstallation']>[0],
   ): Promise<InstallationCreateResult> {
-    const normalized = normalizeInstallationInput(input);
+    const normalized = normalizeInstallationInput(input, this.#managedDefinition);
     const fingerprint = installationFingerprint(normalized);
     return inTransaction(this.#pool, async (client) => {
       const now = this.#now();

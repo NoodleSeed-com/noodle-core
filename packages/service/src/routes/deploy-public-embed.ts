@@ -18,6 +18,7 @@ export async function provisionPublicEmbed(
   options: ServiceOptions,
   tenant: TenantRef,
   deploymentId: string | undefined,
+  allowRevokedReplacement = true,
 ): Promise<string | undefined> {
   const embeds = options.publicEmbeds;
   if (embeds === undefined || deploymentId === undefined) return undefined;
@@ -27,7 +28,12 @@ export async function provisionPublicEmbed(
   if (surface === undefined) return undefined;
 
   try {
-    const record = await embeds.ensure({ ...tenant, surfaceMode: surface.mode, now: new Date() });
+    const record = await embeds.ensure({
+      ...tenant,
+      surfaceMode: surface.mode,
+      now: new Date(),
+      allowRevokedReplacement,
+    });
     return record.embedId;
   } catch {
     // The deployment is already live by the time this runs; a store failure must never turn it into a

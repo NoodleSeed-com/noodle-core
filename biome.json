@@ -66,6 +66,10 @@
           "security": { "noDangerouslySetInnerHtml": "off" }
         }
       }
+    },
+    {
+      "includes": ["apps/portal/**/*.css"],
+      "css": { "parser": { "tailwindDirectives": true } }
     }
   ]
 }

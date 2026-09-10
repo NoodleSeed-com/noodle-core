@@ -31,7 +31,8 @@ export class InMemoryOperationEvidenceStore implements OperationEvidenceStore {
     const scopeKey = operationEvidenceKey(scope, '');
     return summarizeOperationHistory(
       [...this.#records.values()].filter(
-        (record) => operationEvidenceKey(record.scope, '') === scopeKey,
+        (record) =>
+          record.parentId === undefined && operationEvidenceKey(record.scope, '') === scopeKey,
       ),
       input,
     );
@@ -72,6 +73,7 @@ export class InMemoryOperationEvidenceStore implements OperationEvidenceStore {
       [...this.#records.values()]
         .filter(
           (record) =>
+            record.parentId === undefined &&
             operationEvidenceKey(record.scope, '') === prefix &&
             (record.outcome === 'dispatching' ||
               (record.completedAt ?? record.startedAt) >= now - days * 86_400_000) &&

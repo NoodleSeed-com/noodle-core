@@ -162,6 +162,8 @@ export const COMPILE_ERROR_CODES: readonly string[] = [
   'connector_not_in_catalog',
   'unknown_operation',
   'connector_binding_required',
+  'ambiguous_nested_connector_binding',
+  'invalid_connector_call_graph',
   'unsupported_credential_profile',
   'credential_scope_mismatch',
   'credential_audience_mismatch',

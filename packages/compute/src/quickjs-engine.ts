@@ -142,6 +142,54 @@ class QuickJsComputeInstance implements ComputeInstance {
  */
 function envelopeBridge(host: ComputeHost): PoolHostBridge {
   return {
+    ...(host.execution === undefined ? {} : { execution: { id: host.execution.id } }),
+    ...(host.coordination === undefined
+      ? {}
+      : {
+          coordination: {
+            acquired: host.coordination.acquired,
+            ...(host.coordination.previous
+              ? {
+                  previous: {
+                    reference: host.coordination.previous.reference,
+                    operationDigest: host.coordination.previous.operationDigest,
+                  },
+                }
+              : {}),
+          },
+        }),
+    async control(name, argsJson) {
+      try {
+        const args: unknown = JSON.parse(argsJson);
+        if (name === 'resolveCoordination' && host.resolveCoordination) {
+          await host.resolveCoordination();
+        } else if (
+          name === 'reportOutcome' &&
+          host.reportOutcome &&
+          args !== null &&
+          typeof args === 'object' &&
+          !Array.isArray(args)
+        ) {
+          const evidence = args as Record<string, unknown>;
+          if (
+            !['completed', 'rejected', 'unknown'].includes(String(evidence.outcome)) ||
+            (evidence.reference !== undefined &&
+              (typeof evidence.reference !== 'string' || evidence.reference.length > 1024))
+          )
+            throw new Error('invalid execution evidence');
+          await host.reportOutcome({
+            outcome: evidence.outcome as 'completed' | 'rejected' | 'unknown',
+            ...(typeof evidence.reference === 'string' ? { reference: evidence.reference } : {}),
+          });
+        } else throw new Error('host control unavailable');
+        return JSON.stringify({ ok: true, output: null });
+      } catch {
+        return JSON.stringify({
+          ok: false,
+          error: { code: 'host_call_denied', message: 'host control unavailable or invalid' },
+        });
+      }
+    },
     async callOperation(name, argsJson) {
       const envelope = await (async () => {
         try {

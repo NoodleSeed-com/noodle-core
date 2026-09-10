@@ -199,7 +199,15 @@ export type SolutionInstallationIntakeRequest = z.infer<
   typeof SolutionInstallationIntakeRequestSchema
 >;
 
+export const SolutionInstallationActivateRequestSchema = z.strictObject({});
+export const SolutionInstallationActivationSchema = z.discriminatedUnion('state', [
+  z.strictObject({ state: z.literal('pending'), canRetry: z.boolean() }),
+  z.strictObject({ state: z.enum(['ready', 'unavailable']), canRetry: z.literal(false) }),
+]);
+export type SolutionInstallationActivation = z.infer<typeof SolutionInstallationActivationSchema>;
+
 const installationShape = {
+  activation: SolutionInstallationActivationSchema.optional(),
   id,
   organizationId: id,
   appSlug: slug,

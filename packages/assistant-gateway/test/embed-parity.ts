@@ -68,6 +68,32 @@ export function describeEmbedStore(makeStore: () => Promise<PublicEmbedStore>): 
     expect(await store.lookup(second.embedId)).toBeDefined();
   });
 
+  it('distinguishes absent allocation from revocation without replacing a revoked id during recovery', async () => {
+    const store = await makeStore();
+    const target = tenant();
+    const input = {
+      ...target,
+      surfaceMode: 'public' as const,
+      now,
+      allowRevokedReplacement: false,
+    };
+    expect(await store.list(target, { includeRevoked: true })).toEqual([]);
+    const first = await store.ensure(input);
+    await store.setBudget(first.embedId, { turnsPerDay: 0 }, now);
+    expect(await store.ensure(input)).toMatchObject({ embedId: first.embedId, turnsPerDay: 0 });
+    await store.revoke(first.embedId, now);
+    expect(await store.list(target)).toEqual([]);
+    expect(await store.list(target, { includeRevoked: true })).toEqual([
+      expect.objectContaining({ embedId: first.embedId, revokedAt: now }),
+    ]);
+    expect(await store.list(tenant(), { includeRevoked: true })).toEqual([]);
+    await expect(store.ensure(input)).rejects.toThrow();
+    expect(await store.lookup(first.embedId)).toBeUndefined();
+    expect(await store.list(target, { includeRevoked: true })).toHaveLength(1);
+    const replacement = await store.ensure({ ...target, surfaceMode: 'public', now });
+    expect((await store.ensure(input)).embedId).toBe(replacement.embedId);
+  });
+
   it('starts with no budget override, meaning the deployment defaults apply', async () => {
     const store = await makeStore();
     const record = await store.ensure({ ...tenant(), surfaceMode: 'public', now });

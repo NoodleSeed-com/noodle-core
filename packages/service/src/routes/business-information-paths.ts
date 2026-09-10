@@ -6,7 +6,9 @@ export interface SolutionInstallationRef {
   readonly collection?: string;
   readonly recordId?: string;
   readonly action?:
+    | 'activate'
     | 'connections'
+    | 'coordination'
     | 'settings'
     | 'notice'
     | 'channels'
@@ -63,7 +65,7 @@ export function parseSolutionInstallationPath(
         };
   }
   const application =
-    /^\/v1\/orgs\/([^/]+)\/solution-installations\/([^/]+)\/(settings|notice|channels|activity(?:\/(?:settings|export|preview))?)$/.exec(
+    /^\/v1\/orgs\/([^/]+)\/solution-installations\/([^/]+)\/(activate|settings|notice|channels|operations\/coordination(?:\/resolve)?|activity(?:\/(?:settings|export|preview))?)$/.exec(
       pathname,
     );
   if (application !== null) {
@@ -74,9 +76,11 @@ export function parseSolutionInstallationPath(
       : {
           org,
           installationId,
-          action: application[3]?.startsWith('activity')
-            ? 'activity'
-            : (application[3] as 'settings' | 'notice' | 'channels'),
+          action: application[3]?.startsWith('operations/')
+            ? 'coordination'
+            : application[3]?.startsWith('activity')
+              ? 'activity'
+              : (application[3] as 'activate' | 'settings' | 'notice' | 'channels'),
         };
   }
   let match = /^\/v1\/orgs\/([^/]+)\/solution-installations$/.exec(pathname);

@@ -142,10 +142,10 @@ describe('built-in managed request profiles', () => {
   it('keeps immutable historical schemas while the current release accepts additive fields', () => {
     const release1 = builtInDefinitionAtRelease('travel', 1);
     const release2 = builtInDefinition('travel');
-    expect(release2.reference).toMatchObject({ kind: 'managed', release: 3 });
+    expect(release2.reference).toMatchObject({ kind: 'managed', release: 4 });
     expect(release1.collections[0]).toMatchObject({ schemaVersion: 1 });
     expect(release2.collections[0]).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       management: { assignment: true, notes: true },
     });
     expect(release2.collections[0]).not.toHaveProperty('behavior');

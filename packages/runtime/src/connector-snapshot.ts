@@ -6,6 +6,7 @@ import {
 } from '@noodle-borg/compiler';
 import type { Connector, ConnectorRegistry } from './connector/types.js';
 import type { ExecuteToolDeps } from './execute.js';
+import type { OperationCoordinationDeclaration } from './operation-coordination.js';
 import type { ExecutionError } from './result.js';
 
 /** Capture connector identity and operation signatures once for one runtime API invocation. */
@@ -29,6 +30,7 @@ export function withConnectorSnapshot(deps: ExecuteToolDeps): ExecuteToolDeps {
       }
       const signatures = new Map<string, OperationSignature | undefined>();
       const executionBounds = new Map<string, number | undefined>();
+      const coordinations = new Map<string, OperationCoordinationDeclaration | undefined>();
       const snapshot: Connector = {
         id: connector.id,
         version: connector.version,
@@ -45,6 +47,16 @@ export function withConnectorSnapshot(deps: ExecuteToolDeps): ExecuteToolDeps {
           if (!executionBounds.has(operation))
             executionBounds.set(operation, connector.executionBoundMs?.(operation));
           return executionBounds.get(operation);
+        },
+        coordination(operation) {
+          if (!coordinations.has(operation)) {
+            const live = connector.coordination?.(operation);
+            coordinations.set(
+              operation,
+              live === undefined ? undefined : deepFreeze(structuredClone(live)),
+            );
+          }
+          return coordinations.get(operation);
         },
         invoke(call) {
           return connector.invoke(call);

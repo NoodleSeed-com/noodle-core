@@ -1,4 +1,5 @@
 import { sha256Canonical } from '@noodle-borg/app-package';
+import { publicSurfaceOf } from '@noodle-borg/assistant-gateway/portable';
 import type { ControlPlaneIdentity } from '@noodle-borg/control-plane/portable';
 import { ApplicationSettings, installationSettingsTarget } from './application-settings.js';
 import type {
@@ -14,9 +15,57 @@ import {
   executeAuthorizedDeployment,
 } from './deployment-execution.js';
 import type { ServerRegistry } from './registry.js';
+import { provisionPublicEmbed } from './routes/deploy-public-embed.js';
+
+type ActivationDependencies = AuthorizedDeploymentDependencies & {
+  readonly businessInformationStore?: BusinessInformationStore | undefined;
+};
+export type InstallationActivationState = 'pending' | 'ready' | 'unavailable';
+export type InstallationActivationReader = (
+  installation: SolutionInstallation,
+) => Promise<InstallationActivationState>;
+
+/** Deployment/binding readiness only; channel model, origin and connection checks remain separate. */
+export async function readSolutionInstallationActivation(
+  installation: SolutionInstallation,
+  dependencies: ActivationDependencies,
+): Promise<InstallationActivationState> {
+  try {
+    const { registry, businessInformationStore: store, options, controlPlane } = dependencies;
+    const stored = await store?.getInstallation(installation.scope);
+    if (!store || !stored) return 'unavailable';
+    const { org, app } = stored.scope;
+    const generation = await registry.getAppGeneration(org, app);
+    if (
+      (await registry.getAppArchivedAt(org, app)) !== undefined ||
+      (stored.applicationGeneration !== 'pending' &&
+        (!generation ||
+          (stored.applicationGeneration !== undefined &&
+            stored.applicationGeneration !== generation))) ||
+      (options.businessOnboarding !== undefined &&
+        !(await new BusinessOnboarding(options.businessOnboarding, controlPlane, store).ready(
+          stored,
+        )))
+    )
+      return 'unavailable';
+    const target = await registry.getActiveByTenant(stored.scope);
+    if (!target || stored.applicationGeneration === 'pending') return 'pending';
+    if (publicSurfaceOf(target.served.artifact.server.assistant)) {
+      if (!options.publicEmbeds) return 'unavailable';
+      const embeds = await options.publicEmbeds.list(stored.scope, { includeRevoked: true });
+      if (!embeds.some((embed) => embed.revokedAt === undefined))
+        return embeds.length > 0 ? 'unavailable' : 'pending';
+    }
+    return 'ready';
+  } catch {
+    return 'unavailable';
+  }
+}
 
 export interface SolutionInstallationActivationInput {
   readonly installation: SolutionInstallation;
+  /** Routine executable refresh preserves independent channels; explicit activation checks all setup. */
+  readonly purpose?: 'runtime-refresh';
   /** Authorized installing operator, or an explicit system release actor for managed refresh. */
   readonly actor: ControlPlaneIdentity;
 }
@@ -35,9 +84,7 @@ export type SolutionInstallationActivator = (
 /** Called after installation authorization, and by the managed-runtime refresh boundary. Never copies configuration. */
 export async function activateSolutionInstallation(
   input: SolutionInstallationActivationInput,
-  dependencies: AuthorizedDeploymentDependencies & {
-    readonly businessInformationStore?: BusinessInformationStore | undefined;
-  },
+  dependencies: ActivationDependencies,
 ): Promise<SolutionInstallationActivationResult> {
   const { installation, actor } = input;
   if (
@@ -83,7 +130,10 @@ export async function activateSolutionInstallation(
       'The retained installation requires application ownership recovery before activation.',
     );
   }
-  const bind = async (deploymentId: string): Promise<SolutionInstallationActivationResult> => {
+  const bind = async (
+    deploymentId: string,
+    reconcileEmbed: boolean,
+  ): Promise<SolutionInstallationActivationResult> => {
     const currentGeneration = await dependencies.registry.getAppGeneration(tenant.org, tenant.app);
     if (
       store &&
@@ -98,6 +148,44 @@ export async function activateSolutionInstallation(
       await new ApplicationSettings(dependencies.registry.configStore).initialize(
         installationSettingsTarget(installation),
       );
+    const target = await dependencies.registry.get(deploymentId);
+    if (
+      input.purpose !== 'runtime-refresh' &&
+      dependencies.options.publicEmbeds &&
+      publicSurfaceOf(target?.served.artifact.server.assistant)
+    ) {
+      try {
+        if (reconcileEmbed)
+          await provisionPublicEmbed(
+            dependencies.registry,
+            dependencies.options,
+            tenant,
+            deploymentId,
+            false,
+          );
+        const embeds = await dependencies.options.publicEmbeds.list(tenant, {
+          includeRevoked: true,
+        });
+        if (!embeds.some((embed) => embed.revokedAt === undefined))
+          return embeds.length > 0
+            ? reject(
+                409,
+                'installation_embed_revoked',
+                'The assistant was deliberately revoked. Use explicit channel recovery; activation does not replace revoked access.',
+              )
+            : reject(
+                503,
+                'installation_activation_incomplete',
+                'The installation is saved. Retry activation to finish assistant setup.',
+              );
+      } catch {
+        return reject(
+          503,
+          'installation_activation_incomplete',
+          'The installation is saved. Retry activation when assistant setup is available.',
+        );
+      }
+    }
     return { ok: true, deploymentId };
   };
   const source = await executableSource(installation, dependencies.registry);
@@ -126,7 +214,7 @@ export async function activateSolutionInstallation(
     currentSource.connectors === source.value.connectors &&
     JSON.stringify(currentSource.hostedAssets) === JSON.stringify(source.value.hostedAssets)
   ) {
-    return bind(current.deploymentId);
+    return bind(current.deploymentId, true);
   }
   const key = sha256Canonical({
     scope: installation.scope,
@@ -148,6 +236,7 @@ export async function activateSolutionInstallation(
         ? {}
         : { orgMembershipSources: current.orgMembershipSources }),
       deploymentSource: 'api',
+      allowRevokedEmbedReplacement: false,
       idempotencyKey: key,
     },
     dependencies,
@@ -163,7 +252,7 @@ export async function activateSolutionInstallation(
       message:
         'The installation is saved, but its application could not be activated. Retry installation after resolving the deployment requirement.',
     };
-  return bind(deployed.result.deploymentId);
+  return bind(deployed.result.deploymentId, false);
 }
 
 type ExecutableSource = Pick<

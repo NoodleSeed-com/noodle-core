@@ -7,6 +7,7 @@ export {
   type HttpOperationPagination,
   type HttpPaginationAggregate,
   type HttpPaginationStopReason,
+  type HttpStatusResponse,
 } from './http-connector.js';
 export * from './mcp/index.js';
 export type { HttpOperationProjection } from './projection.js';

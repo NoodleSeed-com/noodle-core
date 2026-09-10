@@ -97,7 +97,11 @@ describe('self-host native actions without commercial modules', () => {
             method: 'tools/call',
             params: {
               name: 'submit_travel_request',
-              arguments: { request_type: 'service', summary: 'Please review my itinerary.' },
+              arguments: {
+                request_type: 'service',
+                summary: 'Please review my itinerary.',
+                contact_email: 'traveler@example.test',
+              },
             },
           }),
         });

@@ -32,11 +32,18 @@ export class InMemoryPublicEmbedStore implements PublicEmbedStore {
     readonly env: string;
     readonly surfaceMode: 'public' | 'mixed';
     readonly now: Date;
+    /** Installation recovery preserves revocation; explicit redeploy may replace it by default. */
+    readonly allowRevokedReplacement?: boolean;
   }): Promise<PublicEmbedRecord> {
     const key = tenantKey(input);
     for (const record of this.#byId.values()) {
       if (record.revokedAt === undefined && tenantKey(record) === key) return record;
     }
+    if (
+      input.allowRevokedReplacement === false &&
+      [...this.#byId.values()].some((record) => tenantKey(record) === key)
+    )
+      throw new Error('public embed allocation is revoked');
     const record: PublicEmbedRecord = {
       embedId: newPublicEmbedId(),
       org: input.org,
@@ -83,14 +90,19 @@ export class InMemoryPublicEmbedStore implements PublicEmbedStore {
     return record === undefined || record.revokedAt !== undefined ? undefined : record;
   }
 
-  async list(tenant: {
-    readonly org: string;
-    readonly app: string;
-    readonly env: string;
-  }): Promise<readonly PublicEmbedRecord[]> {
+  async list(
+    tenant: {
+      readonly org: string;
+      readonly app: string;
+      readonly env: string;
+    },
+    options?: { readonly includeRevoked?: boolean },
+  ): Promise<readonly PublicEmbedRecord[]> {
     const key = tenantKey(tenant);
     return [...this.#byId.values()].filter(
-      (record) => record.revokedAt === undefined && tenantKey(record) === key,
+      (record) =>
+        (options?.includeRevoked === true || record.revokedAt === undefined) &&
+        tenantKey(record) === key,
     );
   }
 

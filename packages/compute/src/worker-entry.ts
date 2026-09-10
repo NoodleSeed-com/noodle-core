@@ -61,6 +61,14 @@ function startWorker(port: ParentPort): void {
 
   function bridgeFor(run: RunMessage): SandboxHostBridge {
     return {
+      ...(run.execution === undefined ? {} : { execution: run.execution }),
+      ...(run.coordination === undefined ? {} : { coordination: run.coordination }),
+      control: (name, argsJson) =>
+        new Promise<string>((resolve) => {
+          const callId = nextCallId++;
+          pendingHostReplies.set(callId, resolve);
+          post({ t: 'host_control', id: run.id, callId, name, argsJson });
+        }),
       callOperation: (name, argsJson) =>
         new Promise<string>((resolve) => {
           const callId = nextCallId;

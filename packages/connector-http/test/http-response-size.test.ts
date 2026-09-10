@@ -75,7 +75,7 @@ describe('HTTP response-size enforcement', () => {
     );
 
     if (allowed) {
-      await expect(result).resolves.toHaveLength(bytes);
+      expect((await result).body).toHaveLength(bytes);
     } else {
       await expect(captureError(result)).resolves.toMatchObject({
         category: 'response_too_large',
@@ -98,7 +98,7 @@ describe('HTTP response-size enforcement', () => {
     );
 
     if (allowed) {
-      await expect(result).resolves.toHaveLength(OBSERVED_ROUND_TRIP_BYTES);
+      expect((await result).body).toHaveLength(OBSERVED_ROUND_TRIP_BYTES);
     } else {
       await expect(captureError(result)).resolves.toMatchObject({
         category: 'response_too_large',

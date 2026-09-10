@@ -4,6 +4,7 @@ import {
   type CollectionSourceRefreshResponse,
   ManagedRecordMutationRequestSchema,
   ManagedRecordQuerySchema,
+  type SolutionInstallationResponse,
 } from '@noodle-borg/wire-contracts';
 import type { ConfigLocation } from '../config.js';
 import { resolveControlPlaneToken, serviceJson } from '../control-plane.js';
@@ -17,6 +18,7 @@ import {
 } from './shared.js';
 import { runSolutionActivity } from './solutions-activity.js';
 import { runSolutionConnections } from './solutions-connections.js';
+import { runSolutionOperations } from './solutions-coordination.js';
 import { runSolutionInstallationOptions } from './solutions-installation-options.js';
 import { runSolutionOnboarding } from './solutions-onboarding.js';
 
@@ -78,7 +80,7 @@ function commandUsage(message: string, json: boolean): number {
     'solutions',
     usageError(
       message,
-      'noodle solutions catalog | installation-options | agreement | notice | list | install | inspect | pause | resume | grants | invitations | records | sources | connections | activity',
+      'noodle solutions catalog | installation-options | agreement | notice | list | install | inspect | activate | pause | resume | grants | invitations | records | sources | connections | activity | operations',
     ),
     json,
   );
@@ -185,6 +187,7 @@ export async function runSolutions(
 ): Promise<number> {
   if (rest[0] === 'agreement' || rest[0] === 'notice')
     return runSolutionOnboarding(rest[0], rest.slice(1), env, home, options);
+  if (rest[0] === 'operations') return runSolutionOperations(rest.slice(1), env, home, options);
   if (rest[0] === 'activity') return runSolutionActivity(rest.slice(1), env, home, options);
   if (rest[0] === 'connections') return runSolutionConnections(rest.slice(1), env, home, options);
   if (rest[0] === 'installation-options')
@@ -307,16 +310,21 @@ export async function runSolutions(
       printResult(result, args.json, `installed ${label} as ${result.data.installation.id}`);
       return EXIT.OK;
     }
-    if (family === 'inspect') {
+    if (family === 'inspect' || family === 'activate') {
       const installationId = required(actionOrId, 'installation id', args.json);
       if (typeof installationId !== 'string') return installationId;
-      const result = await serviceJson<{ data: { installation: { id: string } } }>(
-        installationBase(resolved.serviceUrl, org, installationId),
+      const result = await serviceJson<SolutionInstallationResponse>(
+        installationBase(resolved.serviceUrl, org, installationId) +
+          (family === 'activate' ? '/activate' : ''),
         resolved.token,
-        {},
+        family === 'activate' ? jsonInit('POST', {}) : {},
         request,
       );
-      printResult(result, args.json, `solution installation ${result.data.installation.id}`);
+      printResult(
+        result,
+        args.json,
+        `solution installation ${result.data.installation.id}: ${result.data.installation.activation?.state ?? 'unavailable'}`,
+      );
       return EXIT.OK;
     }
     if (family === 'pause' || family === 'resume') {

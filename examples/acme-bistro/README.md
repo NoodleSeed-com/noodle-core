@@ -2,7 +2,7 @@
 
 Fictional [`menu/cart`](src/server.ts) with off-app payment: card data stays outside the app.
 
-`SERVICE_NOTICE` settings and native `guest_requests` demonstrate status, field exposure and notes. `submit_guest_request` requires an authorized installation and returns a receipt
+`GUEST_EXPERIENCE` settings use `guestExperience.field('notice')` to select a typed business value; native `guest_requests` demonstrate status, field exposure and notes. `submit_guest_request` requires an authorized installation and returns a receipt
 for staff review. The installed skill's `references/authoring-workflow.md` owns setup and source contracts.
 External collections declare a bounded connector scan; provider changes remain ordinary tools.
 

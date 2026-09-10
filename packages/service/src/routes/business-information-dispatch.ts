@@ -107,7 +107,10 @@ export function dispatchBusinessInformationRoutes(
   if (installationRef === undefined) return false;
   if (installationRef.action === 'notice')
     return run(req, res, deps, () => handleBusinessNotice(req, res, installationRef, deps));
-  if (installationRef.action === 'activity' && installationRef.collection === undefined)
+  if (
+    (installationRef.action === 'activity' || installationRef.action === 'coordination') &&
+    installationRef.collection === undefined
+  )
     return run(req, res, deps, () =>
       handleApplicationActivity(req, res, url, installationRef, deps),
     );

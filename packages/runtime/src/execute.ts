@@ -12,6 +12,7 @@ import type { FrozenCustomerRoutes } from './customer-routing.js';
 import { preflightFulfilmentCustomerRoutes } from './customer-routing.js';
 import { type EvalScope, ExpressionEvalError, evaluateCondition } from './eval/evaluate.js';
 import type { InvocationContext } from './invocation-context.js';
+import type { OperationCoordinationPort } from './operation-coordination.js';
 import type { OperationEvidencePort } from './operation-evidence.js';
 import { createHost, fail, runOperation } from './operation-execution.js';
 import { evalExprMap } from './operation-validation.js';
@@ -62,6 +63,7 @@ export interface ExecuteDeps {
   /** Trusted adapter invocation/confirmation identity; never read from tool input or expression scope. */
   readonly invocationId?: string;
   readonly operationEvidence?: OperationEvidencePort;
+  readonly operationCoordination?: OperationCoordinationPort;
   /** Hosting snapshot: operator configuration and original connected-account generations. */
   readonly executionBinding?: {
     readonly revision: string;

@@ -63,6 +63,18 @@ export interface CatalogConnector {
   readonly credentialProfiles?: Readonly<Record<string, CredentialProfile>>;
   readonly operationCredentials?: Readonly<Record<string, OperationCredentialRequirement>>;
   readonly operations: Readonly<Record<string, OperationSignature>>;
+  /** System-derived declared compute call graph, including exact resolved target identities. */
+  readonly operationCalls?: Readonly<
+    Record<
+      string,
+      readonly {
+        readonly connectorId: string;
+        readonly connectorVersion: string;
+        readonly operation: string;
+        readonly signatureHash: string;
+      }[]
+    >
+  >;
   readonly customerRouting?: CatalogCustomerRouting;
 }
 

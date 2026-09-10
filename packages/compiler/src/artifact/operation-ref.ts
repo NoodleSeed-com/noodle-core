@@ -33,6 +33,8 @@ export interface ResolvedOperationRef {
   readonly operation: string;
   /** Stable hash of the operation signature: `sha256:<hex>`. See catalog/signature.ts. */
   readonly signatureHash: string;
+  /** Exact allowed nested operations with their independently resolved account authority. */
+  readonly calls?: readonly ResolvedOperationRef[];
   /** Core-v2 credential selection resolved from the stable alias; absent on legacy artifacts. */
   readonly credentialBinding?: ResolvedCredentialBinding;
   /** Customer-derived base-URL key for a directly routed HTTP operation; never the resolved URL. */

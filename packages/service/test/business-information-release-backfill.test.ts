@@ -77,10 +77,12 @@ describe('managed definition release backfill', () => {
       ['travel', 1],
       ['travel', 2],
       ['travel', 3],
+      ['travel', 4],
       ['ecommerce', 1],
       ['ecommerce', 2],
       ['restaurant', 1],
       ['restaurant', 2],
+      ['restaurant', 3],
     ]);
     expect(backfills[0]?.values?.[0]).toContain('"release":1');
     expect(backfills[1]?.values?.[0]).toContain('"release":2');

@@ -14,7 +14,7 @@ import {
 import type { Connector } from '@noodle-borg/runtime';
 import { parse as parseYaml } from 'yaml';
 import { validateComputeCallGraph } from './call-graph.js';
-import type { ConnectorCompileError } from './compile-expr.js';
+import { type ConnectorCompileError, compileExpr } from './compile-expr.js';
 import { compileHttpConnector, toSignature } from './compile-http.js';
 import { compileMcpConnector } from './compile-mcp.js';
 import { catalogCredentialMetadata } from './credential-profiles.js';
@@ -247,6 +247,26 @@ function compileComputeConnector(
       module: engine.registerSource(op.code),
       limits,
       ...(calls ? { calls } : {}),
+      ...(op.coordination
+        ? {
+            coordination: {
+              connectionId: op.coordination.connectionId,
+              namespace: op.coordination.namespace,
+              key: compileExpr(
+                op.coordination.key,
+                new Set(['args', 'env', 'execution']),
+                `${base}.coordination.key`,
+                errors,
+              ),
+              reference: compileExpr(
+                op.coordination.reference,
+                new Set(['args', 'env', 'execution']),
+                `${base}.coordination.reference`,
+                errors,
+              ),
+            },
+          }
+        : {}),
     };
   }
 
@@ -256,6 +276,19 @@ function compileComputeConnector(
     kind: def.kind ?? 'custom',
     ...catalogCredentialMetadata(def),
     operations: signatures,
+    operationCalls: Object.fromEntries(
+      Object.entries(operations).map(([name, operation]) => [
+        name,
+        Object.values(operation.calls ?? {}).map(
+          ({ connectorId, connectorVersion, operation, signatureHash }) => ({
+            connectorId,
+            connectorVersion,
+            operation,
+            signatureHash,
+          }),
+        ),
+      ]),
+    ),
   });
   connectors.push(new CodeConnector({ id: def.id, version: def.version, engine, operations }));
 }

@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { validateJsonSchema as validateSchema } from '@noodle-borg/compiler';
 import type {
   BuiltInProfileKey,
   InstalledCollectionDefinition,
@@ -25,12 +26,14 @@ export interface ManagedRequestJsonSchema {
         readonly maxLength: number;
         readonly enum?: readonly string[];
         readonly default?: string;
+        readonly format?: 'email';
       }
     >
   >;
 }
 
 export interface ManagedCollectionProfile {
+  readonly fields?: Readonly<Record<string, { readonly label: string; readonly help?: string }>>;
   readonly management?: { readonly assignment?: true; readonly notes?: true };
   readonly publicFields?: readonly string[];
   readonly key: string;
@@ -161,6 +164,12 @@ export const BUILT_IN_SOLUTION_PROFILE_RELEASES: Readonly<
     { key: 'travel', version: 1, label: 'Travel', collections: [travelV1] },
     { key: 'travel', version: 2, label: 'Travel', collections: [travelV2] },
     { key: 'travel', version: 3, label: 'Travel', collections: [lightweightCollection(travelV2)] },
+    {
+      key: 'travel',
+      version: 4,
+      label: 'Travel',
+      collections: [followUpCollection(lightweightCollection(travelV2))],
+    },
   ],
   b2b_saas: [{ key: 'b2b_saas', version: 1, label: 'B2B SaaS', collections: [service] }],
   ecommerce: [
@@ -179,6 +188,12 @@ export const BUILT_IN_SOLUTION_PROFILE_RELEASES: Readonly<
       version: 2,
       label: 'Restaurant',
       collections: [lightweightCollection(restaurant)],
+    },
+    {
+      key: 'restaurant',
+      version: 3,
+      label: 'Restaurant',
+      collections: [followUpCollection(lightweightCollection(restaurant))],
     },
   ],
 };
@@ -311,7 +326,7 @@ function collectionDefinition(profile: ManagedCollectionProfile): InstalledColle
           management: profile.management,
           publicFields: profile.publicFields ?? [],
           editableFields: Object.keys(profile.schema.properties),
-          fields: { status: { label: 'Status' } },
+          fields: { status: { label: 'Status' }, ...profile.fields },
           filterFields: ['status'],
           sortFields: ['status'],
         }),
@@ -339,6 +354,32 @@ function lightweightCollection(previous: ManagedCollectionProfile): ManagedColle
     ),
     management: { assignment: true, notes: true },
     publicFields: Object.keys(previous.schema.properties),
+  };
+}
+
+/** Optional storage preserves historical records; the new application tool asks for a reply route. */
+function followUpCollection(previous: ManagedCollectionProfile): ManagedCollectionProfile {
+  return {
+    ...previous,
+    ...collection(
+      previous.key,
+      previous.labels,
+      {
+        ...previous.schema,
+        properties: {
+          ...previous.schema.properties,
+          contact_email: { type: 'string', format: 'email', minLength: 3, maxLength: 254 },
+        },
+      },
+      previous.schemaVersion + 1,
+    ),
+    publicFields: [...(previous.publicFields ?? []), 'contact_email'],
+    fields: {
+      contact_email: {
+        label: 'Reply email',
+        help: 'The address provided by the guest for staff follow-up. This address has not been verified.',
+      },
+    },
   };
 }
 
@@ -378,6 +419,12 @@ function validateJsonSchema(schema: ManagedRequestJsonSchema, payload: JsonObjec
       throw new PayloadValidationError(
         'invalid_json',
         `managed payload field "${key}" has an unsupported value`,
+      );
+    }
+    if (property.format !== undefined && validateSchema(property, value).length > 0) {
+      throw new PayloadValidationError(
+        'invalid_json',
+        `managed payload field "${key}" has an invalid format`,
       );
     }
   }

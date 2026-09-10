@@ -13,9 +13,10 @@ import {
   requireIdentity,
   requireInstallationPermission,
 } from './business-information.js';
+import { installationProjection } from './business-information-installation.js';
 import type { SolutionInstallationRef } from './business-information-paths.js';
 import { parseBusinessPaging } from './business-information-request.js';
-import { grantToWire, installationToWire, invitationToWire } from './business-information-wire.js';
+import { grantToWire, invitationToWire } from './business-information-wire.js';
 
 const HOUR_MS = 60 * 60 * 1_000;
 
@@ -43,8 +44,10 @@ export async function handleMySolutionInstallations(
   sendJson(res, 200, {
     ok: true,
     data: {
-      installations: visible.map(({ installation, grant }) =>
-        installationToWire(installation, grant.role),
+      installations: await Promise.all(
+        visible.map(({ installation, grant }) =>
+          installationProjection(installation, grant.role, identity, deps),
+        ),
       ),
       ...(joined.length > limit && visible.at(-1) !== undefined
         ? { nextCursor: encodeDiscoveryCursor(visible.at(-1) as (typeof visible)[number]) }
@@ -210,7 +213,7 @@ export async function handleBusinessInvitationAccept(
   sendJson(res, 201, {
     ok: true,
     data: {
-      installation: installationToWire(installation, result.grant.role),
+      installation: await installationProjection(installation, result.grant.role, identity, deps),
       grant: grantToWire(result.grant),
     },
   });

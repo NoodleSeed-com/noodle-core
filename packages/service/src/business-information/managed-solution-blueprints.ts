@@ -32,6 +32,13 @@ const BLUEPRINTS = {
 export function managedSolutionBlueprint(key: BuiltInProfileKey, release: number) {
   if (key === 'b2b_saas') return undefined;
   const blueprint = BLUEPRINTS[key];
+  if ((key === 'travel' || key === 'restaurant') && release === blueprint.release + 1)
+    return {
+      ...blueprint,
+      release,
+      followUpContact: true,
+      description: `${blueprint.description} Ask for the guest's reply email before submission so staff can follow up. Explain that the business receives this address; never invent it or claim it is verified.`,
+    };
   return blueprint.release === release ? blueprint : undefined;
 }
 

@@ -44,6 +44,28 @@ describePostgres('Postgres business information store', () => {
     };
   });
 
+  it('creates on the selected stable release even when a newer definition is bundled', async () => {
+    const stable = new PostgresBusinessInformationStore(pool, new TestPayloadCipher(), {
+      managedDefinition: (key) => builtInDefinitionAtRelease(key, 3),
+    });
+    const scope = {
+      org: `org-${randomUUID()}`,
+      app: 'stable',
+      env: 'prod',
+      installationId: 'stable-prod',
+    };
+    const result = await stable.createInstallation({
+      scope,
+      profileKey: 'travel',
+      managedCollections: ['travel_requests'],
+      actorSubject: 'owner',
+    });
+    expect(result.installation.profileVersion).toBe(3);
+    expect((await stable.getInstallation(scope))?.definition.reference).toMatchObject({
+      release: 3,
+    });
+  });
+
   it('edits against the accepted schema after the managed release changes without losing prior fields', async () => {
     const legacyStore = new PostgresBusinessInformationStore(pool, new TestPayloadCipher(), {
       now: () => new Date(now),
@@ -158,7 +180,7 @@ describePostgres('Postgres business information store', () => {
     expect(read).not.toHaveProperty('status');
     expect(read).toMatchObject({
       revision: 2,
-      profileVersion: 3,
+      profileVersion: 4,
       createdAt: created.record.createdAt,
       retentionExpiresAt: created.record.retentionExpiresAt,
       originalSchema: {
@@ -189,9 +211,9 @@ describePostgres('Postgres business information store', () => {
         },
         {
           profileKey: 'travel',
-          profileVersion: 3,
+          profileVersion: 4,
           collectionKey: 'travel_requests',
-          schemaVersion: 3,
+          schemaVersion: 4,
           schemaDigest: read?.schemaDigest,
         },
       ]),

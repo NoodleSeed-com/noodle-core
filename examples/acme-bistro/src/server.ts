@@ -20,11 +20,11 @@ const menu = [
 
 const itemId = z.enum(['stone_pizza', 'roast_bowl', 'house_salad', 'lemon_tart', 'sparkling']);
 
-// A business administrator may change this notice; the reusable application stays the same.
-const serviceNotice = variable('SERVICE_NOTICE', {
-  schema: z.string().max(500),
-  default: 'Ask us about dietary requirements before placing your order.',
-  portal: { label: 'Service notice', group: 'Guest experience' },
+// Operators configure the notice without redeploying.
+const guestExperience = variable('GUEST_EXPERIENCE', {
+  schema: z.object({ notice: z.string().max(500) }),
+  default: { notice: 'Ask us about dietary requirements before placing your order.' },
+  portal: { label: 'Guest experience', group: 'Guest experience' },
   requiredFor: ['show_menu'],
 });
 
@@ -86,7 +86,7 @@ export default server(
     // Reusable business-record intent. Storage, lifecycle, access, and public intake bind separately.
     collections: [guestRequests],
     use: { records: noodlePlatform.records.v1 },
-    variables: [serviceNotice],
+    variables: [guestExperience],
   },
   [
     tool('submit_guest_request', {
@@ -123,7 +123,7 @@ export default server(
       fulfil: ({ input }) => ({
         status: `Acme Bistro menu is ready for ${input.customer}. Build the order here; pay at checkout.`,
         customer: input.customer,
-        serviceNotice,
+        serviceNotice: guestExperience.field('notice'),
         items: menu,
       }),
       viewTitle: 'Order at Acme Bistro',

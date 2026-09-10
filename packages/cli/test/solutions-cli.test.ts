@@ -903,3 +903,23 @@ describe('noodle solutions', () => {
     expect(output()).toMatchObject({ ok: false, error: { code: 'usage_error' } });
   });
 });
+
+it('retries activation of the saved installation with no target overrides', async () => {
+  const fetchImpl = vi.fn((_input: string | URL | Request, _init?: RequestInit) =>
+    response({
+      ok: true,
+      data: { installation: { id: 'ins-1', activation: { state: 'ready', canRetry: false } } },
+    }),
+  );
+  expect(
+    await runSolutions(['activate', 'ins-1', '--org', 'acme', '--json'], env, home, { fetchImpl }),
+  ).toBe(0);
+  expect(fetchImpl.mock.calls[0]?.[0]).toBe(
+    'https://cloud.example.test/v1/orgs/acme/solution-installations/ins-1/activate',
+  );
+  expect(fetchImpl.mock.calls[0]?.[1]).toMatchObject({ method: 'POST', body: '{}' });
+  expect(output()).toMatchObject({
+    ok: true,
+    data: { installation: { activation: { state: 'ready' } } },
+  });
+});

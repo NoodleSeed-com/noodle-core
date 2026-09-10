@@ -273,5 +273,5 @@ export function formatWireError(error: z.ZodError): string {
 export * from './application-activity.js';
 export * from './application-connections.js';
 export * from './application-onboarding.js';
-
 export * from './billing-catalog.js';
+export * from './operation-coordination.js';

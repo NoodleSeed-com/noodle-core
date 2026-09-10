@@ -67,11 +67,12 @@ describe('commands --json public wire contract', () => {
 
     expect(envelope.data.commands).toHaveLength(63);
     const paths = leafPaths(envelope.data.commands);
-    expect(paths).toHaveLength(255);
+    expect(paths).toHaveLength(258);
     expect(paths).toContain('deploy');
     expect(paths).toContain('deploy preflight');
     expect(paths).toContain('service app-purge preview');
     expect(paths).toContain('service app-purge apply');
+    expect(paths).toContain('solutions activate');
     expect(paths).toContain('solutions pause');
     expect(paths).toContain('solutions resume');
     expect(paths).toContain('assistant appearance show');
@@ -115,6 +116,8 @@ describe('commands --json public wire contract', () => {
         'solutions notice set',
         'billing catalog status',
         'billing catalog activate',
+        'solutions operations coordination list',
+        'solutions operations coordination resolve',
         'solutions activity list',
         'solutions activity settings get',
         'solutions activity settings set',

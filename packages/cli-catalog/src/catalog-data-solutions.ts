@@ -1,28 +1,19 @@
-/** Solution installation/operator command catalog. Pure data — no runtime imports. */
+/** Solution installation/operator catalog. Imports only dependency-free sibling data. */
+
+import {
+  AUTH_TOKEN,
+  EXPECTED_REVISION,
+  IDEMPOTENCY_KEY,
+  INSTALLATION_ARGUMENT,
+  JSON_FLAG,
+  OPTIONAL_FLAG,
+  PAGING_FLAGS,
+  REQUIRED_ARGUMENT,
+  SERVICE,
+  SOLUTION_COMMON_FLAGS,
+} from './catalog-data-solution-flags.js';
 import type { CommandSpec, FlagSpec } from './catalog-types.js';
 
-const OPTIONAL_FLAG = {
-  required: false,
-  repeatable: false,
-  sensitive: false,
-  aliases: [],
-  conflictsWith: [],
-} as const;
-const REQUIRED_ARGUMENT = {
-  type: 'string',
-  required: true,
-  variadic: false,
-  sensitive: false,
-  constraints: {},
-} as const;
-
-const ORG: FlagSpec = {
-  ...OPTIONAL_FLAG,
-  name: 'org',
-  type: 'string',
-  value: '<slug>',
-  summary: 'Organization slug.',
-};
 const APP: FlagSpec = {
   ...OPTIONAL_FLAG,
   name: 'app',
@@ -37,27 +28,7 @@ const ENV: FlagSpec = {
   value: '<slug>',
   summary: 'Environment slug.',
 };
-const SERVICE: FlagSpec = {
-  ...OPTIONAL_FLAG,
-  name: 'service',
-  type: 'string',
-  value: '<url>',
-  summary: 'Control-plane service URL.',
-};
-const AUTH_TOKEN: FlagSpec = {
-  ...OPTIONAL_FLAG,
-  name: 'auth-token',
-  type: 'string',
-  value: '<token>',
-  summary: 'Control-plane authentication token.',
-  sensitive: true,
-};
-const JSON_FLAG: FlagSpec = {
-  ...OPTIONAL_FLAG,
-  name: 'json',
-  type: 'boolean',
-  summary: 'Emit JSON output.',
-};
+
 const RETENTION: FlagSpec = {
   ...OPTIONAL_FLAG,
   name: 'retention-days',
@@ -66,11 +37,7 @@ const RETENTION: FlagSpec = {
   summary: 'Managed-record retention in days.',
   constraints: { choices: [7, 30, 90], default: 30 },
 };
-const INSTALLATION_ARGUMENT = {
-  ...REQUIRED_ARGUMENT,
-  name: 'installation',
-  summary: 'Solution installation identifier.',
-};
+
 const COLLECTION_ARGUMENT = {
   ...REQUIRED_ARGUMENT,
   name: 'collection',
@@ -81,41 +48,7 @@ const RECORD_ARGUMENT = {
   name: 'record',
   summary: 'Managed record identifier.',
 };
-const SOLUTION_COMMON_FLAGS: readonly FlagSpec[] = [ORG, SERVICE, AUTH_TOKEN, JSON_FLAG];
-const EXPECTED_REVISION: FlagSpec = {
-  ...OPTIONAL_FLAG,
-  name: 'expected-revision',
-  type: 'integer',
-  value: '<revision>',
-  summary: 'Expected current resource revision.',
-  required: true,
-  constraints: { minimum: 1 },
-};
-const IDEMPOTENCY_KEY: FlagSpec = {
-  ...OPTIONAL_FLAG,
-  name: 'idempotency-key',
-  type: 'string',
-  value: '<key>',
-  summary: 'Retry-safe operation key.',
-  required: true,
-};
-const PAGING_FLAGS: readonly FlagSpec[] = [
-  {
-    ...OPTIONAL_FLAG,
-    name: 'cursor',
-    type: 'string',
-    value: '<cursor>',
-    summary: 'Opaque page cursor.',
-  },
-  {
-    ...OPTIONAL_FLAG,
-    name: 'limit',
-    type: 'integer',
-    value: '<count>',
-    summary: 'Bounded page size.',
-    constraints: { minimum: 1, maximum: 100 },
-  },
-];
+
 const RECORD_QUERY_FLAGS: readonly FlagSpec[] = [
   {
     ...OPTIONAL_FLAG,
@@ -296,6 +229,67 @@ export const CATALOG_SOLUTIONS: CommandSpec = {
         },
       ],
     })),
+    {
+      name: 'operations',
+      summary: 'Inspect and recover application operation custody.',
+      arguments: [],
+      flags: [],
+      subcommands: [
+        {
+          name: 'coordination',
+          summary: 'Administrator-only review of held external operations.',
+          arguments: [],
+          flags: [],
+          subcommands: (['list', 'resolve'] as const).map((name) => ({
+            name,
+            summary:
+              name === 'list'
+                ? 'List held operations in one installation.'
+                : 'Release an inactive exact hold after reviewing the external outcome.',
+            arguments: [INSTALLATION_ARGUMENT],
+            flags: [
+              ...SOLUTION_COMMON_FLAGS,
+              ...(name === 'list'
+                ? [
+                    {
+                      ...OPTIONAL_FLAG,
+                      name: 'limit',
+                      type: 'integer' as const,
+                      value: '<count>',
+                      summary: 'Maximum records in this page.',
+                      constraints: { minimum: 1, maximum: 100 },
+                    },
+                    {
+                      ...OPTIONAL_FLAG,
+                      name: 'before-resource',
+                      type: 'string' as const,
+                      value: '<hash>',
+                      summary: 'Continuation resource returned by the previous list.',
+                    },
+                  ]
+                : [
+                    ...(
+                      [
+                        ['resource', 'Exact resource hash from list.'],
+                        ['token', 'Exact custody token from list.'],
+                        ['reason', 'Single-line review reason; 1 to 256 characters.'],
+                      ] as const
+                    ).map(([flag, summary]) => ({
+                      ...OPTIONAL_FLAG,
+                      name: flag,
+                      summary,
+                      required: true,
+                      sensitive: flag === 'token',
+                      type: 'string' as const,
+                      value: '<value>',
+                    })),
+                  ]),
+            ],
+            jsonOutput: { mode: 'single' as const },
+          })),
+        },
+      ],
+    },
     {
       name: 'activity',
       summary: 'Inspect payload-free operation evidence and its retention policy.',
@@ -499,18 +493,18 @@ export const CATALOG_SOLUTIONS: CommandSpec = {
       ],
       jsonOutput: { mode: 'single' },
     },
-    {
-      name: 'inspect',
-      summary: 'Inspect one solution installation.',
-      arguments: [INSTALLATION_ARGUMENT],
-      flags: SOLUTION_COMMON_FLAGS,
-      jsonOutput: { mode: 'single' },
-    },
-    ...(['pause', 'resume'] as const).map((name) => ({
+    ...Object.entries({
+      inspect: 'Inspect one solution installation.',
+      activate: 'Retry activation of a saved installation without changing its intake setting.',
+      pause: 'Pause anonymous public intake.',
+      resume: 'Resume anonymous public intake.',
+    }).map(([name, summary]) => ({
       name,
-      summary: `${name === 'pause' ? 'Pause' : 'Resume'} anonymous public intake.`,
+      summary,
       arguments: [INSTALLATION_ARGUMENT],
-      flags: [...SOLUTION_COMMON_FLAGS, EXPECTED_REVISION],
+      flags: ['pause', 'resume'].includes(name)
+        ? [...SOLUTION_COMMON_FLAGS, EXPECTED_REVISION]
+        : SOLUTION_COMMON_FLAGS,
       jsonOutput: { mode: 'single' as const },
     })),
     {

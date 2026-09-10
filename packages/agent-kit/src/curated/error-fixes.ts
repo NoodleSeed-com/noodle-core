@@ -137,6 +137,10 @@ export const ERROR_FIXES: Record<string, string> = {
     'Regenerate the connector catalog so every action route includes all of its ordinary customer endpoint dependencies.',
   unused_connector_alias:
     'A declared connector alias is never called; remove the unused `use` entry or wire it into a tool.',
+  ambiguous_nested_connector_binding:
+    'Keep one exact bound alias for each connector/version reached by compute; do not let a nested call guess between authorized accounts.',
+  invalid_connector_call_graph:
+    'Regenerate the system-owned connector catalog from TypeScript and correct missing, cyclic, excessive or mismatched declared compute calls.',
   arg_mismatch:
     'A connector call is missing or adds arguments; match the operation signature under `expected`/`got`.',
   agent_guide_invalid:

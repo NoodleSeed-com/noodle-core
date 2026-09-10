@@ -2,8 +2,8 @@ import type { OperationSignature } from '@noodle-borg/compiler';
 import {
   type Connector,
   type ConnectorCall,
-  type ConnectorCallHost,
   ConnectorInvocationError,
+  type OperationCoordinationDeclaration,
 } from '@noodle-borg/runtime';
 import {
   type ComputeEngine,
@@ -33,6 +33,7 @@ export interface CodeOperation {
   readonly limits?: ComputeLimits;
   /** Host operations this compute operation is allowed to call, keyed by sandbox-local name. */
   readonly calls?: Readonly<Record<string, CodeOperationCallRef>>;
+  readonly coordination?: OperationCoordinationDeclaration;
 }
 
 export interface CodeConnectorConfig {
@@ -69,6 +70,15 @@ export class CodeConnector implements Connector {
     return this.#operations[operation]?.signature;
   }
 
+  executionBoundMs(operation: string): number | undefined {
+    const op = this.#operations[operation];
+    return op === undefined ? undefined : (op.limits ?? DEFAULT_LIMITS).timeoutMs;
+  }
+
+  coordination(operation: string): OperationCoordinationDeclaration | undefined {
+    return this.#operations[operation]?.coordination;
+  }
+
   async invoke(call: ConnectorCall): Promise<unknown> {
     const op = this.#operations[call.operation];
     if (!op) throw new Error(`connector "${this.id}" has no operation "${call.operation}"`);
@@ -78,7 +88,7 @@ export class CodeConnector implements Connector {
       const output = await instance.invoke(
         call.args,
         op.limits ?? DEFAULT_LIMITS,
-        op.calls ? computeHost(op.calls, call.host) : undefined,
+        computeHost(op.calls ?? {}, call),
         (t) => {
           timings = t;
         },
@@ -128,9 +138,14 @@ function classifyInvocationFailure(error: unknown, timings: ComputeTimings | und
 
 function computeHost(
   calls: Readonly<Record<string, CodeOperationCallRef>>,
-  host: ConnectorCallHost | undefined,
+  call: ConnectorCall,
 ): ComputeHost {
+  const host = call.host;
   return {
+    ...(call.execution ? { execution: call.execution } : {}),
+    ...(call.coordination ? { coordination: call.coordination } : {}),
+    ...(call.resolveCoordination ? { resolveCoordination: call.resolveCoordination } : {}),
+    ...(call.reportOutcome ? { reportOutcome: call.reportOutcome } : {}),
     callOperation(name, args) {
       if (!host) {
         throw new ComputeError('host_call_failed', 'host call unavailable');

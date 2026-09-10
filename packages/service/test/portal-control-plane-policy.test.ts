@@ -21,6 +21,7 @@ const authorized = [
   ['GET', '/v1/orgs/acme/solution-installations'],
   ['GET', base],
   ['PATCH', base],
+  ['POST', `${base}/activate`],
   ['GET', `${base}/settings`],
   ['PATCH', `${base}/settings`],
   ['GET', `${base}/notice`],
@@ -50,6 +51,8 @@ const authorized = [
 ] as const;
 const denied = [
   ['POST', '/v1/orgs/acme/apps/demo/envs/prod/deploy'],
+  ['GET', `${base}/activate`],
+  ['PATCH', `${base}/activate`],
   ['GET', '/v1/solution-connections/callback'],
   ['PATCH', '/v1/solution-connections/callback'],
   ['POST', '/v1/solution-connections/callback/extra'],

@@ -62,6 +62,17 @@ export interface ComputeTimings {
 
 /** Host capability available to sandboxed code when a compute operation declares outbound calls. */
 export interface ComputeHost {
+  /** Trusted runtime operation identity; never supplied through tenant arguments. */
+  readonly execution?: { readonly id: string };
+  readonly coordination?: {
+    readonly acquired: boolean;
+    readonly previous?: { readonly reference: string; readonly operationDigest: string };
+  };
+  reportOutcome?(evidence: {
+    readonly outcome: 'completed' | 'rejected' | 'unknown';
+    readonly reference?: string;
+  }): void | Promise<void>;
+  resolveCoordination?(): Promise<void>;
   callOperation(name: string, args: Readonly<Record<string, unknown>>): Promise<unknown>;
   /** Optional tenant app-log sink. When absent, sandbox `console` remains unavailable. */
   log?(entry: ComputeAppLogEntry): void | Promise<void>;

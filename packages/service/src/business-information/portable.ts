@@ -1,6 +1,10 @@
 export * from './collection-controls.js';
 export * from './contracts.js';
-export * from './definition-resolver.js';
+export {
+  type PrivateDefinitionDeployment,
+  type PrivateDefinitionSelector,
+  privateDefinitionFromDeployment,
+} from './definition-resolver.js';
 export * from './in-memory-store.js';
 export * from './legacy-request-migration.js';
 export * from './managed-releases.js';

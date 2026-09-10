@@ -6,6 +6,7 @@ import type {
   QuickJSWASMModule,
 } from 'quickjs-emscripten';
 import { shouldInterruptAfterDeadline } from 'quickjs-emscripten';
+import { helperPrelude, installDeterministicHelpers } from './deterministic-helpers.js';
 import {
   type ComputeAppLogEntry,
   type ComputeAppLogLevel,
@@ -28,6 +29,12 @@ import {
  * sink has accepted it. Both are message-channel round trips to the main thread.
  */
 export interface SandboxHostBridge {
+  readonly execution?: { readonly id: string };
+  readonly coordination?: {
+    readonly acquired: boolean;
+    readonly previous?: { readonly reference: string; readonly operationDigest: string };
+  };
+  control?(name: string, argsJson: string): Promise<string>;
   callOperation(name: string, argsJson: string): Promise<string>;
   log?(entry: ComputeAppLogEntry): Promise<void>;
 }
@@ -71,6 +78,7 @@ export function runPure(
 
   const context = runtime.newContext();
   try {
+    installDeterministicHelpers(context);
     const wrapper = buildWrapper(source, input);
     const result = context.evalCode(wrapper, 'module.js');
 
@@ -103,10 +111,18 @@ export async function runHosted(
   runtime.setInterruptHandler(shouldInterruptAfterDeadline(Date.now() + limits.timeoutMs));
 
   try {
+    installDeterministicHelpers(context);
     installHostCall(context, bridge, limits);
     if (bridge.log !== undefined) installConsole(context, bridge);
     const result = await context.evalCodeAsync(
-      buildWrapper(source, input, true, bridge.log !== undefined),
+      buildWrapper(
+        source,
+        input,
+        true,
+        bridge.log !== undefined,
+        bridge.execution,
+        bridge.coordination,
+      ),
       'module.js',
     );
 
@@ -161,9 +177,16 @@ function buildWrapper(
   input: unknown,
   hostEnabled = false,
   consoleEnabled = false,
+  execution?: { readonly id: string },
+  coordination?: SandboxHostBridge['coordination'],
 ): string {
   const callOperationPrelude = hostEnabled
     ? `
+var __control = function(name, args) {
+  var result = JSON.parse(globalThis.__hostControl(name, JSON.stringify(args)));
+  if (!result.ok) { var error = new Error(result.error.message); error.name = result.error.code; throw error; }
+  return result.output;
+};
 var callOperation = function(name, args) {
   var __hostEnvelope = JSON.parse(globalThis.__hostCallOperation(String(name), JSON.stringify(args ?? {})));
   if (!__hostEnvelope.ok) {
@@ -177,9 +200,18 @@ var callOperation = function(name, args) {
 };
 `
     : '';
-  const handlerArgs = hostEnabled
-    ? `${jsLiteral(input ?? null)}, { callOperation: callOperation }`
-    : jsLiteral(input ?? null);
+  const handlerArgs = `${jsLiteral(input ?? null)}, Object.freeze({
+    time: __timeHelpers, digest: __digestHelper,
+    ${
+      hostEnabled
+        ? `callOperation: callOperation,
+      reportOutcome: function(evidence) { return __control('reportOutcome', evidence); },
+      resolveCoordination: function() { return __control('resolveCoordination', {}); },`
+        : ''
+    }
+    ${coordination === undefined ? '' : `coordination: Object.freeze(${jsLiteral(coordination)}),`}
+    ${execution === undefined ? '' : `execution: Object.freeze(${jsLiteral(execution)}),`}
+  })`;
   const consolePrelude = consoleEnabled
     ? `
 var console = Object.freeze({
@@ -193,7 +225,9 @@ var console = Object.freeze({
     : '';
   const bodyPrefix = `"use strict";
 delete globalThis.Date;
+delete globalThis.Intl;
 delete Math.random;
+${helperPrelude}
 ${callOperationPrelude}
 ${consolePrelude}
 var __handler = (${source});
@@ -216,6 +250,27 @@ function installHostCall(
   limits: ComputeLimits,
 ): void {
   let calls = 0;
+  let controls = 0;
+  const control = context.newAsyncifiedFunction('__hostControl', async (name, args) => {
+    if (++controls > 4 || !bridge.control)
+      return context.newString(
+        JSON.stringify({
+          ok: false,
+          error: { code: 'host_call_denied', message: 'host control budget exceeded' },
+        }),
+      );
+    const argsJson = context.getString(args);
+    if (argsJson.length > 2048)
+      return context.newString(
+        JSON.stringify({
+          ok: false,
+          error: { code: 'host_call_denied', message: 'host control input exceeds bound' },
+        }),
+      );
+    return context.newString(await bridge.control(context.getString(name), argsJson));
+  });
+  context.setProp(context.global, '__hostControl', control);
+  control.dispose();
   const fn = context.newAsyncifiedFunction(
     '__hostCallOperation',
     async (nameHandle, argsJsonHandle) => {

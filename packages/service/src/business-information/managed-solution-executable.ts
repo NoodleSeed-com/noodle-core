@@ -18,6 +18,17 @@ export function managedSolutionManifest(
   const collection = definition.collections.find((entry) => entry.key === blueprint.collection);
   if (collection === undefined)
     throw new Error('Managed solution executable collection is missing');
+  const recordInput = collectionToPublicWire(collection).recordSchema;
+  const inputSchema =
+    'followUpContact' in blueprint
+      ? {
+          ...recordInput,
+          required: [
+            ...(Array.isArray(recordInput.required) ? recordInput.required : []),
+            'contact_email',
+          ],
+        }
+      : recordInput;
   return {
     manifestVersion: '2',
     server: {
@@ -54,7 +65,7 @@ export function managedSolutionManifest(
         name: blueprint.tool,
         title: blueprint.title,
         description: blueprint.description,
-        inputSchema: collectionToPublicWire(collection).recordSchema,
+        inputSchema,
         outputSchema: RECORD_OPERATION_SIGNATURES.submit_record?.output,
         annotations: {
           confirm: true,

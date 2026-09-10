@@ -13,6 +13,8 @@ import {
   ManagedRecordResponseSchema,
   NativeManagedRecordSchema,
   SolutionCatalogResponseSchema,
+  SolutionInstallationActivateRequestSchema,
+  SolutionInstallationActivationSchema,
   SolutionInstallationCapacityErrorSchema,
   SolutionInstallationCreateRequestSchema,
   SolutionInstallationIntakeRequestSchema,
@@ -568,5 +570,36 @@ describe('business-information wire contracts', () => {
         idempotencyKey: 'refresh-2026-09-05',
       }).success,
     ).toBe(true);
+  });
+});
+
+describe('installation activation projection', () => {
+  it('separates deployment readiness from intake and accepts no retry overrides', () => {
+    expect(SolutionInstallationActivateRequestSchema.parse({})).toEqual({});
+    expect(SolutionInstallationActivateRequestSchema.safeParse({ appSlug: 'other' }).success).toBe(
+      false,
+    );
+    expect(
+      SolutionInstallationActivationSchema.parse({ state: 'pending', canRetry: true }),
+    ).toEqual({ state: 'pending', canRetry: true });
+    expect(
+      SolutionInstallationActivationSchema.safeParse({ state: 'active', canRetry: true }).success,
+    ).toBe(false);
+  });
+
+  it.each(['ready', 'unavailable'] as const)('refuses retry for %s activation', (state) => {
+    expect(SolutionInstallationActivationSchema.safeParse({ state, canRetry: true }).success).toBe(
+      false,
+    );
+    expect(SolutionInstallationActivationSchema.parse({ state, canRetry: false })).toEqual({
+      state,
+      canRetry: false,
+    });
+  });
+
+  it('allows pending activation without retry authority', () => {
+    expect(
+      SolutionInstallationActivationSchema.parse({ state: 'pending', canRetry: false }),
+    ).toEqual({ state: 'pending', canRetry: false });
   });
 });

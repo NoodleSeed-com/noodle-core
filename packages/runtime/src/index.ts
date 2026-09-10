@@ -95,6 +95,13 @@ export {
   resolveManagedOrigins,
 } from './managed-origins.js';
 export type {
+  OperationCoordinationDeclaration,
+  OperationCoordinationIntent,
+  OperationCoordinationLease,
+  OperationCoordinationPort,
+  OperationCoordinationSnapshot,
+} from './operation-coordination.js';
+export type {
   OperationEvidence,
   OperationEvidenceIntent,
   OperationEvidencePort,

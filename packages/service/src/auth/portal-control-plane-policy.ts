@@ -63,6 +63,7 @@ function portalOperationAllowed(method: string, path: string): boolean {
   if (operation === undefined) return ['GET', 'PATCH'].includes(method);
   if (/^(settings|channels|activity\/settings)$/.test(operation))
     return ['GET', 'PATCH'].includes(method);
+  if (operation === 'activate') return method === 'POST';
   if (operation === 'notice') return ['GET', 'PUT'].includes(method);
   if (/^(activity(?:\/(?:export|preview))?|assignees|connections)$/.test(operation))
     return method === 'GET';

@@ -58,10 +58,10 @@ describe('single-operation fulfilment (args emitted as expression AST)', () => {
     expect('operationRef' in (result.artifact.tools[0] ?? {})).toBe(false);
   });
 
-  it('stamps artifactSchemaVersion 0.19.0', () => {
+  it('stamps artifactSchemaVersion 0.20.0', () => {
     const result = compile(read('valid/minimal.manifest.yaml'));
     if (!result.ok) throw new Error('expected ok');
-    expect(result.artifact.artifactSchemaVersion).toBe('0.19.0');
+    expect(result.artifact.artifactSchemaVersion).toBe('0.20.0');
   });
 });
 

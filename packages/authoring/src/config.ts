@@ -18,7 +18,16 @@ export interface VariableOptions<Schema extends z.ZodType> {
   readonly requiredFor?: readonly string[];
 }
 
-export interface DeclaredVariableRef extends ConfigRef {
+type VariableField<Value> =
+  Value extends Readonly<Record<string, unknown>> ? Extract<keyof Value, string> : never;
+
+export interface VariableValueRef<Value> extends ConfigRef {
+  readonly kind: 'variable';
+  /** Select a declared object field without resolving the operator's value during authoring. */
+  field<Key extends VariableField<Value>>(name: Key): VariableValueRef<Value[Key & keyof Value]>;
+}
+
+export interface DeclaredVariableRef<Value = unknown> extends VariableValueRef<Value> {
   readonly kind: 'variable';
   readonly declaration: VariableDeclarationManifest;
 }
@@ -27,7 +36,7 @@ export function variable(name: string): ConfigRef;
 export function variable<Schema extends z.ZodType>(
   name: string,
   options: VariableOptions<Schema>,
-): DeclaredVariableRef;
+): DeclaredVariableRef<z.output<Schema>>;
 export function variable(
   name: string,
   options?: VariableOptions<z.ZodType>,
@@ -47,7 +56,45 @@ export function variable(
     throw new Error(
       `variable("${name}") ${errors.map((error) => `${error.path}: ${error.message}`).join('; ')}`,
     );
-  return { ...ref, kind: 'variable', declaration: structuredClone(declaration) };
+  return {
+    ...makeVariableValueRef(name, [], declaration.valueSchema),
+    declaration: structuredClone(declaration),
+  };
+}
+
+function makeVariableValueRef<Value>(
+  name: string,
+  fields: readonly string[],
+  schema: Readonly<Record<string, unknown>>,
+): VariableValueRef<Value> {
+  const expression = () => `\${env.${[name, ...fields].join('.')}}`;
+  return {
+    ...makeConfigRef('variable', name),
+    kind: 'variable',
+    toExpression: expression,
+    toString: expression,
+    field(key) {
+      const properties = schema.properties;
+      if (
+        !/^[A-Za-z_][A-Za-z0-9_]*$/.test(key) ||
+        ['__proto__', 'constructor', 'prototype'].includes(key) ||
+        schema.type !== 'object' ||
+        !properties ||
+        typeof properties !== 'object' ||
+        Array.isArray(properties) ||
+        !Object.hasOwn(properties, key)
+      )
+        throw new Error('variable.field() requires a declared object field with a safe identifier');
+      const child = (properties as Readonly<Record<string, unknown>>)[key];
+      if (!child || typeof child !== 'object' || Array.isArray(child))
+        throw new Error('variable.field() requires a declared object field schema');
+      return makeVariableValueRef(
+        name,
+        [...fields, key],
+        child as Readonly<Record<string, unknown>>,
+      );
+    },
+  };
 }
 
 export function manifestVariables(refs: readonly DeclaredVariableRef[] | undefined): {

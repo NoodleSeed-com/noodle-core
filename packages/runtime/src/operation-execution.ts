@@ -9,8 +9,15 @@ import {
 } from './customer-routing.js';
 import { type EvalScope, ExpressionEvalError } from './eval/evaluate.js';
 import type { ExecuteDeps } from './execute.js';
+import { nestedOperationHost } from './nested-operation-host.js';
+import {
+  admitCoordinatedAction,
+  beginOperationCoordination,
+  coordinatedParentId,
+} from './operation-coordination-execution.js';
 import { acquireOperationCredential } from './operation-credential.js';
-import { withOperationEvidence } from './operation-evidence.js';
+import type { OperationEvidence } from './operation-evidence.js';
+import { safeOperationEvidence, withOperationEvidence } from './operation-evidence.js';
 import { checkSignature, evalExprMap, validateAgainstSchema } from './operation-validation.js';
 import type { PolicyContext, PolicyGate } from './policy/types.js';
 import { samePreparedAction } from './prepared-action-match.js';
@@ -203,6 +210,11 @@ async function invokeOperation(
 ): Promise<ExecutionResult> {
   const initialCancellation = executionCancellation(deps.signal, beforeDispatch);
   if (initialCancellation) return { ok: false, error: initialCancellation };
+  if (sig.type === 'action' && !admitCoordinatedAction(host))
+    return fail(
+      'policy_denied',
+      'This coordinated invocation cannot dispatch another external action.',
+    );
   const callKey = operationKey(ref);
   if (hostCallStack(host).includes(callKey)) {
     return fail(
@@ -248,6 +260,8 @@ async function invokeOperation(
 
     const acquired = await acquireOperationCredential(ref, deps, customerRoute);
     if (!acquired.ok) return { ok: false, error: acquired.error };
+    const afterCredential = executionCancellation(deps.signal, beforeDispatch);
+    if (afterCredential) return { ok: false, error: afterCredential };
     const { credential } = acquired;
     let connectorArgs: Readonly<Record<string, unknown>>;
     try {
@@ -262,6 +276,8 @@ async function invokeOperation(
     const admitted = admittedExecutionSignal(deps.signal);
     disposeSignal = admitted.dispose;
     const execution = operationIdentity(host, deps, toolName, ref, argsPath);
+    const parentId = coordinatedParentId(host);
+    const coordinationConnection = connector.coordination?.(ref.operation)?.connectionId;
     const executionBoundMs = connector.executionBoundMs?.(ref.operation);
     const deadline =
       executionBoundMs === undefined ? undefined : AbortSignal.timeout(executionBoundMs);
@@ -275,6 +291,8 @@ async function invokeOperation(
       sig.type === 'action' ? deps.operationEvidence : undefined,
       {
         id: execution.id,
+        ...(parentId === undefined ? {} : { parentId }),
+        ...(coordinationConnection === undefined ? {} : { connectionId: coordinationConnection }),
         tool: toolName,
         operation: ref,
         arguments: connectorArgs,
@@ -285,118 +303,174 @@ async function invokeOperation(
         ...(executionBoundMs === undefined ? {} : { executionBoundMs }),
       },
       async (reportOutcome) => {
-        let output: unknown;
-        try {
-          if (signal?.aborted)
+        const declaration = connector.coordination?.(ref.operation);
+        let coordinated: Awaited<ReturnType<typeof beginOperationCoordination>> | undefined;
+        let outcome: OperationEvidence | undefined;
+        if (declaration) {
+          try {
+            coordinated = await beginOperationCoordination({
+              declaration,
+              executionId: execution.id,
+              executionBoundMs,
+              args: connectorArgs,
+              env,
+              deps,
+              host,
+            });
+          } catch {
+            reportOutcome({ outcome: 'rejected' });
             return fail(
-              'execution_cancelled',
-              'Execution deadline elapsed before connector dispatch.',
+              'execution_admission_error',
+              'External operation coordination unavailable; no action dispatched.',
             );
-          output = await connector.invoke({
-            operation: ref.operation,
-            execution,
-            reportOutcome,
-            ...(deps.publicAdmission === undefined
-              ? {}
-              : { publicAdmission: deps.publicAdmission }),
-            args: connectorArgs,
-            env,
-            ...(signal === undefined ? {} : { signal }),
-            credential,
-            acquireTransportCredential: async () => {
-              const { credentialBinding: _accountBinding, ...transportRef } = ref;
-              const transport = await acquireOperationCredential(transportRef, deps, customerRoute);
-              if (!transport.ok) throw new Error('Independent transport credential unavailable');
-              return transport.credential;
-            },
-            ...(ref.credentialBinding === undefined
-              ? {}
-              : { credentialPresentation: ref.credentialBinding.presentation }),
-            ...(deps.caller !== undefined ? { caller: deps.caller } : {}),
-            ...(customerRoute === undefined ? {} : { route: customerRoute }),
-            host,
-            ...(deps.trace === undefined ? {} : { trace: deps.trace }),
-          });
-        } catch (error) {
-          const hostCall = hostCallErrorSnapshot(error);
-          if (hostCall !== undefined) {
-            return fail(hostCall.code, hostCall.message, hostCall.path);
           }
-          if (isConnectorInvocationError(error)) {
-            const failureDetails = sanitizeConnectorFailureDetails(error, {
-              includeResponseExcerpt: customerRoute === undefined,
-            });
-            deps.trace?.record({
-              kind: 'connector',
-              connectorId: ref.connectorId,
-              connectorVersion: ref.connectorVersion,
+        }
+        try {
+          let output: unknown;
+          try {
+            if (signal?.aborted)
+              return fail(
+                'execution_cancelled',
+                'Execution deadline elapsed before connector dispatch.',
+              );
+            output = await connector.invoke({
               operation: ref.operation,
-              ...failureDetails,
+              execution,
+              reportOutcome: (value) => {
+                outcome = safeOperationEvidence(value);
+                reportOutcome(outcome);
+              },
+              ...(coordinated === undefined
+                ? {}
+                : {
+                    coordination: {
+                      acquired: coordinated.lease.acquired,
+                      ...(coordinated.lease.previous
+                        ? { previous: coordinated.lease.previous }
+                        : {}),
+                    },
+                    resolveCoordination: () => {
+                      if (signal?.aborted)
+                        return Promise.reject(new Error('Coordination recovery expired'));
+                      return coordinated.lease.resolvePrevious();
+                    },
+                  }),
+              ...(deps.publicAdmission === undefined
+                ? {}
+                : { publicAdmission: deps.publicAdmission }),
+              args: connectorArgs,
+              env,
+              ...(signal === undefined ? {} : { signal }),
+              credential,
+              acquireTransportCredential: async () => {
+                const { credentialBinding: _accountBinding, ...transportRef } = ref;
+                const transport = await acquireOperationCredential(
+                  transportRef,
+                  deps,
+                  customerRoute,
+                );
+                if (!transport.ok) throw new Error('Independent transport credential unavailable');
+                return transport.credential;
+              },
+              ...(ref.credentialBinding === undefined
+                ? {}
+                : { credentialPresentation: ref.credentialBinding.presentation }),
+              ...(deps.caller !== undefined ? { caller: deps.caller } : {}),
+              ...(customerRoute === undefined ? {} : { route: customerRoute }),
+              host: nestedOperationHost(ref, host, signal),
+              ...(deps.trace === undefined ? {} : { trace: deps.trace }),
             });
-            // Attribution keeps the sanitized classification (never the excerpt) so analytics can name
-            // the failing connector/operation/stage while the wire result stays generic (#1309).
-            const status = statusClass(failureDetails.status);
-            const reason =
-              failureDetails.status === 401 || failureDetails.status === 403
-                ? 'upstream_authentication_lost'
-                : failureDetails.category;
+          } catch (error) {
+            const hostCall = hostCallErrorSnapshot(error);
+            if (hostCall !== undefined) {
+              return fail(hostCall.code, hostCall.message, hostCall.path);
+            }
+            if (isConnectorInvocationError(error)) {
+              const failureDetails = sanitizeConnectorFailureDetails(error, {
+                includeResponseExcerpt: customerRoute === undefined,
+              });
+              deps.trace?.record({
+                kind: 'connector',
+                connectorId: ref.connectorId,
+                connectorVersion: ref.connectorVersion,
+                operation: ref.operation,
+                ...failureDetails,
+              });
+              // Attribution keeps the sanitized classification (never the excerpt) so analytics can name
+              // the failing connector/operation/stage while the wire result stays generic (#1309).
+              const status = statusClass(failureDetails.status);
+              const reason =
+                failureDetails.status === 401 || failureDetails.status === 403
+                  ? 'upstream_authentication_lost'
+                  : failureDetails.category;
+              return fail('connector_error', `connector failed for operation "${ref.operation}"`, {
+                ...(reason === undefined ? {} : { reason }),
+                connector: {
+                  connectorId: ref.connectorId,
+                  connectorVersion: ref.connectorVersion,
+                  operation: ref.operation,
+                  ...(failureDetails.category === undefined
+                    ? {}
+                    : { category: failureDetails.category }),
+                  ...(status === undefined ? {} : { statusClass: status }),
+                  ...(failureDetails.attempts === undefined
+                    ? {}
+                    : { attempts: failureDetails.attempts }),
+                  ...(failureDetails.retryable === undefined
+                    ? {}
+                    : { retryable: failureDetails.retryable }),
+                },
+              });
+            }
+            // Normalize connector failures; never surface backend internals or credentials.
             return fail('connector_error', `connector failed for operation "${ref.operation}"`, {
-              ...(reason === undefined ? {} : { reason }),
               connector: {
                 connectorId: ref.connectorId,
                 connectorVersion: ref.connectorVersion,
                 operation: ref.operation,
-                ...(failureDetails.category === undefined
-                  ? {}
-                  : { category: failureDetails.category }),
-                ...(status === undefined ? {} : { statusClass: status }),
-                ...(failureDetails.attempts === undefined
-                  ? {}
-                  : { attempts: failureDetails.attempts }),
-                ...(failureDetails.retryable === undefined
-                  ? {}
-                  : { retryable: failureDetails.retryable }),
               },
             });
           }
-          // Normalize connector failures; never surface backend internals or credentials.
-          return fail('connector_error', `connector failed for operation "${ref.operation}"`, {
-            connector: {
-              connectorId: ref.connectorId,
-              connectorVersion: ref.connectorVersion,
-              operation: ref.operation,
-            },
-          });
-        }
 
-        if (customerRoute !== undefined) {
-          const cloned = cloneRoutedOutput(output, customerRoute.baseUrl);
-          if (!cloned.ok) {
-            return fail('connector_error', `connector failed for operation "${ref.operation}"`);
+          if (customerRoute !== undefined) {
+            const cloned = cloneRoutedOutput(output, customerRoute.baseUrl);
+            if (!cloned.ok) {
+              return fail('connector_error', `connector failed for operation "${ref.operation}"`);
+            }
+            output = cloned.value;
           }
-          output = cloned.value;
+
+          let redacted: unknown;
+          try {
+            redacted = await policy.after(context, output);
+          } catch {
+            return fail('policy_error', 'policy after hook failed');
+          }
+
+          // Projection metadata is a reserved runtime envelope, not part of the connector's visible output
+          // contract. Validate the visible value deeply while preserving policy-processed metadata for the
+          // flow/result projection channel.
+          const outputError = validateAgainstSchema(
+            splitResultMeta(redacted).visible,
+            sig.output,
+            outputPath,
+            'output_invalid',
+            'output field',
+          );
+          if (outputError) return { ok: false, error: outputError };
+
+          return { ok: true, output: redacted };
+        } finally {
+          try {
+            await coordinated?.lease.finish(
+              coordinated.didAdmitAction()
+                ? (outcome ?? { outcome: 'unknown' })
+                : { outcome: 'rejected' },
+            );
+          } finally {
+            coordinated?.dispose();
+          }
         }
-
-        let redacted: unknown;
-        try {
-          redacted = await policy.after(context, output);
-        } catch {
-          return fail('policy_error', 'policy after hook failed');
-        }
-
-        // Projection metadata is a reserved runtime envelope, not part of the connector's visible output
-        // contract. Validate the visible value deeply while preserving policy-processed metadata for the
-        // flow/result projection channel.
-        const outputError = validateAgainstSchema(
-          splitResultMeta(redacted).visible,
-          sig.output,
-          outputPath,
-          'output_invalid',
-          'output field',
-        );
-        if (outputError) return { ok: false, error: outputError };
-
-        return { ok: true, output: redacted };
       },
     );
   } finally {
@@ -417,7 +491,7 @@ export function createHost(
   const host: RuntimeHost = {
     [CALL_STACK]: callStack,
     [INVOCATION]: { id: deps.invocationId ?? randomUUID(), occurrences: new Map() },
-    async callOperation(ref, args, path) {
+    async callOperation(ref, args, path, parentSignal) {
       const connector = deps.connectors.resolve(ref);
       if (!connector) throw new HostCallError('connector_unavailable', 'connector unavailable');
 
@@ -435,23 +509,42 @@ export function createHost(
       );
       if (argError) throw new HostCallError(argError.code, argError.message, argError.path);
 
-      const result = await invokeOperation(
-        ref,
-        args,
-        sig,
-        toolName,
-        deps,
-        policy,
-        this,
-        env,
-        `${path}.args`,
-        `${path}.output`,
-        beforeDispatch,
-      );
-      if (!result.ok) {
-        throw new HostCallError(result.error.code, result.error.message, result.error.path);
+      const cancellation = executionCancellation(deps.signal, beforeDispatch);
+      if (cancellation) throw new HostCallError(cancellation.code, cancellation.message);
+      // A disconnected admitted request must not mask a later hard parent deadline in AbortSignal.any.
+      const inherited =
+        parentSignal === undefined ? undefined : admittedExecutionSignal(deps.signal);
+      try {
+        const nestedDeps =
+          parentSignal === undefined
+            ? deps
+            : {
+                ...deps,
+                signal:
+                  inherited?.signal === undefined
+                    ? parentSignal
+                    : AbortSignal.any([inherited.signal, parentSignal]),
+              };
+        const result = await invokeOperation(
+          ref,
+          args,
+          sig,
+          toolName,
+          nestedDeps,
+          policy,
+          this,
+          env,
+          `${path}.args`,
+          `${path}.output`,
+          beforeDispatch,
+        );
+        if (!result.ok) {
+          throw new HostCallError(result.error.code, result.error.message, result.error.path);
+        }
+        return result.output;
+      } finally {
+        inherited?.dispose();
       }
-      return result.output;
     },
   };
   return host;

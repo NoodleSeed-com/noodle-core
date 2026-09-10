@@ -330,6 +330,28 @@ const httpOperationSchema = z
     /** How to encode a non-GET request mapping. JSON remains the default. */
     requestEncoding: z.enum(['json', 'form-urlencoded']).optional(),
     response: exprMapSchema.optional(),
+    /** Explicit expected rejection outcomes. Authentication, redirects, rate limits and 5xx fail closed. */
+    responses: z
+      .record(
+        z
+          .string()
+          .regex(/^4\d\d$/u)
+          .refine((status) => !['401', '403', '429'].includes(status)),
+        z
+          .object({
+            response: exprMapSchema,
+            responseType: z.enum(['json', 'text', 'empty']).optional(),
+            evidence: z
+              .object({
+                outcome: z.enum(['rejected', 'unknown']),
+                reference: z.string().min(1).optional(),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict(),
+      )
+      .optional(),
     /** Explicit provider evidence mapping; never infer completion from an HTTP status or tool name. */
     evidence: z
       .object({ outcome: z.string().min(1), reference: z.string().min(1).optional() })
@@ -361,6 +383,13 @@ const httpOperationSchema = z
   })
   .strict()
   .superRefine((operation, ctx) => {
+    if (operation.responses !== undefined && operation.pagination !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['responses'],
+        message: 'HTTP response status mappings cannot be combined with pagination',
+      });
+    }
     if (operation.requestEncoding !== 'form-urlencoded') return;
     if (operation.method === undefined || operation.method === 'GET') {
       ctx.addIssue({
@@ -450,9 +479,26 @@ const computeOperationSchema = z
     code: z.string().min(1),
     limits: computeLimitsSchema.optional(),
     calls: z.record(z.string(), z.string().min(1)).optional(),
+    coordination: z
+      .object({
+        connectionId: z.string().regex(/^[A-Za-z0-9_-]{1,128}$/),
+        namespace: z.string().regex(/^[A-Za-z0-9_-]{1,80}$/),
+        key: z.string().min(1).max(4096),
+        reference: z.string().min(1).max(4096),
+      })
+      .strict()
+      .optional(),
     credentials: operationCredentialsSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((operation, ctx) => {
+    if (operation.coordination && operation.type !== 'action')
+      ctx.addIssue({
+        code: 'custom',
+        path: ['coordination'],
+        message: 'Coordination requires an action operation',
+      });
+  });
 
 const managedVariableExpressionSchema = z
   .string()

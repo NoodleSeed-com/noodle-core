@@ -17,6 +17,11 @@ export interface RunMessage {
   readonly limits: ComputeLimits;
   readonly hostEnabled: boolean;
   readonly consoleEnabled: boolean;
+  readonly execution?: { readonly id: string };
+  readonly coordination?: {
+    readonly acquired: boolean;
+    readonly previous?: { readonly reference: string; readonly operationDigest: string };
+  };
 }
 
 /** Deliver the host-call envelope (JSON `HostEnvelope`) for an outstanding `host_call`. */
@@ -36,7 +41,7 @@ export type MainToWorkerMessage = RunMessage | HostResultMessage | LogDoneMessag
 
 /** A sandbox `callOperation` that must be mediated by the runtime host on the main thread. */
 interface HostCallMessage {
-  readonly t: 'host_call';
+  readonly t: 'host_call' | 'host_control';
   readonly id: number;
   readonly callId: number;
   readonly name: string;

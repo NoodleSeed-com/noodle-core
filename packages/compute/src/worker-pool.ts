@@ -35,6 +35,12 @@ export interface ComputeWorkerPoolOptions {
  * bounded console entry. Only JSON strings and flat entries cross the thread boundary.
  */
 export interface PoolHostBridge {
+  readonly execution?: { readonly id: string };
+  readonly coordination?: {
+    readonly acquired: boolean;
+    readonly previous?: { readonly reference: string; readonly operationDigest: string };
+  };
+  control?(name: string, argsJson: string): Promise<string>;
   callOperation(name: string, argsJson: string): Promise<string>;
   log?(entry: ComputeAppLogEntry): Promise<void>;
 }
@@ -196,6 +202,8 @@ export class ComputeWorkerPool {
       limits: { ...job.limits, timeoutMs: remainingMs },
       hostEnabled: job.host !== undefined,
       consoleEnabled: job.consoleEnabled,
+      ...(job.host?.execution === undefined ? {} : { execution: job.host.execution }),
+      ...(job.host?.coordination === undefined ? {} : { coordination: job.host.coordination }),
     };
     slot.worker.postMessage(message);
   }
@@ -219,7 +227,7 @@ export class ComputeWorkerPool {
       return;
     }
 
-    if (message.t === 'host_call') {
+    if (message.t === 'host_call' || message.t === 'host_control') {
       const host = active.job.host;
       const respond = (envelopeJson: string): void => {
         if (slot.active === active && !active.settled && !slot.dropped) {
@@ -240,8 +248,17 @@ export class ComputeWorkerPool {
         );
         return;
       }
-      host
-        .callOperation(message.name, message.argsJson)
+      const invoke = message.t === 'host_control' ? host.control : host.callOperation;
+      if (!invoke) {
+        respond(
+          JSON.stringify({
+            ok: false,
+            error: { code: 'host_call_denied', message: 'host control unavailable' },
+          }),
+        );
+        return;
+      }
+      invoke(message.name, message.argsJson)
         .then(respond)
         .catch(() =>
           respond(
@@ -254,6 +271,7 @@ export class ComputeWorkerPool {
       return;
     }
 
+    if (message.t !== 'log') return;
     // 'log': deliver to the sink (fire-and-forget failures) and always release the sandbox.
     const ack = (): void => {
       if (slot.active === active && !active.settled && !slot.dropped) {

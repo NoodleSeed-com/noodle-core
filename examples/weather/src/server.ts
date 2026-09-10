@@ -158,8 +158,8 @@ const placeNarrow = connector('geo_places')
     type: 'read',
     input: z.object({ results: z.unknown().optional() }),
     output: z.object({ places: z.array(z.unknown()) }),
-    // Self-contained: no imports, no closure over outer variables, synchronous.
-    run: (input) => {
+    // Synchronous and self-contained.
+    run: (input, host) => {
       const raw = input.results;
       const list = Array.isArray(raw) ? raw : [];
       const places = list.map((entry) => {
@@ -169,7 +169,7 @@ const placeNarrow = connector('geo_places')
         const id =
           entry.id !== undefined && entry.id !== null
             ? String(entry.id)
-            : `${entry.latitude},${entry.longitude}`;
+            : host.digest(`${entry.latitude},${entry.longitude}`);
         return { id, label: parts.join(', ') };
       });
       return { places };

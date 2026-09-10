@@ -76,6 +76,8 @@ export interface PublicEmbedStore {
     readonly env: string;
     readonly surfaceMode: 'public' | 'mixed';
     readonly now: Date;
+    /** Installation recovery preserves revocation; explicit redeploy may replace it by default. */
+    readonly allowRevokedReplacement?: boolean;
   }): Promise<PublicEmbedRecord>;
   /** Resolve an id presented by a browser. Revoked ids resolve to undefined. */
   lookup(embedId: string): Promise<PublicEmbedRecord | undefined>;
@@ -88,11 +90,14 @@ export interface PublicEmbedStore {
     budget: PublicEmbedBudget,
     now: Date,
   ): Promise<PublicEmbedRecord | undefined>;
-  list(tenant: {
-    readonly org: string;
-    readonly app: string;
-    readonly env: string;
-  }): Promise<readonly PublicEmbedRecord[]>;
+  list(
+    tenant: {
+      readonly org: string;
+      readonly app: string;
+      readonly env: string;
+    },
+    options?: { readonly includeRevoked?: boolean },
+  ): Promise<readonly PublicEmbedRecord[]>;
   revoke(embedId: string, now: Date): Promise<boolean>;
 }
 

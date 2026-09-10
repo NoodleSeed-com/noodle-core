@@ -11,6 +11,10 @@ export interface OperationEvidence {
 
 export interface OperationEvidenceIntent {
   readonly id: string;
+  /** Trusted coordinated-parent identity; never supplied by application arguments. */
+  readonly parentId?: string;
+  /** Coordination-selected connection for an outer compute action without a direct credential binding. */
+  readonly connectionId?: string;
   readonly tool: string;
   readonly operation: ResolvedOperationRef;
   readonly arguments: Readonly<Record<string, unknown>>;

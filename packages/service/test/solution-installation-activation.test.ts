@@ -1,15 +1,20 @@
 import { InMemoryDailyCounterStore } from '@noodle-borg/admission-limits/portable';
+import { InMemoryPublicEmbedStore } from '@noodle-borg/assistant-gateway/portable';
 import { InMemoryControlPlaneStore } from '@noodle-borg/control-plane/portable';
 import { DeploymentActivationError } from '@noodle-borg/module';
 import { executeTool } from '@noodle-borg/runtime';
 import { describe, expect, it, vi } from 'vitest';
+import { createApplicationServingRuntime } from '../src/application-runtime-target.js';
 import { ApplicationSettings, installationSettingsTarget } from '../src/application-settings.js';
 import { privateDefinitionFromDeployment } from '../src/business-information/definition-resolver.js';
 import { InMemoryBusinessInformationStore } from '../src/business-information/in-memory-store.js';
 import { managedSolutionManifest } from '../src/business-information/managed-solution-executable.js';
 import { createDeploymentNativeRecordConnector } from '../src/native-record-connector.js';
 import { ServerRegistry } from '../src/registry.js';
-import { activateSolutionInstallation } from '../src/solution-installation-activation.js';
+import {
+  activateSolutionInstallation,
+  readSolutionInstallationActivation,
+} from '../src/solution-installation-activation.js';
 import { InMemoryAuditStore } from '../src/store/audit.js';
 
 async function setup() {
@@ -59,6 +64,9 @@ describe('installation executable activation', () => {
         await activateSolutionInstallation({ installation, actor }, dependencies),
       ).toMatchObject({ ok: false, code: 'installation_application_unavailable' });
       await registry.sweepArchived('2026-02-01T00:00:00.000Z');
+      expect(await readSolutionInstallationActivation(installation, dependencies)).toBe(
+        'unavailable',
+      );
       expect(
         await activateSolutionInstallation({ installation, actor }, dependencies),
       ).toMatchObject({ ok: false });
@@ -68,6 +76,9 @@ describe('installation executable activation', () => {
         { actor, accessMode: 'public' },
       );
       expect(await registry.getAppGeneration('acme', 'travel')).toBe(generation);
+      expect(await readSolutionInstallationActivation(installation, dependencies)).toBe(
+        'unavailable',
+      );
       expect(
         await activateSolutionInstallation({ installation, actor }, dependencies),
       ).toMatchObject({ ok: false, code: 'installation_application_unavailable' });
@@ -314,5 +325,111 @@ describe('installation executable activation', () => {
         dependencies,
       ),
     ).toMatchObject({ ok: false, status: 403 });
+  });
+});
+
+describe('saved installation recovery', () => {
+  it.each([
+    'revoked',
+    'unavailable',
+  ] as const)('keeps independent MCP serving available when public embed custody is %s', async (failure) => {
+    const { store, registry, actor, dependencies } = await setup();
+    const publicEmbeds = new InMemoryPublicEmbedStore();
+    const options = { businessInformationStore: store, publicEmbeds };
+    const deps = { ...dependencies, options };
+    const { installation } = await store.createInstallation({
+      scope: { org: 'acme', app: 'travel', env: 'prod', installationId: 'travel-prod' },
+      profileKey: 'travel',
+      managedCollections: ['travel_requests'],
+      actorSubject: actor.subject,
+    });
+    expect(await activateSolutionInstallation({ installation, actor }, deps)).toMatchObject({
+      ok: true,
+    });
+    const target = await registry.getActiveByTenant(installation.scope);
+    const [embed] = await publicEmbeds.list(installation.scope);
+    if (!target || !embed) throw new Error('activated fixture is missing');
+    const list = vi.spyOn(publicEmbeds, 'list');
+    if (failure === 'revoked') await publicEmbeds.revoke(embed.embedId, new Date());
+    else list.mockRejectedValue(new Error('synthetic embed custody outage'));
+    expect(await readSolutionInstallationActivation(installation, deps)).toBe('unavailable');
+    expect(await activateSolutionInstallation({ installation, actor }, deps)).toMatchObject({
+      ok: false,
+      code:
+        failure === 'revoked' ? 'installation_embed_revoked' : 'installation_activation_incomplete',
+    });
+    const { resolveRuntimeTarget } = createApplicationServingRuntime(
+      registry,
+      options,
+      dependencies.controlPlane,
+      dependencies.audit,
+      undefined,
+    );
+    const resolved = await resolveRuntimeTarget(target);
+    expect(resolved?.deploymentId).toBe(target.deploymentId);
+    expect(resolved?.served.artifact.tools.map((tool) => tool.name)).toContain(
+      'submit_travel_request',
+    );
+    list.mockRestore();
+    expect(await publicEmbeds.list(installation.scope, { includeRevoked: true })).toHaveLength(1);
+    if (failure === 'revoked') expect(await publicEmbeds.lookup(embed.embedId)).toBeUndefined();
+    const saved = await store.getInstallation(installation.scope);
+    await store.setIntakeState({
+      scope: installation.scope,
+      active: false,
+      expectedRevision: saved?.revision ?? 0,
+      actorSubject: actor.subject,
+    });
+    expect(await resolveRuntimeTarget(target)).toBeUndefined();
+  });
+
+  it('repairs a lost embed allocation without deploying twice or resuming paused intake', async () => {
+    const { store, registry, actor, dependencies } = await setup();
+    const publicEmbeds = new InMemoryPublicEmbedStore();
+    const deps = { ...dependencies, options: { publicEmbeds } };
+    const { installation } = await store.createInstallation({
+      scope: { org: 'acme', app: 'travel', env: 'prod', installationId: 'travel-prod' },
+      profileKey: 'travel',
+      managedCollections: ['travel_requests'],
+      actorSubject: actor.subject,
+    });
+    expect(await readSolutionInstallationActivation(installation, deps)).toBe('pending');
+    const deploy = vi.spyOn(registry, 'deploy');
+    vi.spyOn(publicEmbeds, 'ensure').mockRejectedValueOnce(new Error('synthetic store outage'));
+    expect(await activateSolutionInstallation({ installation, actor }, deps)).toMatchObject({
+      ok: false,
+      code: 'installation_activation_incomplete',
+    });
+    const saved = await store.getInstallation(installation.scope);
+    expect(saved?.applicationGeneration).not.toBe('pending');
+    expect(await readSolutionInstallationActivation(installation, deps)).toBe('pending');
+    await store.setIntakeState({
+      scope: installation.scope,
+      active: false,
+      expectedRevision: saved?.revision ?? 0,
+      actorSubject: actor.subject,
+    });
+    const repaired = await activateSolutionInstallation({ installation, actor }, deps);
+    expect(repaired).toMatchObject({ ok: true });
+    expect(await activateSolutionInstallation({ installation, actor }, deps)).toEqual(repaired);
+    expect(deploy).toHaveBeenCalledTimes(1);
+    expect(await readSolutionInstallationActivation(installation, deps)).toBe('ready');
+    vi.spyOn(publicEmbeds, 'list').mockRejectedValueOnce(new Error('synthetic read outage'));
+    expect(await readSolutionInstallationActivation(installation, deps)).toBe('unavailable');
+    expect(await readSolutionInstallationActivation(installation, deps)).toBe('ready');
+    expect((await store.getInstallation(installation.scope))?.intakeActive).toBe(false);
+    const [embed] = await publicEmbeds.list(installation.scope);
+    expect(embed).toBeDefined();
+    await publicEmbeds.revoke(embed?.embedId ?? '', new Date());
+    expect(await readSolutionInstallationActivation(installation, deps)).toBe('unavailable');
+    expect(await activateSolutionInstallation({ installation, actor }, deps)).toMatchObject({
+      ok: false,
+      code: 'installation_embed_revoked',
+    });
+    expect(await publicEmbeds.lookup(embed?.embedId ?? '')).toBeUndefined();
+    expect(await publicEmbeds.list(installation.scope, { includeRevoked: true })).toHaveLength(1);
+    expect(deploy).toHaveBeenCalledTimes(1);
+    await registry.archiveApp('acme', 'travel', new Date().toISOString());
+    expect(await readSolutionInstallationActivation(installation, deps)).toBe('unavailable');
   });
 });

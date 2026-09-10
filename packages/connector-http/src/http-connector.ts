@@ -18,7 +18,11 @@ import {
   resolveCustomerBase,
   sanitizedCustomerRouteError,
 } from './customer-route.js';
-import { fetchResponseWithResilience, type HttpRetryPolicy } from './http-response.js';
+import {
+  fetchResponseWithResilience,
+  type HttpResponse,
+  type HttpRetryPolicy,
+} from './http-response.js';
 import { applyProjection, type HttpOperationProjection } from './projection.js';
 import { type HttpRequestEncoding, requestPayload, setOwnedHeader } from './request-encoding.js';
 import { assertPublicResolution, type DnsLookup, needsGuard } from './ssrf.js';
@@ -77,6 +81,16 @@ export interface HttpOperationFake {
   readonly pages?: readonly unknown[];
 }
 
+/** Explicit application outcomes for selected provider rejections, never transport/auth failures. */
+export interface HttpStatusResponse {
+  readonly responseType?: 'json' | 'text' | 'empty';
+  readonly mapResponse: (
+    body: unknown,
+    args: Readonly<Record<string, unknown>>,
+  ) => Record<string, unknown>;
+  readonly evidence?: (body: unknown) => OperationEvidence;
+}
+
 /**
  * A single HTTP operation. `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` are supported. The `path` template is
  * filled from validated args
@@ -85,6 +99,7 @@ export interface HttpOperationFake {
  * declared output fields.
  */
 export interface HttpOperation {
+  readonly responses?: Readonly<Record<string, HttpStatusResponse>>;
   readonly evidence?: (json: unknown) => OperationEvidence;
   /** Compiler-derived requirement for mappings that consume the trusted operation identity. */
   readonly requiresExecution?: boolean;
@@ -199,6 +214,7 @@ export class HttpConnector implements Connector {
     this.id = config.id;
     this.version = config.version;
     this.#config = config;
+    for (const operation of Object.values(config.operations)) validateStatusResponses(operation);
     const customerRouted = isCustomerEndpointRef(config.baseUrl);
     this.#customerBase = customerRouted ? frozenCustomerEndpointRef(config.baseUrl) : undefined;
     const origins = customerRouted
@@ -298,10 +314,37 @@ export class HttpConnector implements Connector {
         ...(call.signal === undefined ? {} : { signal: call.signal }),
         ...(payload !== undefined ? { body: payload } : {}),
       };
-      const json =
+      const response =
         op.pagination === undefined
-          ? await this.#fetchJsonWithResilience(url, op, init)
-          : await this.#fetchPaginatedJson(op, call.args, base, init, customerBase, allowed);
+          ? await this.#fetchResponseWithResilience(url, op, init)
+          : {
+              status: 200,
+              body: await this.#fetchPaginatedJson(
+                op,
+                call.args,
+                base,
+                init,
+                customerBase,
+                allowed,
+              ),
+            };
+      const json = response.body;
+      const statusResponse = op.responses?.[String(response.status)];
+      if (statusResponse !== undefined) {
+        // Do not inherit a successful-response mapping or completion evidence for a provider rejection.
+        const output = this.#mapOutput(
+          { ...op, mapResponse: statusResponse.mapResponse },
+          json,
+          call.args,
+        );
+        const evidence = statusResponse.evidence?.(json) ?? { outcome: 'unknown' as const };
+        call.reportOutcome?.(
+          evidence.outcome === 'rejected' || evidence.outcome === 'unknown'
+            ? evidence
+            : { outcome: 'unknown' },
+        );
+        return output;
+      }
       if (op.evidence) call.reportOutcome?.(op.evidence(json));
       return this.#mapOutput(op, json, call.args);
     } catch (error) {
@@ -430,7 +473,7 @@ export class HttpConnector implements Connector {
     return this.#collectPaginatedJson(op, args, async (_pageIndex, query) => {
       const url = this.#buildUrl(op, args, base, query);
       await this.#validateUrl(url, customerBase, allowed);
-      return this.#fetchJsonWithResilience(url, op, init);
+      return (await this.#fetchResponseWithResilience(url, op, init)).body;
     });
   }
 
@@ -531,12 +574,28 @@ export class HttpConnector implements Connector {
     return aggregate(pages, items, true, 'max_pages');
   }
 
-  #fetchJsonWithResilience(url: URL, op: HttpOperation, init: RequestInit): Promise<unknown> {
+  #fetchResponseWithResilience(
+    url: URL,
+    op: HttpOperation,
+    init: RequestInit,
+  ): Promise<HttpResponse> {
     return fetchResponseWithResilience(url, op, init, {
       ...(this.#config.maxBytes === undefined ? {} : { maxBytes: this.#config.maxBytes }),
       ...(this.#config.timeoutMs === undefined ? {} : { timeoutMs: this.#config.timeoutMs }),
       ...(this.#config.lookup === undefined ? {} : { lookup: this.#config.lookup }),
     });
+  }
+}
+
+function validateStatusResponses(operation: HttpOperation): void {
+  if (operation.responses === undefined) return;
+  if (operation.pagination !== undefined)
+    throw new Error('HTTP response status mappings cannot be combined with pagination');
+  for (const [status, response] of Object.entries(operation.responses)) {
+    if (!/^4\d\d$/u.test(status) || ['401', '403', '429'].includes(status))
+      throw new Error('HTTP response status must be an explicit 4xx other than 401, 403, or 429');
+    if (typeof response.mapResponse !== 'function')
+      throw new Error('HTTP response status requires an explicit response mapping');
   }
 }
 

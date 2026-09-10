@@ -5,12 +5,26 @@ import type {
   ResolveActivityHistoryAllowance,
 } from '@noodle-borg/module';
 import type { ServedTarget } from '@noodle-borg/transport-http';
+import {
+  ApplicationActivityListResponseSchema,
+  ApplicationActivityPreviewResponseSchema,
+  ApplicationActivitySettingsResponseSchema,
+  ApplicationActivitySettingsSaveRequestSchema,
+  OperationCoordinationListRequestSchema,
+  OperationCoordinationListResponseSchema,
+  OperationCoordinationResolveRequestSchema,
+  OperationCoordinationResolveResponseSchema,
+} from '@noodle-borg/wire-contracts';
 import { resolveApplicationRuntimeTarget } from './application-runtime-target.js';
 import type {
   BusinessInformationStore,
   InstallationScope,
 } from './business-information/contracts.js';
 import type { ApplicationConnections } from './connections/types.js';
+import {
+  createOperationCoordinationPort,
+  type OperationCoordinationStore,
+} from './operation-coordination.js';
 import {
   createOperationEvidencePort,
   type OperationEvidenceCursor,
@@ -26,22 +40,170 @@ export interface ApplicationActivityOptions {
   readonly identityKey: string;
   readonly allowance: ResolveActivityHistoryAllowance;
   readonly now?: () => number;
+  readonly coordination?: OperationCoordinationStore;
 }
+export type ActivityProjectionAction =
+  | 'list'
+  | 'export'
+  | 'preview'
+  | 'settings'
+  | 'save-settings'
+  | 'coordination-list'
+  | 'coordination-resolve';
+const POLICY_MESSAGES = {
+  activity_conflict: 'History settings or plan changed. Reload before continuing.',
+  activity_invalid: 'Activity paging or retention is invalid for the current policy.',
+  activity_unavailable: 'Verified activity history policy is unavailable.',
+  coordination_invalid: 'Invalid coordination request.',
+  coordination_conflict:
+    'The operation is active, changed, or unavailable. Inspect the current state before reviewing it again.',
+  coordination_unavailable: 'Verified coordination state is unavailable.',
+} as const;
 export class ActivityPolicyError extends Error {
-  constructor(readonly code: 'activity_unavailable' | 'activity_conflict' | 'activity_invalid') {
-    super(
-      code === 'activity_conflict'
-        ? 'History settings or plan changed. Reload before continuing.'
-        : code === 'activity_invalid'
-          ? 'Activity paging or retention is invalid for the current policy.'
-          : 'Verified activity history policy is unavailable.',
-    );
+  constructor(readonly code: keyof typeof POLICY_MESSAGES) {
+    super(POLICY_MESSAGES[code]);
   }
 }
 
 /** One verified plan projection governs current access and the ceiling on newly assigned expiry. */
 export class ApplicationActivity {
   constructor(readonly options: ApplicationActivityOptions) {}
+  /** Shared strict operator projection. Callers authorize the live installation grant before and after it. */
+  async project(
+    scope: InstallationScope,
+    action: ActivityProjectionAction,
+    input: {
+      readonly parameters: readonly (readonly [string, string])[];
+      readonly body?: unknown;
+      readonly canEdit: boolean;
+      readonly reviewer: string;
+    },
+  ) {
+    const coordinating = action.startsWith('coordination');
+    const invalid = () =>
+      new ActivityPolicyError(coordinating ? 'coordination_invalid' : 'activity_invalid');
+    const allowed =
+      action === 'coordination-list'
+        ? ['limit', 'beforeResource']
+        : action === 'list' || action === 'export'
+          ? ['limit', 'cursor']
+          : [];
+    const parameters = new Map<string, string>();
+    for (const [key, value] of input.parameters) {
+      if (!allowed.includes(key) || parameters.has(key)) throw invalid();
+      parameters.set(key, value);
+    }
+    const mutation = <Response>(
+      response: Response,
+      eventType: string,
+      details: Readonly<Record<string, string | number>>,
+    ) => ({
+      response,
+      audit: { eventType, details },
+    });
+    if (action === 'coordination-resolve') {
+      const parsed = OperationCoordinationResolveRequestSchema.safeParse(input.body);
+      if (!parsed.success) throw invalid();
+      const store = this.options.coordination;
+      if (!store) throw new ActivityPolicyError('coordination_unavailable');
+      let resolved: boolean;
+      try {
+        resolved = await store.resolve(scope, parsed.data.resource, parsed.data.token, {
+          reviewer: input.reviewer,
+          reason: parsed.data.reason,
+        });
+      } catch {
+        throw new ActivityPolicyError('coordination_unavailable');
+      }
+      if (!resolved) throw new ActivityPolicyError('coordination_conflict');
+      return mutation(
+        OperationCoordinationResolveResponseSchema.parse({ ok: true, data: { resolved: true } }),
+        'config.operation.coordination_resolved',
+        { resource: parsed.data.resource },
+      );
+    }
+    if (action === 'coordination-list') {
+      const parsed = OperationCoordinationListRequestSchema.safeParse({
+        ...(parameters.has('limit') ? { limit: Number(parameters.get('limit')) } : {}),
+        ...(parameters.has('beforeResource')
+          ? { beforeResource: parameters.get('beforeResource') }
+          : {}),
+      });
+      if (!parsed.success) throw invalid();
+      const store = this.options.coordination;
+      if (!store) throw new ActivityPolicyError('coordination_unavailable');
+      try {
+        const limit = parsed.data.limit ?? 100;
+        const records = await store.list(scope, limit, parsed.data.beforeResource);
+        if (records.some((record) => canonicalJson(record.scope) !== canonicalJson(scope)))
+          throw new Error('Coordination scope mismatch');
+        return {
+          response: OperationCoordinationListResponseSchema.parse({
+            ok: true,
+            data: {
+              records: records.map(
+                ({ resource, token, reference, operationDigest, startedAt, deadline, state }) => ({
+                  resource,
+                  token,
+                  reference,
+                  operationDigest,
+                  startedAt: new Date(startedAt).toISOString(),
+                  deadline: new Date(deadline).toISOString(),
+                  state,
+                }),
+              ),
+              ...(records.length === limit ? { nextBeforeResource: records.at(-1)?.resource } : {}),
+            },
+          }),
+        };
+      } catch {
+        throw new ActivityPolicyError('coordination_unavailable');
+      }
+    }
+    if (action === 'save-settings') {
+      const parsed = ApplicationActivitySettingsSaveRequestSchema.safeParse(input.body);
+      if (!parsed.success) throw invalid();
+      const data = await this.save(scope, parsed.data);
+      return mutation(
+        ApplicationActivitySettingsResponseSchema.parse({ ok: true, data }),
+        'config.activity.retention_changed',
+        { retentionDays: data.retentionDays },
+      );
+    }
+    if (action === 'preview')
+      return {
+        response: ApplicationActivityPreviewResponseSchema.parse({
+          ok: true,
+          data: await this.preview(scope),
+        }),
+      };
+    if (action === 'settings')
+      return {
+        response: ApplicationActivitySettingsResponseSchema.parse({
+          ok: true,
+          data: (await this.settings(scope, input.canEdit)).projection,
+        }),
+      };
+    const limit = parameters.has('limit') ? Number(parameters.get('limit')) : 50;
+    const cursor = parameters.get('cursor');
+    if (
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > 100 ||
+      (cursor !== undefined && (!cursor || cursor.length > 2048))
+    )
+      throw invalid();
+    return {
+      response: ApplicationActivityListResponseSchema.parse({
+        ok: true,
+        data: await this.page(scope, {
+          purpose: action,
+          limit,
+          ...(cursor === undefined ? {} : { cursor }),
+        }),
+      }),
+    };
+  }
   async settings(scope: InstallationScope, canEdit: boolean) {
     const allowance = await this.options.allowance(scope.org);
     if (
@@ -247,6 +409,24 @@ export class ApplicationActivity {
     const scope = installation.scope;
     const revision = target.served.deps.executionBinding?.revision;
     const epochRevision = sha256Canonical({ revision, epoch: this.options.epoch });
+    const authorize = async () => {
+      const active = await deps.registry.getActiveByTenant({
+        org: scope.org,
+        app: scope.app,
+        env: scope.env,
+      });
+      if (!active || active.deploymentId !== target.deploymentId) return false;
+      const current = await resolveApplicationRuntimeTarget(
+        active,
+        deps.installations,
+        deps.connections?.readGenerations,
+      );
+      return (
+        !!current &&
+        revision !== undefined &&
+        current.served.deps.executionBinding?.revision === revision
+      );
+    };
     const evidence = createOperationEvidencePort({
       ...this.options,
       scope,
@@ -255,25 +435,17 @@ export class ApplicationActivity {
       executionBoundMs: (intent) => intent.executionBoundMs,
       connectionGeneration: (id) =>
         target.served.deps.executionBinding?.connections[id] ?? revision,
-      authorize: async () => {
-        const active = await deps.registry.getActiveByTenant({
-          org: scope.org,
-          app: scope.app,
-          env: scope.env,
-        });
-        if (!active || active.deploymentId !== target.deploymentId) return false;
-        const current = await resolveApplicationRuntimeTarget(
-          active,
-          deps.installations,
-          deps.connections?.readGenerations,
-        );
-        return (
-          !!current &&
-          revision !== undefined &&
-          current.served.deps.executionBinding?.revision === revision
-        );
-      },
+      authorize,
     });
+    const coordination =
+      this.options.coordination &&
+      createOperationCoordinationPort({
+        ...this.options,
+        store: this.options.coordination,
+        scope,
+        authorize,
+        connectionGeneration: (id) => target.served.deps.executionBinding?.connections[id],
+      });
     return {
       ...target,
       served: {
@@ -281,6 +453,7 @@ export class ApplicationActivity {
         deps: {
           ...target.served.deps,
           operationEvidence: evidence,
+          ...(coordination ? { operationCoordination: coordination } : {}),
           executionBinding: {
             revision: epochRevision,
             connections: target.served.deps.executionBinding?.connections ?? {},

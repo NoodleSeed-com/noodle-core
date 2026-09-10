@@ -46,6 +46,64 @@ export function describeOperationEvidence(create: () => Promise<OperationEvidenc
     };
   }
   describe('durable operation evidence conformance', () => {
+    it('projects one coordinated business attempt while retaining child custody and complete pagination', async () => {
+      const store = await create();
+      const port = createOperationEvidencePort(
+        options(store, { connectionGeneration: () => 'generation-1' }),
+      );
+      const parent = await port.begin({ ...intent, id: 'a-parent', connectionId: 'account' });
+      const childIntent = { ...intent, id: 'b-child', parentId: 'a-parent' };
+      const child = await port.begin(childIntent);
+      const next = await port.begin({ ...intent, id: 'c-next' });
+      await child?.finish({ outcome: 'completed', reference: 'provider-child' });
+      await parent?.finish({ outcome: 'unknown', reference: 'reviewed-business-operation' });
+      await next?.finish({ outcome: 'rejected' });
+      const first = await store.list(scope, start + 1, 7, 1);
+      expect(first).toMatchObject([
+        { id: 'a-parent', connectionId: 'account', generation: 'generation-1', outcome: 'unknown' },
+      ]);
+      const cursor = { id: first[0]?.id ?? '', startedAt: start };
+      expect(await store.list(scope, start + 1, 7, 1, cursor)).toMatchObject([{ id: 'c-next' }]);
+      expect(await port.begin(childIntent)).toBeUndefined();
+      await expect(child?.finish({ outcome: 'rejected' })).rejects.toThrow();
+      expect(
+        await store.preview(scope, {
+          asOf: start + 1,
+          paidPeriodEnd: start + 86_400_000,
+          currentMaximumDays: 7,
+          scenarios: [{ id: 'lower', maximumDays: 1 }],
+        }),
+      ).toMatchObject({ currentlyAccessibleCount: 2 });
+      const foreignScope = { ...scope, installationId: 'foreign' };
+      expect(await store.list(foreignScope, start + 1, 7, 100)).toEqual([]);
+      const foreign = await createOperationEvidencePort(
+        options(store, { scope: foreignScope }),
+      ).begin({ ...intent, id: 'b-child' });
+      expect(foreign).toBeDefined();
+      expect(await store.list(foreignScope, start + 1, 7, 100)).toMatchObject([{ id: 'b-child' }]);
+    });
+    it('sweeps hidden child dispatches without making them visible or retryable', async () => {
+      const store = await create();
+      const port = createOperationEvidencePort(options(store));
+      const parent = await port.begin({ ...intent, id: 'parent' });
+      const childIntent = { ...intent, id: 'child', parentId: 'parent' };
+      const child = await port.begin(childIntent);
+      await parent?.finish({ outcome: 'unknown' });
+      await store.sweep(start + 10_001);
+      await expect(child?.finish({ outcome: 'completed' })).rejects.toThrow();
+      expect(await port.begin(childIntent)).toBeUndefined();
+      expect(await store.list(scope, start + 10_001, 7, 100)).toMatchObject([
+        { id: 'parent', outcome: 'unknown' },
+      ]);
+      expect(
+        await store.preview(scope, {
+          asOf: start + 10_001,
+          paidPeriodEnd: start + 86_400_000,
+          currentMaximumDays: 7,
+          scenarios: [{ id: 'lower', maximumDays: 1 }],
+        }),
+      ).toMatchObject({ currentlyAccessibleCount: 1 });
+    });
     it('previews only currently accessible history and separates physical expiry from additional access loss', async () => {
       const store = await create();
       const day = 86_400_000;

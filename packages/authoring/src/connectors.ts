@@ -197,6 +197,33 @@ export interface ComputeLimits {
 }
 
 export interface ComputeHost {
+  /** Trusted external-operation identity; unavailable outside governed action execution. */
+  readonly execution?: { readonly id: string };
+  readonly coordination?: {
+    readonly acquired: boolean;
+    readonly previous?: { readonly reference: string; readonly operationDigest: string };
+  };
+  reportOutcome(evidence: {
+    readonly outcome: 'completed' | 'rejected' | 'unknown';
+    readonly reference?: string;
+  }): unknown;
+  resolveCoordination(): unknown;
+  /** Pure helpers over explicit instants, with no access to the current clock. */
+  readonly time: {
+    parse(instant: string): number;
+    format(epochMilliseconds: number): string;
+    parts(
+      epochMilliseconds: number,
+      timeZone: string,
+    ): {
+      readonly date: string;
+      readonly weekday: number;
+      readonly hour: number;
+      readonly minute: number;
+    };
+  };
+  /** Bounded SHA-256 over explicit input; no keys, secrets or randomness. */
+  digest(value: string, encoding?: 'hex' | 'base32hex'): string;
   callOperation(name: string, args: Readonly<Record<string, unknown>>): unknown;
 }
 
@@ -216,6 +243,13 @@ export interface ComputeOperationOptions {
   readonly run: (input: any, host: ComputeHost) => unknown;
   readonly limits?: ComputeLimits;
   readonly calls?: Readonly<Record<string, string>>;
+  /** Serialize one externally coordinated resource; host owns durable custody and exact release. */
+  readonly coordination?: {
+    readonly connectionId: string;
+    readonly namespace: string;
+    readonly key: string;
+    readonly reference: string;
+  };
 }
 
 /** A connector operation's fulfilment, carried by the builder so it can be emitted to a catalog. */
@@ -227,6 +261,7 @@ export interface ConnectorOpDefinition {
   readonly code: string;
   readonly limits?: ComputeLimits;
   readonly calls?: Readonly<Record<string, string>>;
+  readonly coordination?: ComputeOperationOptions['coordination'];
 }
 
 export interface ConnectorRef<CredentialProfileKey extends string = string> {
@@ -531,6 +566,7 @@ export class ConnectorBuilder<CredentialProfileKey extends string = never>
           code: serializeRun(options.run),
           ...(options.limits ? { limits: options.limits } : {}),
           ...(options.calls ? { calls: options.calls } : {}),
+          ...(options.coordination ? { coordination: options.coordination } : {}),
         },
       },
       undefined,
@@ -605,6 +641,9 @@ function normalizeOperation(
       : {}),
     ...(operation.response !== undefined
       ? { response: normalizeConfigRefs(operation.response, `${path}.response`) }
+      : {}),
+    ...(operation.responses !== undefined
+      ? { responses: normalizeConfigRefs(operation.responses, `${path}.responses`) }
       : {}),
     ...(operation.headers !== undefined
       ? { headers: normalizeConfigRefs(operation.headers, `${path}.headers`) }

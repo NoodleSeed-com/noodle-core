@@ -12,6 +12,7 @@ import {
   type HttpOperationFake,
   type HttpOperationPagination,
   type HttpOperationProjection,
+  type HttpStatusResponse,
 } from '@noodle-borg/connector-http';
 import { type Connector, evaluateValue, type OperationEvidence } from '@noodle-borg/runtime';
 import { collectVariablesFromHttpAuth } from './auth-variables.js';
@@ -206,6 +207,7 @@ export function compileHttpConnector(
       fake,
       projection,
       evidenceAst,
+      compileStatusResponses(op.responses, `${base}.responses`, errors),
     );
     // Per-operation auth declares its own secret reference (overrides any connector-level default).
     addAuthBinding({
@@ -371,6 +373,7 @@ function buildOperation(
   fake: HttpOperationFake | undefined,
   projection: HttpOperationProjection | undefined,
   evidenceAst: Record<string, ExprNode> | undefined,
+  responses: Readonly<Record<string, HttpStatusResponse>> | undefined,
 ): HttpOperation {
   const resilience = httpResilience(op.resilience);
   return {
@@ -390,6 +393,7 @@ function buildOperation(
     ...(op.limits !== undefined ? { maxResponseBytes: op.limits.maxResponseBytes } : {}),
     ...(op.responseType !== undefined ? { responseType: op.responseType } : {}),
     ...(op.requestEncoding !== undefined ? { requestEncoding: op.requestEncoding } : {}),
+    ...(responses !== undefined ? { responses } : {}),
     ...(evidenceAst === undefined
       ? {}
       : {
@@ -427,6 +431,52 @@ function buildOperation(
         }
       : {}),
   };
+}
+
+function compileStatusResponses(
+  responses: HttpOperationDef['responses'],
+  path: string,
+  errors: ConnectorCompileError[],
+): Readonly<Record<string, HttpStatusResponse>> | undefined {
+  if (responses === undefined) return undefined;
+  return Object.fromEntries(
+    Object.entries(responses).map(([status, response]) => {
+      const responseAst = compileExprMap(
+        response.response,
+        RESPONSE_ROOTS,
+        `${path}.${status}.response`,
+        errors,
+      );
+      const evidenceAst =
+        response.evidence === undefined
+          ? undefined
+          : compileExprMap(
+              response.evidence,
+              new Set(['response']),
+              `${path}.${status}.evidence`,
+              errors,
+            );
+      return [
+        status,
+        {
+          ...(response.responseType === undefined ? {} : { responseType: response.responseType }),
+          mapResponse: (json: unknown, args: ArgsRecord) =>
+            evalMap(responseAst, { args, response: json }),
+          ...(evidenceAst === undefined
+            ? {}
+            : {
+                evidence: (json: unknown): OperationEvidence => {
+                  const value = evalMap(evidenceAst, { response: json });
+                  return {
+                    outcome: value.outcome === 'rejected' ? 'rejected' : 'unknown',
+                    ...(typeof value.reference === 'string' ? { reference: value.reference } : {}),
+                  };
+                },
+              }),
+        } satisfies HttpStatusResponse,
+      ];
+    }),
+  );
 }
 
 function usesExecutionIdentity(node: ExprNode): boolean {

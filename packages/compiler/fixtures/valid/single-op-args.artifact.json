@@ -1,5 +1,5 @@
 {
-  "artifactSchemaVersion": "0.19.0",
+  "artifactSchemaVersion": "0.20.0",
   "resolution": "shape-only",
   "source": {
     "manifestName": "acme_support",

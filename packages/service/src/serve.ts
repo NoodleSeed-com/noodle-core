@@ -64,14 +64,15 @@ import { createHostedMcpRequestStateManager } from './mcp-protocol-runtime.js';
 import { bootstrapServiceModules } from './modules/bootstrap.js';
 import type { ModuleHost } from './modules/host.js';
 import { resolveServiceOAuthBootstrap } from './oauth/service-bootstrap.js';
-import type { OperationEvidenceStore } from './operation-evidence.js';
-import { InMemoryOperationEvidenceStore } from './operation-evidence-memory.js';
-import { PostgresOperationEvidenceStore } from './operation-evidence-postgres.js';
 import type { ServiceOptions } from './options.js';
 import { assertPostgresStoreOwnership } from './persistence-options.js';
 import { resolveRecoveryMode, serveRecoveryQuarantine } from './recovery-quarantine.js';
 import { ServerRegistry } from './registry.js';
 import { assistantStoreOptions, createPostgresAssistantStores } from './serve-assistant-stores.js';
+import {
+  createLocalOperationStores,
+  createPostgresOperationStores,
+} from './serve-operation-stores.js';
 import type { RunningService, ServeServiceOptions } from './serve-options.js';
 import {
   assertLocalDevtoolsServiceBoundary,
@@ -218,7 +219,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
     );
   }
   let connectionStore: ConnectionStore | undefined;
-  let operationEvidenceStore: OperationEvidenceStore | undefined;
+  let operationStores = createLocalOperationStores();
   let assistantStore: AssistantStore | undefined = options.assistantStore;
   let assistantAppearance: AssistantAppearanceSettingsStore | undefined =
     options.assistantAppearance;
@@ -300,9 +301,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       }
       if (businessInformationEnabled) {
         if (!secretBox) throw new Error('Operation evidence requires encrypted storage');
-        const evidence = new PostgresOperationEvidenceStore(postgresPool, secretBox);
-        await evidence.ensureSchema();
-        operationEvidenceStore = evidence;
+        operationStores = await createPostgresOperationStores(postgresPool, secretBox);
       }
       if (options.applicationConnections) {
         if (!secretBox) throw new Error('Connections require encrypted storage');
@@ -392,7 +391,8 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
 
   const operationEvidence = businessInformationEnabled
     ? {
-        store: operationEvidenceStore ?? new InMemoryOperationEvidenceStore(),
+        store: operationStores.evidence,
+        coordination: operationStores.coordination,
         epoch: operationEvidenceEpoch,
         identityKey: createHash('sha256')
           .update('operation-evidence\0')

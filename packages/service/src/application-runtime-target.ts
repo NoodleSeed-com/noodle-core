@@ -9,6 +9,7 @@ import type { SolutionInstallationStore } from './business-information/contracts
 import { BusinessOnboarding } from './business-onboarding.js';
 import {
   activateSolutionInstallation,
+  readSolutionInstallationActivation,
   type SolutionInstallationActivator,
 } from './solution-installation-activation.js';
 
@@ -126,6 +127,7 @@ export function applicationServingResolver(input: {
       ) {
         const activated = await input.activate({
           installation,
+          purpose: 'runtime-refresh',
           actor: { subject: 'noodle:managed-solution-release', email: '', superAdmin: false },
         });
         if (!activated.ok) return undefined;
@@ -182,6 +184,16 @@ export function createApplicationServingRuntime(
       controlPlane,
       audit,
     });
+  const readInstallationActivation = (
+    installation: Parameters<typeof readSolutionInstallationActivation>[0],
+  ) =>
+    readSolutionInstallationActivation(installation, {
+      registry,
+      businessInformationStore,
+      options: providerOptions,
+      controlPlane,
+      audit,
+    });
   const resolveRuntimeTarget = applicationServingResolver({
     registry,
     installations: businessInformationStore,
@@ -190,5 +202,10 @@ export function createApplicationServingRuntime(
     activate: activateInstallation,
     ...(businessOnboarding ? { businessOnboarding } : {}),
   });
-  return { activateInstallation, resolveRuntimeTarget, businessOnboarding };
+  return {
+    activateInstallation,
+    readInstallationActivation,
+    resolveRuntimeTarget,
+    businessOnboarding,
+  };
 }

@@ -18,6 +18,7 @@ import type { CustomerRoutingCollector, CustomerRoutingSurface } from './custome
 import type { CompileError } from './errors.js';
 import type { StructFulfilment, StructOp } from './fulfilment-structural.js';
 import type { ExprNode } from './manifest/expression.js';
+import { type NestedOperationTraversal, resolveNestedOperations } from './nested-operations.js';
 import { docAnchorFor, suggestionFields } from './suggest.js';
 
 const JSON_SCHEMA_2020_12 = 'https://json-schema.org/draft/2020-12/schema';
@@ -84,6 +85,7 @@ function resolveOp(
   usedAliases: Set<string>,
   errors: CompileError[],
   options: EmitFulfilmentOptions,
+  traversal?: NestedOperationTraversal,
 ): OperationRef {
   const unresolved: OperationRef = {
     connector: op.connectorAlias,
@@ -152,12 +154,24 @@ function resolveOp(
     });
   }
 
-  checkArgs(op.args, connector, op.operation, operation, `${op.path}.args`, errors);
+  if (traversal === undefined)
+    checkArgs(op.args, connector, op.operation, operation, `${op.path}.args`, errors);
   const credentialRequirement = connector.operationCredentials?.[op.operation];
   const credentialPresentation =
     connectorRef.binding === undefined
       ? undefined
       : connector.credentialProfiles?.[connectorRef.binding.profile];
+  const calls = resolveNestedOperations({
+    connector,
+    operation: op.operation,
+    path: op.path,
+    catalog,
+    declared,
+    errors,
+    ...(traversal === undefined ? {} : { traversal }),
+    resolve: (child, childDeclared, childTraversal) =>
+      resolveOp(child, catalog, childDeclared, usedAliases, errors, options, childTraversal),
+  });
 
   return {
     alias: op.connectorAlias,
@@ -165,6 +179,7 @@ function resolveOp(
     connectorVersion: connector.version,
     operation: op.operation,
     signatureHash: computeSignatureHash(op.operation, operation),
+    ...(calls === undefined ? {} : { calls }),
     ...(customerOperationRouting?.directEndpoint === undefined
       ? {}
       : { customerEndpoint: customerOperationRouting.directEndpoint }),

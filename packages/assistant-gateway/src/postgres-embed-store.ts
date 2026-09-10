@@ -105,16 +105,28 @@ export class PostgresPublicEmbedStore implements PublicEmbedStore {
     readonly env: string;
     readonly surfaceMode: 'public' | 'mixed';
     readonly now: Date;
+    /** Installation recovery preserves revocation; explicit redeploy may replace it by default. */
+    readonly allowRevokedReplacement?: boolean;
   }): Promise<PublicEmbedRecord> {
     // `DO NOTHING` plus a follow-up read rather than `DO UPDATE`: a redeploy must return the *existing*
     // id untouched, including its original `created_at`, because that id is already in page source.
     const inserted = await this.#pool.query<EmbedRow>(
       `INSERT INTO assistant_public_embeds
          (embed_id, org_slug, app_slug, environment, surface_mode, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6)
+       SELECT $1, $2, $3, $4, $5, $6
+       WHERE $7::boolean OR NOT EXISTS (SELECT 1 FROM assistant_public_embeds
+         WHERE org_slug = $2 AND app_slug = $3 AND environment = $4)
        ON CONFLICT DO NOTHING
        RETURNING *`,
-      [newPublicEmbedId(), input.org, input.app, input.env, input.surfaceMode, input.now],
+      [
+        newPublicEmbedId(),
+        input.org,
+        input.app,
+        input.env,
+        input.surfaceMode,
+        input.now,
+        input.allowRevokedReplacement !== false,
+      ],
     );
     const row = inserted.rows[0];
     if (row !== undefined) return toRecord(row);
@@ -169,16 +181,19 @@ export class PostgresPublicEmbedStore implements PublicEmbedStore {
     return row === undefined ? undefined : toRecord(row);
   }
 
-  async list(tenant: {
-    readonly org: string;
-    readonly app: string;
-    readonly env: string;
-  }): Promise<readonly PublicEmbedRecord[]> {
+  async list(
+    tenant: {
+      readonly org: string;
+      readonly app: string;
+      readonly env: string;
+    },
+    options?: { readonly includeRevoked?: boolean },
+  ): Promise<readonly PublicEmbedRecord[]> {
     const result = await this.#pool.query<EmbedRow>(
       `SELECT * FROM assistant_public_embeds
-       WHERE org_slug = $1 AND app_slug = $2 AND environment = $3 AND revoked_at IS NULL
+       WHERE org_slug = $1 AND app_slug = $2 AND environment = $3 AND ($4::boolean OR revoked_at IS NULL)
        ORDER BY created_at`,
-      [tenant.org, tenant.app, tenant.env],
+      [tenant.org, tenant.app, tenant.env, options?.includeRevoked === true],
     );
     return result.rows.map(toRecord);
   }

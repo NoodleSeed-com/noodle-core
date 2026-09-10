@@ -14,6 +14,8 @@ import type {
 export interface OperationEvidenceRecord {
   readonly scope: InstallationScope;
   readonly id: string;
+  /** Trusted coordinated business attempt; child evidence retains custody but is not a second Activity. */
+  readonly parentId?: string;
   readonly lease: string;
   readonly epoch: string;
   readonly deploymentId: string;
@@ -115,7 +117,7 @@ export function createOperationEvidencePort(
         !(await options.authorize(intent))
       )
         throw new Error('Operation evidence authority unavailable');
-      const connectionId = intent.operation.credentialBinding?.connectionId;
+      const connectionId = intent.operation.credentialBinding?.connectionId ?? intent.connectionId;
       const generation =
         connectionId === undefined ? undefined : options.connectionGeneration(connectionId);
       if (connectionId !== undefined && generation === undefined)
@@ -123,6 +125,7 @@ export function createOperationEvidencePort(
       const record: OperationEvidenceRecord = {
         scope: options.scope,
         id: intent.id,
+        ...(intent.parentId === undefined ? {} : { parentId: intent.parentId }),
         lease: randomUUID(),
         epoch: options.epoch,
         deploymentId: options.deploymentId,
@@ -140,6 +143,7 @@ export function createOperationEvidencePort(
           input: intent.arguments,
           caller: intent.caller ?? null,
           revision: intent.executionRevision ?? null,
+          parentId: intent.parentId ?? null,
           generation: generation ?? null,
         }),
         startedAt,

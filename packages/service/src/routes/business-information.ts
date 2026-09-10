@@ -20,6 +20,7 @@ import {
   admitBusinessTarget,
   authorizeBusinessApi,
 } from '../business-api-admission.js';
+import { resolveInstallDefinition } from '../business-information/definition-resolver.js';
 import {
   BUILT_IN_SOLUTION_PROFILES,
   type BusinessInformationStore,
@@ -38,7 +39,10 @@ import {
 } from '../business-information/portable.js';
 import type { BusinessOnboarding } from '../business-onboarding.js';
 import { sendForbidden } from '../http-util.js';
-import type { SolutionInstallationActivator } from '../solution-installation-activation.js';
+import type {
+  InstallationActivationReader,
+  SolutionInstallationActivator,
+} from '../solution-installation-activation.js';
 import type { AuditSink } from '../store/audit.js';
 import type { ConfigStore, ControlPlaneStore } from '../store.js';
 import {
@@ -48,7 +52,8 @@ import {
   unsupportedExternalOperation,
 } from './business-information-external.js';
 import {
-  resolveInstallDefinition,
+  installationProjection,
+  retryInstallationActivation,
   stableInstallationId,
 } from './business-information-installation.js';
 import type { SolutionInstallationRef } from './business-information-paths.js';
@@ -65,7 +70,6 @@ import {
   collectionToWire,
   externalRecordToWire,
   grantToWire,
-  installationToWire,
   profileToWire,
   recordDetailToWire,
   recordToWire,
@@ -75,6 +79,7 @@ import { canManageMembers } from './org-admin.js';
 export interface BusinessInformationRouteDeps {
   readonly businessOnboarding?: BusinessOnboarding;
   readonly activateInstallation?: SolutionInstallationActivator;
+  readonly readInstallationActivation?: InstallationActivationReader;
   readonly configStore?: ConfigStore;
   readonly store: BusinessInformationStore;
   readonly gate: DeployAuthGate;
@@ -117,6 +122,7 @@ export async function handleSolutionInstallations(
 ): Promise<void> {
   const identity = await requireIdentity(req, res, deps);
   if (identity === false) return;
+  if (ref.action === 'activate') return retryInstallationActivation(req, res, ref, identity, deps);
   if (req.method === 'POST' && ref.installationId === undefined) {
     if (!(await canManageMembers(deps.controlPlane, ref.org, identity))) {
       return sendForbidden(res, 'organization owner required');
@@ -195,7 +201,7 @@ export async function handleSolutionInstallations(
     return sendJson(res, result.disposition === 'created' ? 201 : 200, {
       ok: true,
       data: {
-        installation: installationToWire(result.installation, grant.role),
+        installation: await installationProjection(result.installation, grant.role, identity, deps),
       },
     });
   }
@@ -215,8 +221,10 @@ export async function handleSolutionInstallations(
     return sendJson(res, 200, {
       ok: true,
       data: {
-        installations: permitted.map(({ installation, role }) =>
-          installationToWire(installation, role),
+        installations: await Promise.all(
+          permitted.map(({ installation, role }) =>
+            installationProjection(installation, role, identity, deps),
+          ),
         ),
       },
     });
@@ -227,7 +235,12 @@ export async function handleSolutionInstallations(
     return sendJson(res, 200, {
       ok: true,
       data: {
-        installation: installationToWire(authorized.installation, authorized.grant.role),
+        installation: await installationProjection(
+          authorized.installation,
+          authorized.grant.role,
+          identity,
+          deps,
+        ),
       },
     });
   }
@@ -253,7 +266,14 @@ export async function handleSolutionInstallations(
     if (!result.ok) return mutationFailure(res, result);
     return sendJson(res, 200, {
       ok: true,
-      data: { installation: installationToWire(result.installation, authorized.grant.role) },
+      data: {
+        installation: await installationProjection(
+          result.installation,
+          authorized.grant.role,
+          identity,
+          deps,
+        ),
+      },
     });
   }
   return methodNotAllowed(res);

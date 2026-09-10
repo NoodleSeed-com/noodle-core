@@ -14,6 +14,8 @@ import type { AuditSink } from './store/audit.js';
 import type { ControlPlaneStore, TenantRef } from './store.js';
 
 export interface AuthorizedDeploymentInput {
+  /** Saved-installation recovery must preserve an explicit embed revocation. */
+  readonly allowRevokedEmbedReplacement?: boolean;
   readonly tenant: TenantRef;
   readonly manifest: string;
   readonly connectors?: string | undefined;
@@ -333,7 +335,13 @@ export async function executeAuthorizedDeployment(
     });
   }
 
-  const embedId = await provisionPublicEmbed(registry, options, tenant, result.deploymentId);
+  const embedId = await provisionPublicEmbed(
+    registry,
+    options,
+    tenant,
+    result.deploymentId,
+    input.allowRevokedEmbedReplacement,
+  );
   return { ok: true, result, ...(embedId === undefined ? {} : { embedId }) };
 }
 

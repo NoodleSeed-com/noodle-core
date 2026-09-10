@@ -46,6 +46,7 @@ export {
   type DeclaredVariableRef,
   secret,
   type VariableOptions,
+  type VariableValueRef,
   variable,
 } from './config.js';
 export {

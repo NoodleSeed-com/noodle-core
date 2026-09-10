@@ -136,7 +136,7 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
   async createInstallation(
     input: Parameters<BusinessInformationStore['createInstallation']>[0],
   ): Promise<InstallationCreateResult> {
-    const normalized = normalizeInstallationInput(input);
+    const normalized = normalizeInstallationInput(input, this.#managedDefinition);
     const key = scopeKey(normalized.scope);
     return this.#locks.run(`installations:${normalized.scope.org}`, async () => {
       const existingKey = this.#installationIds.get(

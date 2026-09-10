@@ -705,6 +705,7 @@ class ServerBuilder implements ServerDefinition {
             code: def.code,
             ...(def.limits ? { limits: def.limits } : {}),
             ...(def.calls ? { calls: def.calls } : {}),
+            ...(def.coordination ? { coordination: def.coordination } : {}),
           };
         }
         const computeConnector: ComputeConnectorDef = {

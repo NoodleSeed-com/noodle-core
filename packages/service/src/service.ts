@@ -150,8 +150,12 @@ export function createServiceHandler(
             moduleHost.resolveActivityHistoryAllowance?.(org, request),
         });
   const withIntentMode = createIntentTargetResolver(intentSettings, intentPreviewOrgs);
-  const { activateInstallation, resolveRuntimeTarget, businessOnboarding } =
-    createApplicationServingRuntime(registry, providerOptions, controlPlane, audit, activity);
+  const {
+    activateInstallation,
+    readInstallationActivation,
+    resolveRuntimeTarget,
+    businessOnboarding,
+  } = createApplicationServingRuntime(registry, providerOptions, controlPlane, audit, activity);
   const runtimeTarget = async (target: Awaited<ReturnType<ServerRegistry['getServing']>>) =>
     target === undefined ? undefined : resolveRuntimeTarget(target);
   const router = createMcpRouter(
@@ -361,6 +365,7 @@ export function createServiceHandler(
         store: businessInformationStore,
         ...(businessOnboarding ? { businessOnboarding } : {}),
         activateInstallation,
+        readInstallationActivation,
         ...(activity === undefined ? {} : { activity }),
         ...(options.connectionRuntime === undefined
           ? {}

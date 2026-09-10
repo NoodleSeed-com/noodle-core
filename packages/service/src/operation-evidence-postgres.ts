@@ -17,6 +17,7 @@ import type {
 
 interface EvidenceRow {
   readonly id: string;
+  readonly parent_id: string | null;
   readonly protected: SealedSecret;
   readonly outcome: OperationEvidenceRecord['outcome'];
   readonly completed_at: string | null;
@@ -43,7 +44,7 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
       `WITH terminal AS (
         SELECT CASE WHEN outcome='dispatching' THEN execution_deadline ELSE COALESCE(completed_at,started_at) END AS completed,
           CASE WHEN outcome='dispatching' THEN execution_deadline+history_expires_at-started_at ELSE history_expires_at END AS expires
-        FROM operation_evidence WHERE scope_key=$1 AND (outcome<>'dispatching' OR execution_deadline<=$2)
+        FROM operation_evidence WHERE scope_key=$1 AND parent_id IS NULL AND (outcome<>'dispatching' OR execution_deadline<=$2)
       ), visible AS (
         SELECT * FROM terminal WHERE completed BETWEEN $2-$4::bigint*86400000 AND $2 AND expires>$2
       )
@@ -73,11 +74,12 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
 
   async ensureSchema(): Promise<void> {
     await this.pool.query(`CREATE TABLE IF NOT EXISTS operation_evidence (
-      scope_key text NOT NULL, id text NOT NULL, protected jsonb NOT NULL,
+      scope_key text NOT NULL, id text NOT NULL, parent_id text, protected jsonb NOT NULL,
       started_at bigint NOT NULL, execution_deadline bigint NOT NULL, history_expires_at bigint NOT NULL,
       outcome text NOT NULL CHECK (outcome IN ('dispatching','completed','rejected','accepted','unknown','returned')),
       completed_at bigint, PRIMARY KEY(scope_key,id)
     )`);
+    await this.pool.query('ALTER TABLE operation_evidence ADD COLUMN IF NOT EXISTS parent_id text');
     await this.pool.query(
       'CREATE TABLE IF NOT EXISTS operation_history_settings (scope_key text PRIMARY KEY, days integer NOT NULL CHECK(days BETWEEN 1 AND 365), revision integer NOT NULL)',
     );
@@ -119,8 +121,8 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
     const sealed = await this.secretBox.seal(JSON.stringify(record));
     const { rowCount } = await this.pool.query(
       `INSERT INTO operation_evidence
-      (scope_key,id,protected,started_at,execution_deadline,history_expires_at,outcome)
-      VALUES($1,$2,$3::jsonb,$4,$5,$6,'dispatching') ON CONFLICT DO NOTHING`,
+      (scope_key,id,protected,started_at,execution_deadline,history_expires_at,outcome,parent_id)
+      VALUES($1,$2,$3::jsonb,$4,$5,$6,'dispatching',$7) ON CONFLICT DO NOTHING`,
       [
         operationEvidenceKey(record.scope, ''),
         record.id,
@@ -128,6 +130,7 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
         record.startedAt,
         record.executionDeadline,
         record.historyExpiresAt,
+        record.parentId ?? null,
       ],
     );
     return rowCount === 1;
@@ -144,7 +147,7 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
   ): Promise<boolean> {
     return inTransaction(this.pool, async (client) => {
       const { rows } = await client.query<EvidenceRow>(
-        'SELECT id,protected,outcome,completed_at,history_expires_at FROM operation_evidence WHERE scope_key=$1 AND id=$2 FOR UPDATE',
+        'SELECT id,parent_id,protected,outcome,completed_at,history_expires_at FROM operation_evidence WHERE scope_key=$1 AND id=$2 FOR UPDATE',
         [operationEvidenceKey(scope, ''), id],
       );
       const row = rows[0];
@@ -177,8 +180,8 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
   ): Promise<readonly OperationEvidenceRecord[]> {
     await this.sweep(now);
     const { rows } = await this.pool.query<EvidenceRow>(
-      `SELECT id,protected,outcome,completed_at,history_expires_at FROM operation_evidence
-      WHERE scope_key=$1 AND (outcome='dispatching' OR COALESCE(completed_at,started_at) >= $2)
+      `SELECT id,parent_id,protected,outcome,completed_at,history_expires_at FROM operation_evidence
+      WHERE scope_key=$1 AND parent_id IS NULL AND (outcome='dispatching' OR COALESCE(completed_at,started_at) >= $2)
       AND (started_at < $3 OR (started_at=$3 AND id > $6)) AND history_expires_at > $4
       ORDER BY started_at DESC,id LIMIT $5`,
       [
@@ -205,6 +208,8 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
     const record: OperationEvidenceRecord = JSON.parse(await this.secretBox.open(row.protected));
     if (operationEvidenceKey(record.scope, record.id) !== operationEvidenceKey(scope, row.id))
       throw new Error('Operation evidence scope mismatch');
+    if ((record.parentId ?? null) !== row.parent_id)
+      throw new Error('Operation evidence parent mismatch');
     return {
       ...record,
       outcome: row.outcome,

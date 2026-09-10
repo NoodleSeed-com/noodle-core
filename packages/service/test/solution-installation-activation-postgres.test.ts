@@ -1,14 +1,18 @@
 import { randomUUID } from 'node:crypto';
 import { InMemoryDailyCounterStore } from '@noodle-borg/admission-limits/portable';
+import { PostgresPublicEmbedStore } from '@noodle-borg/assistant-gateway/postgres';
 import { DEPLOYMENT_ACTIVATION_PHASE } from '@noodle-borg/module';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { privateDefinitionFromDeployment } from '../src/business-information/definition-resolver.js';
 import { PostgresBusinessInformationStore } from '../src/business-information/postgres-store.js';
 import { builtInDefinition } from '../src/business-information/profiles.js';
 import { createDeploymentNativeRecordConnector } from '../src/native-record-connector.js';
 import { ServerRegistry } from '../src/registry.js';
-import { activateSolutionInstallation } from '../src/solution-installation-activation.js';
+import {
+  activateSolutionInstallation,
+  readSolutionInstallationActivation,
+} from '../src/solution-installation-activation.js';
 import { InMemoryAuditStore } from '../src/store/audit.js';
 import { PostgresArtifactStore } from '../src/store/postgres.js';
 import { TestPayloadCipher } from './business-information-test-cipher.js';
@@ -63,6 +67,77 @@ describe.skipIf(databaseUrl === undefined)(
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
       await admin.end();
     });
+    it('recovers a committed deployment after allocation loss across independent registries without replacing revocation', async () => {
+      const publicEmbeds = new PostgresPublicEmbedStore(pool);
+      await publicEmbeds.ensureSchema();
+      const org = `recovery-${randomUUID()}`;
+      await artifacts.createOrg({ slug: org });
+      const counters = new InMemoryDailyCounterStore();
+      const registry = () =>
+        new ServerRegistry(artifacts, undefined, artifacts, {
+          nativeRecords: (input) =>
+            createDeploymentNativeRecordConnector(input, { store: business, counters }),
+          transactionalModuleDeploymentActivation: true,
+        });
+      const actor = { subject: 'owner', email: 'owner@example.test', superAdmin: false };
+      const { installation } = await business.createInstallation({
+        scope: { org, app: 'recover', env: 'prod', installationId: 'recover-prod' },
+        definition: builtInDefinition('travel'),
+        managedCollections: ['travel_requests'],
+        actorSubject: actor.subject,
+      });
+      const dependencies = {
+        controlPlane: artifacts,
+        businessInformationStore: business,
+        options: { publicEmbeds },
+        audit: new InMemoryAuditStore(),
+      };
+      vi.spyOn(publicEmbeds, 'ensure').mockRejectedValueOnce(
+        new Error('synthetic allocation interruption'),
+      );
+      expect(
+        await activateSolutionInstallation(
+          { installation, actor },
+          { ...dependencies, registry: registry() },
+        ),
+      ).toMatchObject({ ok: false, code: 'installation_activation_incomplete' });
+      expect(
+        await readSolutionInstallationActivation(installation, {
+          ...dependencies,
+          registry: registry(),
+        }),
+      ).toBe('pending');
+      const repaired = await Promise.all(
+        [0, 1].map(() =>
+          activateSolutionInstallation(
+            { installation, actor },
+            { ...dependencies, registry: registry() },
+          ),
+        ),
+      );
+      expect(repaired[0]).toMatchObject({ ok: true });
+      expect(repaired[1]).toEqual(repaired[0]);
+      expect(await artifacts.listDeployments(installation.scope)).toHaveLength(1);
+      expect(await business.listInstallations(org)).toHaveLength(1);
+      expect(
+        await readSolutionInstallationActivation(installation, {
+          ...dependencies,
+          registry: registry(),
+        }),
+      ).toBe('ready');
+      const [embed] = await publicEmbeds.list(installation.scope);
+      await publicEmbeds.revoke(embed?.embedId ?? '', new Date());
+      expect(
+        await activateSolutionInstallation(
+          { installation, actor },
+          { ...dependencies, registry: registry() },
+        ),
+      ).toMatchObject({ ok: false, code: 'installation_embed_revoked' });
+      expect(await publicEmbeds.list(installation.scope, { includeRevoked: true })).toHaveLength(1);
+      expect(await publicEmbeds.lookup(embed?.embedId ?? '')).toBeUndefined();
+      expect(await artifacts.listDeployments(installation.scope)).toHaveLength(1);
+    });
+
     it.each([
       'managed',
       'private',

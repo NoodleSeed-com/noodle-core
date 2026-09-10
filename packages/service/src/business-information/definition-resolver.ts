@@ -5,6 +5,7 @@ import type {
   JsonObject,
   SolutionDefinitionSnapshot,
 } from './contracts.js';
+import { builtInDefinition } from './profiles.js';
 
 export interface PrivateDefinitionSelector {
   readonly publisherOrg: string;
@@ -132,4 +133,40 @@ function summaryFields(schema: Readonly<Record<string, unknown>>): readonly stri
 
 function singularize(title: string): string {
   return title.endsWith('s') && title.length > 1 ? title.slice(0, -1) : title;
+}
+
+interface InstallationDefinitionSelector {
+  readonly kind: 'managed' | 'private';
+  readonly profileId?: 'travel' | 'ecommerce' | 'restaurant';
+  readonly publisherOrg?: string;
+  readonly app?: string;
+  readonly environment?: string;
+  readonly deploymentId?: string;
+}
+
+export async function resolveInstallDefinition(
+  selector: InstallationDefinitionSelector,
+  installingOrg: string,
+  resolvePrivateDefinition:
+    | ((selector: PrivateDefinitionSelector) => Promise<SolutionDefinitionSnapshot | undefined>)
+    | undefined,
+): Promise<SolutionDefinitionSnapshot | undefined> {
+  if (selector.kind === 'managed') {
+    return builtInDefinition(selector.profileId as 'travel' | 'ecommerce' | 'restaurant');
+  }
+  if (
+    selector.publisherOrg !== installingOrg ||
+    selector.publisherOrg === undefined ||
+    selector.app === undefined ||
+    selector.environment === undefined ||
+    selector.deploymentId === undefined
+  ) {
+    return undefined;
+  }
+  return resolvePrivateDefinition?.({
+    publisherOrg: selector.publisherOrg,
+    app: selector.app,
+    environment: selector.environment,
+    deploymentId: selector.deploymentId,
+  });
 }

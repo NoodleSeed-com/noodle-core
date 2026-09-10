@@ -5,6 +5,10 @@ import type {
 } from '@noodle-borg/compiler';
 import type { DownstreamCredential } from '../broker/types.js';
 import type { CustomerConnectorRoute } from '../customer-routing.js';
+import type {
+  OperationCoordinationDeclaration,
+  OperationCoordinationSnapshot,
+} from '../operation-coordination.js';
 import type { OperationEvidence } from '../operation-evidence.js';
 
 /** Verified caller claims that may be threaded into first-party connector operations. */
@@ -126,6 +130,8 @@ export interface ConnectorCallHost {
     ref: ResolvedOperationRef,
     args: Readonly<Record<string, unknown>>,
     path: string,
+    /** Internal inherited execution deadline; never a sandbox-controlled value. */
+    parentSignal?: AbortSignal,
   ): Promise<unknown>;
 }
 
@@ -136,6 +142,8 @@ export interface ConnectorCall {
   readonly execution?: Readonly<{ readonly id: string }>;
   /** Connector/application-classified evidence; never infer completion from a transport status alone. */
   readonly reportOutcome?: (evidence: OperationEvidence) => void;
+  readonly coordination?: OperationCoordinationSnapshot;
+  readonly resolveCoordination?: () => Promise<void>;
   /** Trusted request attribution for native public writes; never an argument or expression value. */
   readonly publicAdmission?: { readonly network: string; readonly visitor?: string };
   /** Evaluated, validated arguments. */
@@ -179,6 +187,7 @@ export interface Connector {
   signature(operation: string): OperationSignature | undefined;
   /** Maximum action execution duration owned by this connector; excludes confirmation/model time. */
   executionBoundMs?(operation: string): number | undefined;
+  coordination?(operation: string): OperationCoordinationDeclaration | undefined;
   /** Invoke the operation. May reject; the runtime normalizes the failure (no secret leakage). */
   invoke(call: ConnectorCall): Promise<unknown>;
 }

@@ -50,7 +50,10 @@ export function buildCredentialBindingIndex(
     if (source?.authority !== 'external') return [];
     return source.scan.resolved ? [source.scan] : [];
   });
-  const operationRefs = [...fulfilments.flatMap(resolvedOperationRefs), ...sourceRefs];
+  const operationRefs = nestedReferences([
+    ...fulfilments.flatMap(resolvedOperationRefs),
+    ...sourceRefs,
+  ]);
   for (const ref of operationRefs) {
     const credentialBinding = ref.credentialBinding;
     if (credentialBinding === undefined) continue;
@@ -90,4 +93,18 @@ export function buildCredentialBindingIndex(
     externalExchange: [...externalExchange.values()],
     googleWorkloadIdentity: [...googleWorkloadIdentity.values()],
   };
+}
+
+function nestedReferences(roots: readonly ResolvedOperationRef[]): readonly ResolvedOperationRef[] {
+  const output: ResolvedOperationRef[] = [];
+  const queue = roots.map((ref) => ({ ref, depth: 0 }));
+  for (let index = 0; index < queue.length; index += 1) {
+    const entry = queue[index];
+    if (!entry) continue;
+    if (entry.depth > 32 || queue.length > 65536)
+      throw new Error('Invalid compiled connector dependency graph');
+    output.push(entry.ref);
+    for (const child of entry.ref.calls ?? []) queue.push({ ref: child, depth: entry.depth + 1 });
+  }
+  return output;
 }

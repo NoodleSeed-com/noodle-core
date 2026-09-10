@@ -22,6 +22,14 @@ export interface ResponseOperation {
   readonly responseType?: 'json' | 'text' | 'empty';
   readonly resilience?: { readonly timeoutMs?: number; readonly retry?: HttpRetryPolicy };
   readonly maxResponseBytes?: number;
+  readonly responses?: Readonly<
+    Record<string, { readonly responseType?: 'json' | 'text' | 'empty' }>
+  >;
+}
+
+export interface HttpResponse {
+  readonly status: number;
+  readonly body: unknown;
 }
 
 export interface ResponseFetchOptions {
@@ -64,7 +72,7 @@ export async function fetchResponseWithResilience(
   op: ResponseOperation,
   init: RequestInit,
   options: ResponseFetchOptions,
-): Promise<unknown> {
+): Promise<HttpResponse> {
   const operationMax = validateResponseSizeLimit(op.maxResponseBytes, MAX_OPERATION_RESPONSE_BYTES);
   const connectorMax = validateResponseSizeLimit(options.maxBytes, DEFAULT_MAX_BYTES);
   const max = operationMax ?? connectorMax ?? DEFAULT_MAX_BYTES;
@@ -97,14 +105,23 @@ export async function fetchResponseWithResilience(
           retryable: false,
         });
       }
-      if (op.responseType === 'text') {
-        return await readResponseText(response, max, attempt, retry !== undefined);
+      const declared = op.responses?.[String(response.status)];
+      const responseType = declared?.responseType ?? op.responseType;
+      const acceptedStatus = declared !== undefined;
+      if (responseType === 'text') {
+        return {
+          status: response.status,
+          body: await readResponseText(response, max, attempt, retry !== undefined, acceptedStatus),
+        };
       }
-      if (op.responseType === 'empty') {
-        await readResponseText(response, max, attempt, retry !== undefined);
-        return {};
+      if (responseType === 'empty') {
+        await readResponseText(response, max, attempt, retry !== undefined, acceptedStatus);
+        return { status: response.status, body: {} };
       }
-      return await readJsonResponse(response, max, attempt, retry !== undefined);
+      return {
+        status: response.status,
+        body: await readJsonResponse(response, max, attempt, retry !== undefined, acceptedStatus),
+      };
     } catch (error) {
       const normalized = normalizeAttemptError(
         error,
@@ -176,8 +193,9 @@ async function readResponseText(
   max: number,
   attempt: number,
   hasRetryPolicy: boolean,
+  acceptedStatus = false,
 ): Promise<string> {
-  if (!response.ok) {
+  if (!response.ok && !acceptedStatus) {
     const category = categoryForStatus(response.status);
     const retryAfterMs =
       response.status === 429 ? parseRetryAfterMs(response.headers.get('retry-after')) : undefined;
@@ -222,8 +240,9 @@ async function readJsonResponse(
   max: number,
   attempt: number,
   hasRetryPolicy: boolean,
+  acceptedStatus = false,
 ): Promise<unknown> {
-  const text = await readResponseText(response, max, attempt, hasRetryPolicy);
+  const text = await readResponseText(response, max, attempt, hasRetryPolicy, acceptedStatus);
   try {
     return JSON.parse(text) as unknown;
   } catch {
