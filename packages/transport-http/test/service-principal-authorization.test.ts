@@ -79,7 +79,10 @@ function options(
     ownerSubject: 'human-owner',
     org: 'acme',
     orgMembershipSources: undefined,
-    verifyOwnerToken,
+    authentication: {
+      kind: accessMode === 'customers' ? 'customer' : 'platform',
+      verifyToken: verifyOwnerToken,
+    },
     authorizeDataPlaneIdentity,
     trustProxy: false,
   };

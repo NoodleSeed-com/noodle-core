@@ -4,7 +4,7 @@ import { jwtVerify } from 'jose';
 import { describe, expect, it, vi } from 'vitest';
 import { ManagedConfigBroker } from '../src/credential-broker.js';
 import { probeCredentials } from '../src/credential-probes.js';
-import { InMemoryConfigStore } from '../src/store.js';
+import { type ConfigScope, InMemoryConfigStore, resolveConfigScope } from '../src/store.js';
 import { credentialBrokerScope as scope } from './credential-broker-fixtures.js';
 
 describe('ManagedConfigBroker delegated token exchange', () => {
@@ -45,26 +45,36 @@ describe('ManagedConfigBroker delegated token exchange', () => {
   async function exchangeBroker(input: {
     readonly fetchImpl: typeof fetch;
     readonly binding?: SecretBinding;
+    readonly bindings?: readonly SecretBinding[];
+    readonly configScope?: ConfigScope;
+    readonly tenant?: string;
+    readonly deployment?: string;
     readonly now?: () => number;
   }) {
     const signer = await createStaticSigningKeyProvider();
+    const configScope = input.configScope ?? scope;
     const configStore = new InMemoryConfigStore();
     await configStore.setConfigValue({
       kind: 'secret',
-      scope,
+      scope: configScope,
       name: 'ACMEHR_DELEG_CLIENT_SECRET',
       value: 'deleg-client-secret',
     });
-    const broker = new ManagedConfigBroker([input.binding ?? exchangeBinding], configStore, scope, {
-      delegatedExchange: {
-        issuer: 'https://cloud.test',
-        signer,
-        tenant: 'acme/demo/prod',
-        deployment: 'demo-abc12345',
+    const broker = new ManagedConfigBroker(
+      input.bindings ?? [input.binding ?? exchangeBinding],
+      configStore,
+      configScope,
+      {
+        delegatedExchange: {
+          issuer: 'https://cloud.test',
+          signer,
+          tenant: input.tenant ?? 'acme/demo/prod',
+          deployment: input.deployment ?? 'demo-abc12345',
+        },
+        fetchImpl: input.fetchImpl,
+        ...(input.now !== undefined ? { now: input.now } : {}),
       },
-      fetchImpl: input.fetchImpl,
-      ...(input.now !== undefined ? { now: input.now } : {}),
-    });
+    );
     return { broker, configStore, signer };
   }
 
@@ -119,6 +129,90 @@ describe('ManagedConfigBroker delegated token exchange', () => {
     expect(payload.deployment).toBe('demo-abc12345');
     expect(typeof payload.jti).toBe('string');
     expect((payload.exp as number) - (payload.iat as number)).toBe(120);
+  });
+
+  it('isolates MCP resources and separately composed tenant/deployment credential caches', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async (): Promise<Response> =>
+        Response.json({
+          access_token: `issued-${fetchImpl.mock.calls.length}`,
+          token_type: 'Bearer',
+          expires_in: 900,
+        }),
+    );
+    const first = await exchangeBroker({ fetchImpl });
+    const second = await exchangeBroker({
+      fetchImpl,
+      configScope: resolveConfigScope({ org: 'other', app: 'demo', env: 'prod' }),
+      tenant: 'other/demo/prod',
+      deployment: 'other-deployment',
+    });
+    const request = {
+      connectorId: 'acmehr_api',
+      connectorVersion: '1.0.0',
+      operation: 'list_time_off',
+      ...exchangeIdentity,
+    };
+    const otherResource = {
+      ...request,
+      caller: { ...exchangeCaller, audience: 'https://cloud.test/o/acme/demo/v2/mcp' },
+    };
+    await expect(first.broker.getCredential(request)).resolves.toEqual({ token: 'issued-1' });
+    await expect(first.broker.getCredential(otherResource)).resolves.toEqual({ token: 'issued-2' });
+    await expect(first.broker.getCredential(request)).resolves.toEqual({ token: 'issued-1' });
+    await expect(second.broker.getCredential(request)).resolves.toEqual({ token: 'issued-3' });
+    await expect(second.broker.getCredential(request)).resolves.toEqual({ token: 'issued-3' });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    const signed = await Promise.all(
+      fetchImpl.mock.calls.map(async ([, init], index) => {
+        const form = new URLSearchParams(String(init?.body));
+        return (
+          await jwtVerify(
+            form.get('subject_token') ?? '',
+            await (index < 2 ? first : second).signer.verifierKey(),
+            { issuer: 'https://cloud.test', audience: 'acmehr-api' },
+          )
+        ).payload;
+      }),
+    );
+    expect(signed.map((payload) => [payload.tenant, payload.deployment])).toEqual([
+      ['acme/demo/prod', 'demo-abc12345'],
+      ['acme/demo/prod', 'demo-abc12345'],
+      ['other/demo/prod', 'other-deployment'],
+    ]);
+    expect(signed.map((payload) => payload.customer_identity)).toEqual(
+      Array(3).fill({ version: 1, issuer: CUSTOMER_ISSUER }),
+    );
+  });
+
+  it('exchanges and reuses tokens only within each operation-specific scope binding', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(
+      async (): Promise<Response> =>
+        Response.json({
+          access_token: `scoped-${fetchImpl.mock.calls.length}`,
+          token_type: 'Bearer',
+          expires_in: 900,
+        }),
+    );
+    const bindings = ['read', 'write'].map((verb) => ({
+      ...exchangeBinding,
+      operation: `${verb}_time_off`,
+      tokenExchange: { ...exchangeBinding.tokenExchange, scopes: [`time_off:${verb}`] },
+    }));
+    const { broker } = await exchangeBroker({ fetchImpl, bindings });
+    const request = { connectorId: 'acmehr_api', connectorVersion: '1.0.0', ...exchangeIdentity };
+    for (let repeat = 0; repeat < 2; repeat++) {
+      await expect(
+        broker.getCredential({ ...request, operation: 'read_time_off' }),
+      ).resolves.toEqual({ token: 'scoped-1' });
+      await expect(
+        broker.getCredential({ ...request, operation: 'write_time_off' }),
+      ).resolves.toEqual({ token: 'scoped-2' });
+    }
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(
+      fetchImpl.mock.calls.map(([, init]) => new URLSearchParams(String(init?.body)).get('scope')),
+    ).toEqual(['time_off:read', 'time_off:write']);
   });
 
   it('defaults the assertion audience to the token URL and posts client credentials for client_secret_post', async () => {

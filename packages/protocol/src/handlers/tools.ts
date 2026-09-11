@@ -62,6 +62,9 @@ export function registerTools(
       mapToolsList(artifact, context.caller, {
         knowledgeTools: await knowledgeToolsEnabled(artifact, deps),
         intentCapture: context.intentCapture?.enabled === true,
+        ...(context.toolAuthentication === undefined
+          ? {}
+          : { authentication: context.toolAuthentication }),
       }) as ListToolsResult,
   );
 

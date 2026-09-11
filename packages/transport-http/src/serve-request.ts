@@ -119,6 +119,9 @@ export async function serveRequest(
   // and the SDK transport is never constructed for it. A missing accessMode is reserved for loopback/local
   // dev targets and remains open.
   let protocolContext: ProtocolRequestContext = {
+    ...(auth.accessMode === 'mixed' && auth.authentication.kind === 'customer'
+      ? { toolAuthentication: 'mixed-customer' }
+      : {}),
     ...(auth.oauthClientCredentialsReady ? { oauthClientCredentialsReady: true } : {}),
   };
   let subject: string | undefined;

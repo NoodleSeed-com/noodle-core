@@ -1,3 +1,4 @@
+import { usesCustomerAuthentication } from '@noodle-borg/module';
 import type { DeployError } from './registry-types.js';
 import type {
   AppRestorePrecondition,
@@ -10,6 +11,18 @@ import type {
 interface CustomerAuthAudienceBinding {
   readonly issuer: string;
   readonly audience: string;
+}
+
+/** Match durable ownership, including an omitted stored projection when compilation declares auth. */
+export function requiresCustomerAuthProjection(
+  record: Pick<DeployRecord, 'schemaVersion' | 'accessMode' | 'serverAuth'>,
+  compiledAuth?: TenantAuthConfig,
+): boolean {
+  return usesCustomerAuthentication({
+    schemaVersion: record.schemaVersion,
+    accessMode: record.accessMode,
+    hasServerAuth: record.serverAuth != null || compiledAuth !== undefined,
+  });
 }
 
 /** Safe lifecycle error; tenant identities and configured values never enter its public message. */
@@ -83,7 +96,7 @@ export function hasExactCustomerAuthProjection(
   record: DeployRecord,
   compiledAuth: TenantAuthConfig | undefined,
 ): boolean {
-  if (record.accessMode !== 'customers') return true;
+  if (!requiresCustomerAuthProjection(record, compiledAuth)) return true;
   if (compiledAuth === undefined || !isTenantAuthConfig(record.serverAuth)) return false;
   try {
     return (
@@ -100,7 +113,9 @@ export function assertCustomerAuthRestorePrecondition(
   records: readonly DeployRecord[],
   precondition: AppRestorePrecondition | undefined,
 ): void {
-  const candidates = records.filter((record) => record.active && record.accessMode === 'customers');
+  const candidates = records.filter(
+    (record) => record.active && requiresCustomerAuthProjection(record),
+  );
   const projections = precondition?.customerAuthProjections ?? [];
   if (candidates.length !== projections.length) {
     throw new CustomerAuthAudienceProjectionError();
@@ -157,7 +172,7 @@ export function findActiveCustomerAuthAudienceConflict(
     if (
       !record.active ||
       record.archivedAt !== undefined ||
-      record.accessMode !== 'customers' ||
+      !requiresCustomerAuthProjection(record) ||
       sameTenant(record, tenant)
     ) {
       continue;
@@ -179,7 +194,11 @@ export function assertUniqueActiveCustomerAuthAudienceBindings(
 ): void {
   const owners = new Map<string, string>();
   for (const record of records) {
-    if (!record.active || record.archivedAt !== undefined || record.accessMode !== 'customers') {
+    if (
+      !record.active ||
+      record.archivedAt !== undefined ||
+      !requiresCustomerAuthProjection(record)
+    ) {
       continue;
     }
     if (!isTenantAuthConfig(record.serverAuth)) {
@@ -204,7 +223,7 @@ export async function hasActiveCustomerAuthAudienceConflict(
   record: DeployRecord,
   auth: TenantAuthConfig | undefined,
 ): Promise<boolean> {
-  if (record.accessMode !== 'customers' || auth === undefined || auth.kind === 'bridge')
+  if (!requiresCustomerAuthProjection(record, auth) || auth === undefined || auth.kind === 'bridge')
     return false;
   const tenant = { org: record.orgSlug, app: record.appSlug, env: record.environment };
   const conflict =

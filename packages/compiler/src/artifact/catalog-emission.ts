@@ -116,6 +116,9 @@ export function emitCatalogArtifactSurfaces({
       ...(s.tool.authorization
         ? {
             authorization: {
+              ...(s.tool.authorization.discovery === 'public'
+                ? { discovery: 'public' as const }
+                : {}),
               ...(s.tool.authorization.requiredScopes
                 ? {
                     requiredScopes: canonicalizeAuthorizationValues(

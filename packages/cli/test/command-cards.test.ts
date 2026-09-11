@@ -34,6 +34,7 @@ const STATUS_BODY: StatusResponse = {
     createdAt: '2026-07-06T10:00:00.000Z',
     createdByEmail: 'owner@acme.test',
     accessMode: 'org-members',
+    authentication: 'platform',
     ownerSubject: 'oauth-human',
   },
   health: { state: 'ready' },
@@ -57,6 +58,7 @@ describe('renderStatusCard', () => {
     expect(out).toMatch(/state\s+● active/);
     expect(out).toMatch(/endpoint\s+https:\/\/svc\.example\/o\/acme\/support-bot\/prod\/mcp/);
     expect(out).toMatch(/access\s+org-members —/);
+    expect(out).toMatch(/authentication\s+platform/);
     expect(out).toMatch(/owner\s+oauth-human/);
     expect(out).toMatch(/deployed\s+2h ago by owner@acme\.test/);
     expect(out).toMatch(/health\s+ready/);
@@ -108,6 +110,20 @@ describe('renderStatusCard', () => {
       NOW,
     );
     expect(out).toMatch(/secrets\s+missing API_TOKEN/);
+  });
+
+  it('does not guess authentication authority when status metadata is absent', () => {
+    const out = renderStatusCard(
+      {
+        ...STATUS_BODY,
+        deployment: { ...STATUS_BODY.deployment, authentication: undefined },
+      },
+      'https://svc.example',
+      { color: 'none', glyph: 'unicode' },
+      NOW,
+    );
+
+    expect(out).not.toMatch(/authentication\s/);
   });
 });
 

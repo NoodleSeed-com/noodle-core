@@ -12,7 +12,13 @@ import {
 } from './context-tool.js';
 import { projectIntentCaptureInput } from './intent-capture.js';
 import type { JsonRpcErrorObject } from './jsonrpc.js';
-import { filterAuthorizedTools, type ToolAuthorizationCaller } from './tool-authorization.js';
+import type { ToolAuthorizationCaller } from './tool-authorization.js';
+import {
+  filterDiscoverableTools,
+  type ToolAuthenticationPolicy,
+  type ToolSecurityScheme,
+  toolSecuritySchemes,
+} from './tool-discovery.js';
 import {
   projectWidgetResourceMeta,
   type WidgetDomainProjection,
@@ -34,6 +40,7 @@ export interface ToolDescriptor {
   readonly inputSchema: Record<string, unknown>;
   readonly outputSchema?: Record<string, unknown>;
   readonly annotations?: Record<string, unknown>;
+  readonly securitySchemes?: readonly ToolSecurityScheme[];
   /** MCP `_meta` extension bag (e.g. MCP Apps `{ ui: { resourceUri } }` linking the tool to its widget). */
   readonly _meta?: Record<string, unknown>;
 }
@@ -66,20 +73,37 @@ export { mapExecutionError } from './execution-error-mapping.js';
 /** Map a resolved artifact tool to an MCP tool descriptor (carrying its `_meta` extension bag, if any). */
 export function mapTool(
   tool: ArtifactTool,
-  options?: { readonly intentCapture?: boolean },
+  options?: {
+    readonly intentCapture?: boolean;
+    readonly authentication?: ToolAuthenticationPolicy;
+  },
 ): ToolDescriptor {
-  return {
-    name: tool.name,
-    ...(tool.title !== undefined ? { title: tool.title } : {}),
-    description: tool.description,
-    inputSchema: projectIntentCaptureInput(
-      withPortableInteractionInput(tool),
-      options?.intentCapture === true,
-    ),
-    ...(tool.outputSchema !== undefined ? { outputSchema: tool.outputSchema } : {}),
-    ...(tool.annotations !== undefined ? { annotations: tool.annotations } : {}),
-    ...(tool._meta !== undefined ? { _meta: tool._meta } : {}),
-  };
+  return withToolAuthentication(
+    {
+      name: tool.name,
+      ...(tool.title !== undefined ? { title: tool.title } : {}),
+      description: tool.description,
+      inputSchema: projectIntentCaptureInput(
+        withPortableInteractionInput(tool),
+        options?.intentCapture === true,
+      ),
+      ...(tool.outputSchema !== undefined ? { outputSchema: tool.outputSchema } : {}),
+      ...(tool.annotations !== undefined ? { annotations: tool.annotations } : {}),
+      ...(tool._meta === undefined ? {} : { _meta: tool._meta }),
+    },
+    tool,
+    options?.authentication,
+  );
+}
+
+function withToolAuthentication(
+  descriptor: ToolDescriptor,
+  tool: Pick<ArtifactTool, 'authorization'>,
+  policy: ToolAuthenticationPolicy | undefined,
+): ToolDescriptor {
+  if (policy !== 'mixed-customer') return descriptor;
+  const securitySchemes = toolSecuritySchemes(tool);
+  return { ...descriptor, securitySchemes, _meta: { ...descriptor._meta, securitySchemes } };
 }
 
 const PORTABLE_INTERACTION_INPUT_SCHEMA = {
@@ -134,15 +158,23 @@ function withPortableInteractionInput(tool: ArtifactTool): Record<string, unknow
 export function mapToolsList(
   artifact: RuntimeArtifact,
   caller?: ToolAuthorizationCaller,
-  options?: { readonly knowledgeTools?: boolean; readonly intentCapture?: boolean },
+  options?: {
+    readonly knowledgeTools?: boolean;
+    readonly intentCapture?: boolean;
+    readonly authentication?: ToolAuthenticationPolicy;
+  },
 ): ToolsListResult {
   assertNoContextToolCollision(artifact);
   return {
     tools: [
-      ...filterAuthorizedTools(artifact.tools, caller).map((tool) => mapTool(tool, options)),
-      ...(artifactDeclaresContext(artifact) ? [CONTEXT_TOOL_DESCRIPTOR] : []),
+      ...filterDiscoverableTools(artifact.tools, caller).map((tool) => mapTool(tool, options)),
+      ...(artifactDeclaresContext(artifact)
+        ? [withToolAuthentication(CONTEXT_TOOL_DESCRIPTOR, {}, options?.authentication)]
+        : []),
       ...(options?.knowledgeTools === true
-        ? knowledgeToolDescriptors(artifact, options?.intentCapture === true)
+        ? knowledgeToolDescriptors(artifact, options?.intentCapture === true).map((descriptor) =>
+            withToolAuthentication(descriptor, {}, options?.authentication),
+          )
         : []),
     ],
   };

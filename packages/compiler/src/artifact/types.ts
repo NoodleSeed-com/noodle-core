@@ -104,6 +104,8 @@ export interface ArtifactMeta {
 }
 
 export interface ArtifactToolAuthorization {
+  /** Public descriptor discovery does not grant execution permission. */
+  readonly discovery?: 'public';
   /** Every scope must be present on the verified caller. */
   readonly requiredScopes?: readonly string[];
   /** At least one role must be present on the verified caller. */

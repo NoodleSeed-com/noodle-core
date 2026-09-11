@@ -615,9 +615,12 @@ describe('createMcpRouter — customer identity boundary', () => {
       {
         served: target(),
         accessMode: 'customers',
-        verifyToken: async () => ({
-          caller: { subject: 'platform-sub', identityKind: 'platform' },
-        }),
+        authentication: {
+          kind: 'customer',
+          verifyToken: async () => ({
+            caller: { subject: 'platform-sub', identityKind: 'platform' },
+          }),
+        },
       },
       'platform-token',
     );
@@ -630,9 +633,12 @@ describe('createMcpRouter — customer identity boundary', () => {
       {
         served: target(),
         accessMode: 'customers',
-        verifyToken: async () => ({
-          caller: { subject: 'customer-sub', identityKind: 'customer' },
-        }),
+        authentication: {
+          kind: 'customer',
+          verifyToken: async () => ({
+            caller: { subject: 'customer-sub', identityKind: 'customer' },
+          }),
+        },
       },
       'customer-token',
     );

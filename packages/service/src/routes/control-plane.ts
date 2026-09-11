@@ -234,6 +234,7 @@ export async function handleDeploy(
     deploymentId: result.deploymentId,
     serverVersion: result.serverVersion,
     accessMode: result.accessMode,
+    ...(result.authentication !== undefined ? { authentication: result.authentication } : {}),
     ...(result.ownerSubject !== undefined ? { ownerSubject: result.ownerSubject } : {}),
     url: tenantMcpUrl(base, tenant, result.serverVersion, endpointOptions),
     defaultUrl: tenantMcpUrl(base, tenant, undefined, endpointOptions),

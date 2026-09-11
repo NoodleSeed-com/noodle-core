@@ -3459,6 +3459,23 @@ exports[`commands --json public wire contract > writes one complete JsonEnvelope
           {
             "aliases": [],
             "conflictsWith": [],
+            "constraints": {
+              "choices": [
+                "mixed",
+                "customers",
+              ],
+            },
+            "name": "access",
+            "repeatable": false,
+            "required": false,
+            "sensitive": false,
+            "summary": "Local access: customers requires sign-in; mixed allows anonymous tools and optional customer sign-in. Defaults to customers when auth is declared.",
+            "type": "string",
+            "value": "<mode>",
+          },
+          {
+            "aliases": [],
+            "conflictsWith": [],
             "name": "connectors",
             "repeatable": false,
             "required": false,

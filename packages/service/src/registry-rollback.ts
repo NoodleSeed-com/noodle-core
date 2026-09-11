@@ -2,6 +2,7 @@ import type { CapabilityName } from '@noodle-borg/capabilities';
 import type { RollbackResult } from '@noodle-borg/control-plane/portable';
 import type { ServedArtifact } from '@noodle-borg/protocol';
 import type { OwnerTokenVerifier } from '@noodle-borg/transport-http';
+import { hasExactCustomerAuthProjection } from './customer-auth-audience-binding.js';
 import { withDeploymentConfiguration } from './registry-deploy-transaction.js';
 import { deploymentOwnerSubject, missingCapabilityErrors } from './registry-helpers.js';
 import { activateInMemory, type RegistryStateView } from './registry-state.js';
@@ -96,9 +97,18 @@ export async function rollbackDeployment(
     };
   }
   const compiledAuth = built.served.artifact.server.auth;
+  if (target.serverAuth !== undefined && !hasExactCustomerAuthProjection(target, compiledAuth)) {
+    return {
+      ok: false,
+      status: 409,
+      error: 'deployment cannot be activated: server_auth_required',
+    };
+  }
   const projectedTarget = {
     ...target,
-    ...(target.accessMode === 'customers' && compiledAuth !== undefined
+    ...((target.accessMode === 'customers' ||
+      (target.schemaVersion === 2 && target.accessMode === 'mixed')) &&
+    compiledAuth !== undefined
       ? { serverAuth: compiledAuth }
       : {}),
   };
@@ -120,10 +130,14 @@ export async function rollbackDeployment(
   const activation = state.store
     ? await state.store.activateDeployment(ref, deploymentId, {
         expectedAccessMode: target.accessMode,
+        expectedSchemaVersion: target.schemaVersion,
+        expectedRevision: target,
         ...(compiledAuth !== undefined ? { serverAuth: compiledAuth } : {}),
       })
     : activateInMemory(state.records, ref, deploymentId, {
         expectedAccessMode: target.accessMode,
+        expectedSchemaVersion: target.schemaVersion,
+        expectedRevision: target,
         ...(compiledAuth !== undefined ? { serverAuth: compiledAuth } : {}),
       });
   if (activation === undefined) {

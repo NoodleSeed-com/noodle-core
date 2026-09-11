@@ -1,5 +1,4 @@
 import { normalizeServerVersion } from '@noodle-borg/module';
-import type { AccessMode } from '@noodle-borg/transport-http';
 import {
   assertSameAppPackageSnapshot,
   sanitizeDeployRecordAppPackageSnapshot,
@@ -8,11 +7,17 @@ import {
   assertCustomerAuthRestorePrecondition,
   assertUniqueActiveCustomerAuthAudienceBindings,
   findActiveCustomerAuthAudienceConflict,
+  requiresCustomerAuthProjection,
 } from '../customer-auth-audience-binding.js';
+import { matchesDeploymentActivation } from '../deployment-activation-precondition.js';
 import {
   assertDeploymentActivationUnlocked,
   assertDeploymentAppendUnlocked,
 } from '../deployment-lock.js';
+import {
+  assertDeploymentAppendPolicy,
+  assertDeploymentAppendVersion,
+} from '../deployment-record-version.js';
 import {
   defaultActiveRecord,
   sameDeploymentScope,
@@ -25,10 +30,12 @@ import type {
   AppRestoreResult,
   AppSummary,
   ArtifactStore,
+  DeploymentActivationPrecondition,
   DeploymentActivationResult,
   DeploymentListFilter,
   DeploymentLock,
   DeploymentLockUpdateResult,
+  DeploymentPolicyPrecondition,
   DeploymentSummary,
   DeployRecord,
   EnvSummary,
@@ -59,7 +66,9 @@ export class InMemoryArtifactStore implements ArtifactStore {
   readonly #records = new Map<string, DeployRecord>();
   readonly #productionEnvironments = new Map<string, string>();
 
-  async append(record: DeployRecord): Promise<void> {
+  async append(record: DeployRecord, precondition?: DeploymentPolicyPrecondition): Promise<void> {
+    assertDeploymentAppendVersion([...this.#records.values()], record);
+    assertDeploymentAppendPolicy([...this.#records.values()], record, precondition);
     const existing = this.#records.get(record.deploymentId);
     if (existing !== undefined) assertSameAppPackageSnapshot(existing, record);
     record = sanitizeDeployRecordAppPackageSnapshot(record);
@@ -162,27 +171,33 @@ export class InMemoryArtifactStore implements ArtifactStore {
   async activateDeployment(
     ref: TenantRef,
     deploymentId: string,
-    precondition?: {
-      readonly expectedAccessMode: AccessMode | undefined;
-      readonly serverAuth?: TenantAuthConfig;
-    },
+    precondition?: DeploymentActivationPrecondition,
     _options: { readonly automationId?: string } = {},
   ): Promise<DeploymentActivationResult | undefined> {
     const safe = validateTenantRef(ref);
     const target = this.#records.get(deploymentId);
     if (target === undefined || !sameTenantRecord(target, safe)) return Promise.resolve(undefined);
     assertDeploymentActivationUnlocked([...this.#records.values()], target);
-    if (precondition !== undefined && target.accessMode !== precondition.expectedAccessMode) {
+    if (!matchesDeploymentActivation(target, precondition)) {
       return Promise.resolve(undefined);
     }
     const previousActive = [...this.#records.values()]
       .filter((record) => record.active && sameDeploymentScope(record, target))
       .sort((a, b) => b.deploymentVersion - a.deploymentVersion)[0];
+    if (precondition === undefined && previousActive !== undefined) {
+      assertDeploymentAppendVersion([previousActive], { ...target, active: true });
+    }
+    assertDeploymentAppendPolicy(
+      [...this.#records.values()],
+      { ...target, active: true },
+      precondition?.expectedActivePolicy,
+    );
     const alreadyActive = previousActive?.deploymentId === target.deploymentId;
     const activated = {
       ...target,
       active: true,
-      ...(target.accessMode === 'customers' && precondition?.serverAuth !== undefined
+      ...(requiresCustomerAuthProjection(target, precondition?.serverAuth) &&
+      precondition?.serverAuth !== undefined
         ? { serverAuth: precondition.serverAuth }
         : {}),
     };

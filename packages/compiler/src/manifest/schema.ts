@@ -93,29 +93,39 @@ const authorizationListSchema = (item: z.ZodString) =>
 const requiredScopesSchema = authorizationListSchema(scopeTokenSchema);
 const allowedRolesSchema = authorizationListSchema(roleSchema);
 type ToolAuthorizationManifest = {
+  readonly discovery?: 'authorized' | 'public' | undefined;
   readonly requiredScopes?: readonly string[] | undefined;
   readonly allowedRoles?: readonly string[] | undefined;
 };
-const toolAuthorizationSchema: z.ZodType<ToolAuthorizationManifest> = z.union([
-  z
-    .object({
-      requiredScopes: requiredScopesSchema,
-      allowedRoles: allowedRolesSchema.optional(),
-    })
-    .strict(),
-  z
-    .object({
-      requiredScopes: requiredScopesSchema.optional(),
-      allowedRoles: allowedRolesSchema,
-    })
-    .strict(),
-]);
+const toolAuthorizationSchema: z.ZodType<ToolAuthorizationManifest> = z
+  .union([
+    z
+      .object({
+        discovery: z.enum(['authorized', 'public']).optional(),
+        requiredScopes: requiredScopesSchema,
+        allowedRoles: allowedRolesSchema.optional(),
+      })
+      .strict(),
+    z
+      .object({
+        discovery: z.enum(['authorized', 'public']).optional(),
+        requiredScopes: requiredScopesSchema.optional(),
+        allowedRoles: allowedRolesSchema,
+      })
+      .strict(),
+  ])
+  .overwrite((authorization) => {
+    if (authorization.discovery !== 'authorized') return authorization;
+    const { discovery: _discovery, ...normalized } = authorization;
+    return normalized;
+  });
 
 const toolSchema = z.object({
   name: nameSchema,
   title: z.string().trim().min(1).optional(),
   description: z.string().min(1),
   authorization: toolAuthorizationSchema.optional(),
+  securitySchemes: z.never().optional(),
   inputSchema: jsonSchemaSchema,
   outputSchema: jsonSchemaSchema.optional(),
   annotations: z.record(z.string(), z.unknown()).optional(),

@@ -264,10 +264,25 @@ describe('draft MCP skills extension', () => {
     });
   });
 
-  it('does not advertise a skill when the caller has no complete authorized workflow', async () => {
+  it.each([
+    false,
+    true,
+  ])('does not advertise a skill without a complete authorized workflow (public discovery: %s)', async (publicDiscovery) => {
     const served = permissionedTarget();
     const target = handler(
-      { ...served, artifact: { ...served.artifact, resources: [], prompts: [] } },
+      {
+        ...served,
+        artifact: {
+          ...served.artifact,
+          resources: [],
+          prompts: [],
+          tools: served.artifact.tools.map((tool) =>
+            publicDiscovery && tool.authorization !== undefined
+              ? { ...tool, authorization: { ...tool.authorization, discovery: 'public' } }
+              : tool,
+          ),
+        },
+      },
       {
         caller: {
           subject: 'viewer',
@@ -278,6 +293,12 @@ describe('draft MCP skills extension', () => {
       },
     );
 
+    if (publicDiscovery)
+      expect((await modernRpc(target, 'tools/list')).json).toMatchObject({
+        result: {
+          tools: expect.arrayContaining([expect.objectContaining({ name: 'list_cases' })]),
+        },
+      });
     const discovered = await modernRpc(target, 'server/discover');
     expect(JSON.stringify(discovered.json)).not.toContain('io.modelcontextprotocol/skills');
     expect(await modernRpc(target, 'skills/list')).toMatchObject({

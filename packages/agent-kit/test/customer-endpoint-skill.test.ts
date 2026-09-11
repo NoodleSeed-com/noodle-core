@@ -36,7 +36,11 @@ describe('customer endpoint authoring guidance', () => {
     expect(authoring).toContain('invalid_continuation');
     expect(authoring).toContain('private server-held continuation');
     expect(authoring).toContain('before credential lookup or connector egress');
-    expect(authoring).toContain('`tools/list` remains based only on roles and scopes');
+    expect(authoring).toContain('`tools/list` follows the scope/role discovery rule');
+    expect(authoring).toContain('explicit public-descriptor opt-in');
+    expect(authoring).toContain(
+      'route availability neither reveals tenant topology nor changes execution authorization',
+    );
   });
 
   it('keeps route authority URL-blind across delegated exchange and assistant sessions', () => {

@@ -15,7 +15,21 @@ export async function inspectServiceDeployment(
   return {
     ok: true,
     target: status.target,
-    deployment: status.deployment,
+    // Keep the Developer MCP port projection explicit as status gains additive operator fields.
+    deployment: {
+      deploymentId: status.deployment.deploymentId,
+      endpointUrl: status.deployment.endpointUrl,
+      active: status.deployment.active,
+      serverName: status.deployment.serverName,
+      createdAt: status.deployment.createdAt,
+      ...(status.deployment.createdByEmail === undefined
+        ? {}
+        : { createdByEmail: status.deployment.createdByEmail }),
+      accessMode: status.deployment.accessMode,
+      ...(status.deployment.ownerSubject === undefined
+        ? {}
+        : { ownerSubject: status.deployment.ownerSubject }),
+    },
     health: {
       state: status.health.state,
       missingSecrets: status.config.missingSecrets,

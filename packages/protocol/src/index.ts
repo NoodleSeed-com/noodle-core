@@ -72,6 +72,7 @@ export {
   toolAuthorizationRuleFingerprint,
 } from './tool-authorization.js';
 export { toolRequiresConfirmation } from './tool-confirmation.js';
+export { filterDiscoverableTools, type ToolAuthenticationPolicy } from './tool-discovery.js';
 export {
   createDualEraMcpHandler,
   createPlatformDualEraMcpHandler,

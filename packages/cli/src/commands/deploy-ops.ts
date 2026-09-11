@@ -372,6 +372,18 @@ export async function runDeploy(
   }
 
   if (!outcome.ok) {
+    if (outcome.code === 'mixed_customer_auth_unsupported') {
+      const fix =
+        'Upgrade the target service to a release with mixed customer authentication support.';
+      const next = 'noodle deploy --access mixed';
+      if (json)
+        return printJsonFailure(
+          { code: outcome.code, message: outcome.message, fix, next },
+          EXIT.FAILURE,
+        );
+      printRecovery({ command: 'deploy', cause: outcome.message, fix, next });
+      return EXIT.FAILURE;
+    }
     const missingSecrets = missingSecretNames(outcome.errors);
     const capacityFailure = handleProductionCapacityFailure(outcome, resolvedOrg ?? 'local', json);
     if (capacityFailure !== undefined) return capacityFailure;
@@ -418,7 +430,7 @@ export async function runDeploy(
       if (json) {
         return printJsonFailure(
           {
-            code: outcome.stage !== undefined ? 'asset_failed' : 'deploy_failed',
+            code: outcome.code ?? (outcome.stage !== undefined ? 'asset_failed' : 'deploy_failed'),
             message: outcome.message,
             fix: is403
               ? 'Confirm the target is one of your orgs, or link this project to the intended org/app.'
@@ -516,6 +528,7 @@ export async function runDeploy(
         app: deployedApp,
         env: deployedEnv,
         accessMode: outcome.accessMode,
+        ...(outcome.authentication === undefined ? {} : { authentication: outcome.authentication }),
         serviceUrl,
         createdAt,
       },
@@ -577,7 +590,9 @@ export async function runDeploy(
 
   const authReadiness = await customerDeployAuthReadiness(
     manifestPath,
-    outcome.accessMode === 'customers' || resolvedAccessMode === 'customers',
+    outcome.authentication === 'customer' ||
+      outcome.accessMode === 'customers' ||
+      resolvedAccessMode === 'customers',
   );
 
   if (json) {
@@ -587,6 +602,7 @@ export async function runDeploy(
       url: outcome.url,
       defaultUrl: outcome.defaultUrl,
       accessMode: outcome.accessMode,
+      ...(outcome.authentication === undefined ? {} : { authentication: outcome.authentication }),
       ...(outcome.ownerSubject !== undefined ? { ownerSubject: outcome.ownerSubject } : {}),
       assets: outcome.assets,
       service: serviceUrl,
@@ -623,6 +639,7 @@ export async function runDeploy(
   console.log(`Version:      ${outcome.serverVersion}`);
   console.log(`Endpoint:  ${outcome.url}`);
   console.log(`Default:   ${outcome.defaultUrl}`);
+  if (outcome.authentication !== undefined) console.log(`Auth:      ${outcome.authentication}`);
   if (isNoodleSeedCloudServiceUrl(serviceUrl)) {
     console.log(`Dashboard: ${projectDashboardUrl(serviceUrl, deployedOrg, deployedApp)}`);
   } else if (selfHostedCompose) {
@@ -648,6 +665,11 @@ export async function runDeploy(
     console.log(
       '           Connect from an MCP client (e.g. Claude.ai) and sign in when prompted.',
     );
+  } else if (outcome.accessMode === 'mixed') {
+    console.log(
+      'Access:    mixed — anonymous tools remain available; protected actions require sign-in.',
+    );
+    if (authReadiness?.ready === false) printAuthReadinessWarnings(authReadiness);
   } else if (outcome.accessMode === 'customers') {
     console.log(
       'Access:    customers — your app customers sign in through the configured customer auth.',

@@ -147,6 +147,7 @@ export function harnessHtml(options: {
   readonly rpcCapability?: string;
   readonly secureWidgets?: boolean;
   readonly authRequired?: boolean;
+  readonly authAvailable?: boolean;
   readonly localDelegatedExchangeRequired?: boolean;
 }): string {
   const client = HARNESS_CLIENT_JS.replace(
@@ -160,7 +161,12 @@ export function harnessHtml(options: {
     ? ' disabled aria-disabled="true" title="Design mode is unavailable for authenticated previews"'
     : '';
   const frameSandbox = options.secureWidgets ? ' sandbox="allow-scripts allow-popups"' : '';
-  const bodyClass = options.authRequired ? ' class="auth-required auth-locked"' : '';
+  const authAvailable = options.authAvailable ?? options.authRequired;
+  const bodyClass = options.authRequired
+    ? ' class="auth-required auth-locked"'
+    : authAvailable
+      ? ' class="auth-optional"'
+      : '';
   return (
     '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">' +
@@ -168,7 +174,7 @@ export function harnessHtml(options: {
     '<title>Noodle Seed Devtools</title><style>' +
     DEVTOOLS_STYLES +
     DEVTOOLS_JSON_STYLES +
-    (options.authRequired ? DEVTOOLS_AUTH_STYLES : '') +
+    (authAvailable ? DEVTOOLS_AUTH_STYLES : '') +
     (options.localDelegatedExchangeRequired ? DEVTOOLS_DELEGATED_EXCHANGE_STYLES : '') +
     `</style></head><body${bodyClass}>` +
     '<canvas id="ns-canvas" aria-hidden="true"></canvas>' +
@@ -193,11 +199,11 @@ export function harnessHtml(options: {
     `<button id="mode-design" class="mode mode--design" type="button" role="tab" aria-controls="design-view" aria-selected="false"${designAttributes}>Design</button>` +
     '</div>' +
     `<span class="muted brand__url" title="${escapeHtml(options.mcpUrl)}">${escapeHtml(options.mcpUrl)}</span>` +
-    (options.authRequired ? DEVTOOLS_AUTH_SESSION_HTML : '') +
+    (authAvailable ? DEVTOOLS_AUTH_SESSION_HTML : '') +
     '<button id="toggle-activity" class="rail-toggle rail-toggle--activity" type="button" aria-label="Open MCP calls" aria-controls="log" aria-expanded="false">' +
     '<span class="status-dot" aria-hidden="true"></span><span>Activity</span></button></header>' +
     (options.localDelegatedExchangeRequired ? DEVTOOLS_DELEGATED_EXCHANGE_HTML : '') +
-    (options.authRequired ? DEVTOOLS_AUTH_GATE_HTML : '') +
+    (authAvailable ? DEVTOOLS_AUTH_GATE_HTML : '') +
     '<div id="preview-view">' +
     '<div id="controls" class="controls">' +
     '<span class="ctl"><span class="ctl__lbl">Theme</span><button id="theme-toggle" class="theme-switch" type="button" aria-label="Switch to dark theme" aria-pressed="false">' +
@@ -274,7 +280,7 @@ export function harnessHtml(options: {
     '\n' +
     client +
     (options.localDelegatedExchangeRequired ? `\n${DEVTOOLS_DELEGATED_EXCHANGE_CLIENT_JS}` : '') +
-    (options.authRequired ? `\n${DEVTOOLS_AUTH_CLIENT_JS}` : '') +
+    (authAvailable ? `\n${DEVTOOLS_AUTH_CLIENT_JS}` : '') +
     '</script><script>' +
     DEVTOOLS_SHADER_SCRIPT +
     '</script></body></html>'
@@ -307,7 +313,7 @@ const HARNESS_CLIENT_JS = [
   'document.addEventListener("keydown",function(e){ if(e.key==="Escape") closeRails(); });',
   'var currentTheme="__INITIAL_THEME__"; var currentDevice="__INITIAL_DEVICE__";',
   'function hostHeaders(json){ var headers=json?{"content-type":"application/json"}:{}; if(SECURE_WIDGETS) headers["x-noodle-devtools-capability"]=RPC_CAPABILITY; return headers; }',
-  'function rpc(method,params){ return fetch("/rpc",{method:"POST",headers:hostHeaders(true),body:JSON.stringify({jsonrpc:"2.0",id:Date.now(),method:method,params:params||{}})}).then(function(r){return r.json();}); }',
+  'function rpc(method,params,retried){ return fetch("/rpc",{method:"POST",headers:hostHeaders(true),body:JSON.stringify({jsonrpc:"2.0",id:Date.now(),method:method,params:params||{}})}).then(function(r){return r.json().then(function(j){ if(!retried&&r.status===401&&method!=="tools/list"&&typeof requestCustomerSignIn==="function") return requestCustomerSignIn().then(function(ok){return ok?rpc(method,params,true):j;}); return j;});}); }',
   'function inputResponse(id,value){ if(!value||value.method!=="elicitation/create"||!value.params||value.params.mode!=="form") throw new Error("Unsupported input request"); var p=value.params; var schema=p.requestedSchema||{}; var props=schema.properties||{}; var keys=Object.keys(props); if(keys.length<1||keys.length>32) throw new Error("Unsupported input schema"); if(id==="__noodle_confirmation"&&props.confirm&&props.confirm.type==="boolean") return window.confirm(String(p.message||"Approve this action?"))?{action:"accept",content:{confirm:true}}:{action:"decline"}; var content={}; for(var i=0;i<keys.length;i++){ var name=keys[i]; var field=props[name]||{}; if(["string","number","integer","boolean"].indexOf(field.type)<0) throw new Error("Unsupported input field"); var hint=String(p.message||"Input required")+"\\n\\n"+String(field.title||name)+(field.description?": "+field.description:""); var initial=field.default===undefined?"":String(field.default); var answer=window.prompt(hint,initial); if(answer===null) return {action:"cancel"}; if(answer===""&&(schema.required||[]).indexOf(name)<0) continue; if(field.type==="number"||field.type==="integer") content[name]=Number(answer); else if(field.type==="boolean") content[name]=answer.toLowerCase()==="true"; else content[name]=answer; } return {action:"accept",content:content}; }',
   'function completeRpc(method,params,round){ return rpc(method,params).then(function(j){ var result=j&&j.result; if(!result||result.resultType!=="input_required") return j; if((round||0)>=8||typeof result.requestState!=="string"||!result.inputRequests||typeof result.inputRequests!=="object") throw new Error("Invalid input-required response"); var responses={}; var ids=Object.keys(result.inputRequests); if(ids.length<1||ids.length>32) throw new Error("Invalid input-required response"); ids.forEach(function(id){ responses[id]=inputResponse(id,result.inputRequests[id]); }); return completeRpc(method,Object.assign({},params,{requestState:result.requestState,inputResponses:responses}),(round||0)+1); }); }',
   'function syncThemeControl(){ var dark=currentTheme==="dark"; themeToggle.setAttribute("aria-pressed",dark?"true":"false"); themeToggle.setAttribute("aria-label",dark?"Switch to light theme":"Switch to dark theme"); themeToggle.dataset.theme=currentTheme; }',
@@ -318,7 +324,7 @@ const HARNESS_CLIENT_JS = [
   'function setDevice(device){ currentDevice=device; widthInput.value=device==="mobile"?390:820; syncDeviceControl(); syncWidth(); }',
   'function syncWidth(){ var progress=calculateRangeProgress(Number(widthInput.value),Number(widthInput.min),Number(widthInput.max)); widthInput.style.setProperty("--width-progress",progress+"%"); frame.style.width=widthInput.value+"px"; widthVal.textContent=widthInput.value+" px"; }',
   'function setState(s){ empty.style.display=s==="empty"?"flex":"none"; frame.style.display=s==="widget"?"block":"none"; resultBox.style.display=s==="result"?"block":"none"; controlsBar.style.display=s==="widget"?"flex":"none"; }',
-  'function setWidgetDocument(target,q){ if(!SECURE_WIDGETS){ target.src=q; return; } fetch(q,{headers:hostHeaders(false)}).then(function(r){if(!r.ok) throw new Error("widget load failed"); return r.text();}).then(function(html){target.srcdoc=html;}).catch(function(){target.srcdoc="<!doctype html><p>Failed to load widget.</p>";}); }',
+  'function setWidgetDocument(target,q,retried){ if(!SECURE_WIDGETS){ target.src=q; return; } fetch(q,{headers:hostHeaders(false)}).then(function(r){if(r.status===401&&!retried&&typeof requestCustomerSignIn==="function") return requestCustomerSignIn().then(function(ok){if(ok){setWidgetDocument(target,q,true);return null;}return "<!doctype html><p>Sign-in cancelled. You can continue using anonymous tools.</p>";});if(!r.ok) throw new Error("widget load failed"); return r.text();}).then(function(html){if(html!==null)target.srcdoc=html;}).catch(function(){target.srcdoc="<!doctype html><p>Failed to load widget.</p>";}); }',
   'function loadWidget(name,args,resourceUri){ current=name; currentArgs=args||{}; if(resourceUri!==undefined) currentResourceUri=resourceUri||null; setState("widget"); var q="/widget?name="+encodeURIComponent(name); if(Object.keys(currentArgs).length) q+="&args="+encodeURIComponent(JSON.stringify(currentArgs)); setWidgetDocument(frame,q); if(!SECURE_WIDGETS&&modeDesign&&modeDesign.classList.contains("is-active")&&window.NoodleDesignUI) window.NoodleDesignUI.enter(); }',
   'function legacyCopy(value){ var textarea=document.createElement("textarea"); textarea.value=value; textarea.setAttribute("readonly",""); textarea.style.position="fixed"; textarea.style.left="-9999px"; document.body.appendChild(textarea); textarea.select(); var copied=false; try{ copied=document.execCommand("copy"); }catch(e){} textarea.remove(); return copied?Promise.resolve():Promise.reject(new Error("copy failed")); }',
   'function copyText(value,trigger,label){ var operation=navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(value).catch(function(){return legacyCopy(value);}):legacyCopy(value); return operation.then(function(){ var text=trigger.querySelector(".copy-action__label"); trigger.classList.add("is-copied"); if(text) text.textContent="Copied"; copyStatus.textContent="Copied "+label; setTimeout(function(){ trigger.classList.remove("is-copied"); if(text) text.textContent="Copy"; },1600); }).catch(function(){ copyStatus.textContent="Could not copy "+label; }); }',

@@ -109,6 +109,15 @@ export const CATALOG_LOCAL_AUTHORING: readonly CommandSpec[] = [
         value: '<slug>',
         summary: 'Environment slug for local target context.',
       },
+      {
+        ...OPTIONAL_FLAG,
+        name: 'access',
+        type: 'string',
+        value: '<mode>',
+        constraints: { choices: ['mixed', 'customers'] },
+        summary:
+          'Local access: customers requires sign-in; mixed allows anonymous tools and optional customer sign-in. Defaults to customers when auth is declared.',
+      },
       CONNECTORS_FLAG,
       {
         ...OPTIONAL_FLAG,

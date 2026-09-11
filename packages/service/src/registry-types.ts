@@ -4,7 +4,7 @@ import type { ControlPlaneIdentity } from '@noodle-borg/control-plane/portable';
 import type { OrgMembershipSource, PolicyGate } from '@noodle-borg/module';
 import type { Connector } from '@noodle-borg/runtime';
 import type { AccessMode, OwnerTokenVerifier } from '@noodle-borg/transport-http';
-import type { DeploymentSource } from '@noodle-borg/wire-contracts';
+import type { DeploymentAuthentication, DeploymentSource } from '@noodle-borg/wire-contracts';
 import type { AppPackageRenderer } from './app-package-snapshot.js';
 import type { DelegatedExchangeOptions } from './delegated-token-exchange.js';
 import type { ExternalCredentialExchangeRuntimeOptions } from './external-credential-exchange.js';
@@ -53,6 +53,7 @@ export type DeployResult =
       readonly deploymentVersion: number;
       readonly serverVersion?: string;
       readonly accessMode?: AccessMode;
+      readonly authentication?: DeploymentAuthentication;
       readonly ownerSubject?: string;
       readonly replayed?: boolean;
     }
@@ -79,6 +80,7 @@ export type RunDeployResult =
     };
 
 export type AccessUpdateFailureCode =
+  | 'unsupported_deployment_record_version'
   | 'no_active_deployment'
   | 'server_auth_required'
   | 'customer_auth_audience_conflict'
@@ -91,6 +93,7 @@ export type AccessUpdateResult =
       readonly ok: true;
       readonly changed: boolean;
       readonly accessChanged: boolean;
+      readonly policyChanged: boolean;
       readonly ownerChanged: boolean;
       readonly previousAccessMode: AccessMode;
       readonly previousOwnerSubject?: string;

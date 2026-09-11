@@ -4,10 +4,10 @@ import type { OrgMembershipSource } from '@noodle-borg/module';
 import { type AccessMode, noopLogger } from '@noodle-borg/transport-http';
 import type { DeploymentSource } from '@noodle-borg/wire-contracts';
 import { BUSINESS_SETUP_MESSAGE, BusinessOnboarding } from './business-onboarding.js';
+import { isIdentityAccessMode } from './deployment-access-mode.js';
 import type { ServiceOptions } from './options.js';
 import type { ServerRegistry } from './registry.js';
 import { manifestUsesUserRoot } from './registry-access.js';
-import { isIdentityAccessMode } from './routes/access-mode.js';
 import { provisionPublicEmbed } from './routes/deploy-public-embed.js';
 import { deploymentActivationRejection } from './routes/deployment-activation-response.js';
 import type { AuditSink } from './store/audit.js';
@@ -108,7 +108,7 @@ export async function executeAuthorizedDeployment(
   }
   // Identity access modes bind the data plane to verified identity, so the deployer must be authenticated.
   // (Localhost dev runs the gate open; such deploys are rejected for lack of an owner/audit actor.)
-  if (isIdentityAccessMode(accessMode) && !identity) {
+  if (isIdentityAccessMode(accessMode, manifest) && !identity) {
     return reject(401, {
       error: `${accessMode} deployments require an authenticated deployer`,
     });

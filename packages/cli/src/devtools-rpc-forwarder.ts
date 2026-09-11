@@ -48,6 +48,7 @@ export interface DevtoolsRpcForwardResult {
 export function createDevtoolsRpcForwarder(options: {
   readonly mcpUrl: string;
   readonly protocolVersion?: string;
+  readonly optionalAuth?: boolean;
   readonly authSession: () => DevtoolsAuthSession | undefined;
   readonly record: (entry: RpcLogEntry) => void;
 }): (body: DevtoolsRpcRequest) => Promise<DevtoolsRpcForwardResult> {
@@ -73,7 +74,10 @@ export function createDevtoolsRpcForwarder(options: {
     try {
       const authSession = options.authSession();
       let accessToken: string | undefined;
-      if (authSession !== undefined) {
+      if (
+        authSession !== undefined &&
+        (!options.optionalAuth || !authSession.canRequestAnonymously())
+      ) {
         try {
           accessToken = await authSession.accessToken();
         } catch (error) {

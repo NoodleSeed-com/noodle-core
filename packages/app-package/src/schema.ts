@@ -71,6 +71,7 @@ const branding = z
   .strict();
 const authorization = z
   .object({
+    discovery: z.literal('public').optional(),
     requiredScopes: z
       .array(
         z

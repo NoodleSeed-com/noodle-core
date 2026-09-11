@@ -3,7 +3,7 @@ import type { OrganizationStore } from '@noodle-borg/control-plane/portable';
 import type { OrgMembershipSource } from '@noodle-borg/module';
 import type { SealedSecret } from '@noodle-borg/runtime';
 import type { AccessMode } from '@noodle-borg/transport-http';
-import type { DeploymentSource } from '@noodle-borg/wire-contracts';
+import type { DeploymentAuthentication, DeploymentSource } from '@noodle-borg/wire-contracts';
 import type { AppPackageSnapshotV1 } from './app-package-snapshot.js';
 import type { ProductionEnvironmentChange } from './store/environment-production.js';
 
@@ -75,7 +75,7 @@ export type SecretEnvelope =
  * of the source strings, so the inputs + identity are a faithful, reproducible record.
  */
 export interface DeployRecord {
-  /** Record format version, for forward migration of the persisted shape. Current writers emit `1`. */
+  /** Record format version; customer mixed adoption writes 2, which remains sticky on new records. */
   readonly schemaVersion: number;
   readonly deploymentId: string;
   readonly orgSlug: string;
@@ -303,6 +303,7 @@ export interface DeploymentStatus {
     readonly createdByEmail?: string;
     readonly ownerSubject?: string;
     readonly accessMode: AccessMode;
+    readonly authentication?: DeploymentAuthentication;
     readonly deploymentLock?: DeploymentLockMetadata;
   };
   readonly health: {
@@ -321,11 +322,45 @@ export interface DeploymentActivationResult {
 }
 
 /** One atomic access/owner compare-and-set over the active deployment's observed state. */
+export interface DeploymentPolicyPrecondition {
+  readonly active: Pick<
+    DeployRecord,
+    'deploymentId' | 'schemaVersion' | 'accessMode' | 'ownerSubject' | 'manifest' | 'serverAuth'
+  > | null;
+}
+
+/** The source and authority validated before atomically activating this exact target revision. */
+export interface DeploymentActivationPrecondition {
+  readonly expectedAccessMode: AccessMode | undefined;
+  /** Older callers are restricted to schema-1 targets. */
+  readonly expectedSchemaVersion?: number;
+  readonly expectedRevision?: Pick<
+    DeployRecord,
+    | 'manifest'
+    | 'connectors'
+    | 'hostedAssets'
+    | 'serverAuth'
+    | 'serverVersion'
+    | 'ownerSubject'
+    | 'createdBySubject'
+    | 'orgMembershipSources'
+    | 'archivedAt'
+  >;
+  readonly expectedActivePolicy?: DeploymentPolicyPrecondition;
+  /** Compiler-authoritative projection, applied only after revision validation. */
+  readonly serverAuth?: TenantAuthConfig;
+}
+
 export interface ActiveAccessUpdateInput {
+  /** Internal policy adoption; callers cannot author a deployment schema version. */
+  readonly schemaVersion?: 2;
   readonly accessMode: AccessMode;
   /** Desired owner mutation. Omission preserves the current effective owner; clearing is unsupported. */
   readonly ownerSubject?: string;
   readonly expectedAccessMode: AccessMode | undefined;
+  /** Older callers omit this and are restricted to version-1 records. */
+  readonly expectedSchemaVersion?: number;
+  readonly expectedManifest?: string;
   readonly expectedOwnerSubject: string | undefined;
   /** Compiler-authoritative projection persisted atomically when enabling customer access. */
   readonly serverAuth?: TenantAuthConfig;
@@ -344,7 +379,7 @@ export interface ControlPlaneStore extends OrganizationStore {}
  * an earlier deployment without changing the tenant-facing URL.
  */
 export interface ArtifactStore {
-  append(record: DeployRecord): Promise<void>;
+  append(record: DeployRecord, precondition?: DeploymentPolicyPrecondition): Promise<void>;
   loadAll(): Promise<readonly DeployRecord[]>;
   /**
    * Fetch one server's record by id, or `undefined` if absent. A point read used by lazy
@@ -376,11 +411,7 @@ export interface ArtifactStore {
   activateDeployment(
     ref: TenantRef,
     deploymentId: string,
-    precondition?: {
-      readonly expectedAccessMode: AccessMode | undefined;
-      /** Compiler-authoritative projection persisted atomically when activating customer access. */
-      readonly serverAuth?: TenantAuthConfig;
-    },
+    precondition?: DeploymentActivationPrecondition,
     options?: { readonly automationId?: string },
   ): Promise<DeploymentActivationResult | undefined>;
   /**

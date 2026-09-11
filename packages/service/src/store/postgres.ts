@@ -5,7 +5,6 @@ import {
   type OrganizationProvisioningHook,
 } from '@noodle-borg/module';
 import type { SecretBox } from '@noodle-borg/runtime';
-import type { AccessMode } from '@noodle-borg/transport-http';
 import type { Pool } from 'pg';
 import { defaultActiveRecord } from '../deployment-versioning.js';
 import { createOrganizationProvisioningTx } from '../modules/context.js';
@@ -22,10 +21,12 @@ import type {
   ConfigValueMetadata,
   ControlPlaneStore,
   CreateOrgWithOwnerInput,
+  DeploymentActivationPrecondition,
   DeploymentActivationResult,
   DeploymentListFilter,
   DeploymentLock,
   DeploymentLockUpdateResult,
+  DeploymentPolicyPrecondition,
   DeploymentSummary,
   DeployRecord,
   EnvSummary,
@@ -151,8 +152,8 @@ export class PostgresArtifactStore
     return ensureArtifactSchema(this.#pool);
   }
 
-  append(record: DeployRecord): Promise<void> {
-    return appendDeployRecordRows(this.#pool, record, this.#deploymentActivation());
+  append(record: DeployRecord, precondition?: DeploymentPolicyPrecondition): Promise<void> {
+    return appendDeployRecordRows(this.#pool, record, this.#deploymentActivation(), precondition);
   }
 
   async get(deploymentId: string): Promise<DeployRecord | undefined> {
@@ -233,10 +234,7 @@ export class PostgresArtifactStore
   async activateDeployment(
     ref: TenantRef,
     deploymentId: string,
-    precondition?: {
-      readonly expectedAccessMode: AccessMode | undefined;
-      readonly serverAuth?: TenantAuthConfig;
-    },
+    precondition?: DeploymentActivationPrecondition,
     options?: { readonly automationId?: string },
   ): Promise<DeploymentActivationResult | undefined> {
     return activateDeploymentRows(

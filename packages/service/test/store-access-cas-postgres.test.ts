@@ -46,6 +46,101 @@ describe.skipIf(!URL)('PostgresArtifactStore access compare-and-set', () => {
     await pool.query(`INSERT INTO orgs (slug) VALUES ('acme')`);
   });
 
+  it.each([
+    { manifest: 'changed manifest' },
+    { connectors: 'changed connector catalog' },
+    {
+      hostedAssets: [
+        {
+          logicalId: 'logo',
+          sourcePath: './logo.png',
+          contentHash: 'a'.repeat(64),
+          mimeType: 'image/png',
+          byteLength: 1,
+          width: 1,
+          height: 1,
+          publicUrl: 'https://assets.example/logo.png',
+          objectKey: 'logo.png',
+        },
+      ],
+    },
+    { serverAuth: { issuer: 'https://revision.example', audience: 'api://changed' } },
+  ])('rejects a changed validated activation revision %# without pointer or projection writes', async (change) => {
+    await store.append(RECORD);
+    const target: DeployRecord = {
+      ...RECORD,
+      deploymentId: 'revision-target',
+      active: false,
+      schemaVersion: 2,
+      accessMode: 'mixed',
+      serverAuth: { issuer: 'https://revision.example', audience: 'api://revision' },
+    };
+    await store.append(target);
+    const observed = await store.get(target.deploymentId);
+    if (observed === undefined) throw new Error('missing target');
+    await store.append({ ...target, ...change });
+    await expect(
+      store.activateDeployment(TENANT, target.deploymentId, {
+        expectedAccessMode: observed.accessMode,
+        expectedSchemaVersion: observed.schemaVersion,
+        expectedRevision: observed,
+        serverAuth: target.serverAuth,
+      }),
+    ).resolves.toBeUndefined();
+    expect(await store.getActiveByTenant(TENANT)).toEqual(RECORD);
+    expect(await store.get(target.deploymentId)).toMatchObject({ active: false, ...change });
+  });
+  it('atomically adopts same-mode mixed customer policy and rejects a stale no-op', async () => {
+    const auth = { issuer: 'https://adoption-cas.example', audience: 'api://adoption' };
+    await store.append({ ...RECORD, accessMode: 'mixed', serverAuth: auth });
+    const input = {
+      accessMode: 'mixed' as const,
+      expectedAccessMode: 'mixed' as const,
+      expectedSchemaVersion: 1,
+      expectedOwnerSubject: RECORD.createdBySubject,
+      expectedManifest: RECORD.manifest,
+      schemaVersion: 2 as const,
+      serverAuth: auth,
+    };
+    const outcomes = await Promise.all([
+      store.updateActiveAccess(TENANT, RECORD.deploymentId, input),
+      store.updateActiveAccess(TENANT, RECORD.deploymentId, input),
+    ]);
+    expect(outcomes.filter(Boolean)).toHaveLength(1);
+    expect(outcomes).toContain(undefined);
+    expect(await store.getActiveByTenant(TENANT)).toMatchObject({
+      schemaVersion: 2,
+      accessMode: 'mixed',
+      serverAuth: auth,
+    });
+    await expect(
+      store.updateActiveAccess(TENANT, RECORD.deploymentId, {
+        accessMode: 'mixed',
+        expectedAccessMode: 'mixed',
+        expectedOwnerSubject: RECORD.createdBySubject,
+        expectedSchemaVersion: 1,
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('rejects access adoption when the compiled manifest revision changed', async () => {
+    await store.append(RECORD);
+    await expect(
+      store.updateActiveAccess(TENANT, RECORD.deploymentId, {
+        accessMode: 'mixed',
+        expectedAccessMode: RECORD.accessMode,
+        expectedSchemaVersion: 1,
+        expectedOwnerSubject: RECORD.createdBySubject,
+        expectedManifest: 'stale manifest',
+        schemaVersion: 2,
+      }),
+    ).resolves.toBeUndefined();
+    expect(await store.getActiveByTenant(TENANT)).toMatchObject({
+      schemaVersion: 1,
+      accessMode: RECORD.accessMode,
+    });
+  });
+
   it('rejects one of two concurrent writes that observed the same access mode', async () => {
     await store.append(RECORD);
 

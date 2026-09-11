@@ -64,7 +64,8 @@ export type DevtoolsAuthState =
   | 'error';
 
 export interface DevtoolsAuthStatus {
-  readonly required: true;
+  readonly signInRequested?: boolean;
+  readonly required: boolean;
   readonly supported: boolean;
   readonly state: DevtoolsAuthState;
   readonly issuer?: string;

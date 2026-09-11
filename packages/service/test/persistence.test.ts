@@ -396,7 +396,7 @@ describe('ServerRegistry lazy recompile-on-cache-miss (ADR 0036)', () => {
     secrets: { enc: 'none', values: {} },
   };
 
-  it('lazily recompiles from the store on a cache miss, then serves from cache (no second read)', async () => {
+  it('lazily compiles once and reuses the target after checking durable policy', async () => {
     const store = new InMemoryArtifactStore();
     await store.append(record);
     const getSpy = vi.spyOn(store, 'get');
@@ -412,8 +412,8 @@ describe('ServerRegistry lazy recompile-on-cache-miss (ADR 0036)', () => {
     expect(getSpy).toHaveBeenCalledTimes(1);
 
     const second = await registry.get('hello-deadbeef');
-    expect(second).toBe(first); // same cached reference …
-    expect(getSpy).toHaveBeenCalledTimes(1); // … and no second store read
+    expect(second).toBe(first); // Policy revalidation does not require another compile.
+    expect(getSpy).toHaveBeenCalledTimes(2);
   });
 
   it('single-flights concurrent first-hits for one id (one store read, one shared compile)', async () => {

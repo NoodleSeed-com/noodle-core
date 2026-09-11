@@ -1,3 +1,7 @@
+import {
+  MIXED_CUSTOMER_AUTH_FEATURE_VERSION,
+  serviceInfoClientResponseSchema,
+} from '@noodle-borg/wire-contracts';
 import { currentCliVersion } from './update.js';
 
 export interface ServiceJsonOptions {
@@ -207,4 +211,33 @@ export class ServiceRequestError extends Error {
     if (input.elapsedMs !== undefined) this.elapsedMs = input.elapsedMs;
     if (input.phase !== undefined) this.phase = input.phase;
   }
+}
+
+/** Mixed access updates are adoption requests; an older service must not silently no-op them. */
+export async function requireMixedCustomerAuth(
+  service: string,
+  token?: string,
+  fetchImpl: typeof fetch = fetch,
+): Promise<void> {
+  let supported = false;
+  try {
+    const info = serviceInfoClientResponseSchema.parse(
+      await serviceJson<unknown>(
+        `${service.replace(/\/+$/, '')}/v1/service/info`,
+        token,
+        {},
+        fetchImpl,
+      ),
+    );
+    supported = (info.features?.mixedCustomerAuth ?? 0) >= MIXED_CUSTOMER_AUTH_FEATURE_VERSION;
+  } catch {
+    // Missing, unreadable and older feature contracts cannot establish adoption support.
+  }
+  if (!supported)
+    throw new ServiceRequestError({
+      status: 0,
+      code: 'mixed_customer_auth_unsupported',
+      message:
+        'This service has not confirmed mixed customer authentication support. Upgrade the service, then retry; no access policy was changed.',
+    });
 }

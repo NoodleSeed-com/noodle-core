@@ -1,5 +1,7 @@
 import { type EndpointUrlOptions, tenantMcpUrl } from '@noodle-borg/module';
 import type { ServedArtifact } from '@noodle-borg/protocol';
+import { hasExactCustomerAuthProjection } from './customer-auth-audience-binding.js';
+import { deploymentAuthenticationFor } from './deployment-authentication.js';
 import { deploymentOwnerSubject, missingSecretNames } from './registry-helpers.js';
 import type { DeployError } from './registry-types.js';
 import type { DeploymentStatus, DeployRecord, TenantRef } from './store.js';
@@ -18,11 +20,13 @@ export function deploymentStatusFor(
 ): DeploymentStatus {
   const missingSecrets = built.ok ? [] : missingSecretNames(built.errors);
   const missingCustomerAuth =
-    built.ok &&
-    record.accessMode === 'customers' &&
-    built.served.artifact.server.auth === undefined;
+    built.ok && !hasExactCustomerAuthProjection(record, built.served.artifact.server.auth);
   const unhealthy = missingCustomerAuth || (!built.ok && missingSecrets.length === 0);
   const ownerSubject = deploymentOwnerSubject(record);
+  const authentication = deploymentAuthenticationFor(
+    record,
+    built.ok ? built.served.artifact.server.auth : undefined,
+  );
   return {
     target: ref,
     deployment: {
@@ -35,6 +39,7 @@ export function deploymentStatusFor(
       ...(record.createdByEmail !== undefined ? { createdByEmail: record.createdByEmail } : {}),
       ...(ownerSubject !== undefined ? { ownerSubject } : {}),
       accessMode: record.accessMode ?? 'owner-only',
+      ...(authentication !== undefined ? { authentication } : {}),
       ...(record.deploymentLock !== undefined
         ? {
             deploymentLock: {

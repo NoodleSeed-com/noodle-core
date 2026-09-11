@@ -445,6 +445,65 @@ describe('dev()', () => {
       await handle.close();
     }
   });
+  it('serves Help anonymously with explicit mixed auth, rejects invalid credentials, and preserves policy on reload', async () => {
+    const file = join(tmp, 'server.ts');
+    const source = `import { customerAuth, server, tool, z } from '@noodleseed/one';
+export default server('mixed_dev', { title: 'Mixed Dev', version: '1.0.0', auth: customerAuth.oidc({ issuer: 'https://login.example.test', audience: 'api://mixed-dev' }) }, [
+  tool('help', { description: 'Help', input: z.object({}), fulfil: () => ({ message: 'Help is available' }) }),
+  tool('orders', { description: 'Orders', input: z.object({}), authorization: { requiredScopes: ['orders:read'], discovery: 'public' }, fulfil: () => ({ orders: [] }) })
+]);`;
+    writeFileSync(file, source);
+    const handle = await dev({
+      manifestPath: file,
+      accessMode: 'mixed',
+      interactive: false,
+      watch: false,
+      log: () => {},
+    });
+    try {
+      expect(handle.boot).toMatchObject({ ok: true });
+      expect(await mcp(handle.url, 'tools/list', {})).toHaveProperty('status', 200);
+      expect(await mcp(handle.url, 'tools/call', { name: 'help', arguments: {} })).toHaveProperty(
+        'status',
+        200,
+      );
+      const protectedCall = await mcp(handle.url, 'tools/call', { name: 'orders', arguments: {} });
+      expect(protectedCall.status).toBe(401);
+      expect(
+        await mcp(handle.url, 'tools/call', { name: 'help', arguments: {} }, 'invalid'),
+      ).toHaveProperty('status', 401);
+      writeFileSync(file, source.replace('Help is available', 'Updated help'));
+      expect(await handle.reload()).toMatchObject({ ok: true });
+      expect(await mcp(handle.url, 'tools/call', { name: 'help', arguments: {} })).toHaveProperty(
+        'status',
+        200,
+      );
+      expect(await mcp(handle.url, 'tools/call', { name: 'orders', arguments: {} })).toHaveProperty(
+        'status',
+        401,
+      );
+    } finally {
+      await handle.close();
+    }
+  });
+
+  it('rejects explicit local customers access when auth is undeclared', async () => {
+    const file = join(tmp, 'server.ts');
+    writeFileSync(file, VALID);
+    const handle = await dev({
+      manifestPath: file,
+      accessMode: 'customers',
+      interactive: false,
+      watch: false,
+      log: () => {},
+    });
+    try {
+      expect(handle.boot).toMatchObject({ ok: false, errors: [{ code: 'server_auth_required' }] });
+    } finally {
+      await handle.close();
+    }
+  });
+
   it('protects an auth-declared app and exposes only its sanitized Devtools auth projection', async () => {
     const file = join(tmp, 'server.ts');
     writeFileSync(

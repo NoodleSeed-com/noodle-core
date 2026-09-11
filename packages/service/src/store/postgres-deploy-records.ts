@@ -7,10 +7,14 @@ import {
 import { translateCustomerAuthAudienceDatabaseError } from '../customer-auth-audience-binding.js';
 import { assertDeploymentAppendUnlocked } from '../deployment-lock.js';
 import {
+  assertDeploymentAppendPolicy,
+  assertDeploymentAppendVersion,
+} from '../deployment-record-version.js';
+import {
   assertPreparedDeploymentActivation,
   prepareDeploymentActivation,
 } from '../modules/context.js';
-import type { DeployRecord } from '../store.js';
+import type { DeploymentPolicyPrecondition, DeployRecord } from '../store.js';
 import { DEPLOYMENT_ID_PATTERN, validateTenantRef } from '../store.js';
 import {
   lockDeploymentVersionScopeTx,
@@ -29,6 +33,7 @@ export async function appendDeployRecordRows(
   pool: Pool,
   record: DeployRecord,
   activationHooks: readonly NamedDeploymentActivationHook[] = [],
+  precondition?: DeploymentPolicyPrecondition,
 ): Promise<void> {
   // Defence in depth (mirrors the file store): `deploymentId` is always minted as `[a-z0-9-]`.
   // Parameterized queries make injection impossible regardless; this just rejects malformed callers.
@@ -69,11 +74,24 @@ export async function appendDeployRecordRows(
       );
       const { rows: existingRows } = await client.query<DeployRow>(
         `SELECT * FROM deploy_records
-       WHERE deployment_id = $1
+       WHERE deployment_id = $1 OR ($2::boolean AND active AND archived_at IS NULL
+         AND org_slug = $3 AND app_slug = $4 AND environment = $5
+         AND server_version IS NOT DISTINCT FROM $6)
+       ORDER BY deployment_id
        FOR UPDATE`,
-        [record.deploymentId],
+        [
+          record.deploymentId,
+          record.active || precondition !== undefined,
+          record.orgSlug,
+          record.appSlug,
+          record.environment,
+          record.serverVersion ?? null,
+        ],
       );
-      const existing = existingRows[0] === undefined ? undefined : rowToRecord(existingRows[0]);
+      const observed = existingRows.map(rowToRecord);
+      assertDeploymentAppendVersion(observed, record);
+      assertDeploymentAppendPolicy(observed, record, precondition);
+      const existing = observed.find((candidate) => candidate.deploymentId === record.deploymentId);
       if (existing !== undefined) assertSameAppPackageSnapshot(existing, record);
       if (existing !== undefined) record = preserveDeploymentOwnerState(existing, record);
       if (existing !== undefined && !assertDeploymentAppendUnlocked([existing], record)) {

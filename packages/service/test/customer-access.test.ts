@@ -172,6 +172,37 @@ afterEach(async () => {
 });
 
 describe('tenant customer access (B13)', () => {
+  it('serves mixed anonymous and customer callers through customer authority', async () => {
+    const deployed = await deploy(CUSTOMER_MANIFEST, 'mixed');
+    expect(deployed.status).toBe(201);
+    expect(await deployed.json()).toMatchObject({
+      accessMode: 'mixed',
+      authentication: 'customer',
+    });
+    expect((await initialize()).status).toBe(200);
+    expect((await initialize('tenant-token')).status).toBe(200);
+    expect((await initialize('platform-token')).status).toBe(401);
+    expect(await callWhoami('tenant-token')).toMatchObject({ subject: 'cust-sub' });
+    const prm = await fetch(`${base}/.well-known/oauth-protected-resource/o/acme/customer/mcp`);
+    expect(await prm.json()).toMatchObject({ authorization_servers: [ISSUER] });
+  });
+
+  it('rejects a mixed customer HTTP deployment without a deployer identity', async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    registry = new ServerRegistry(new InMemoryArtifactStore());
+    server = createServer(
+      createServiceHandler(registry, {
+        deployGate: { authorize: () => ({ ok: true }) },
+      }),
+    );
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    expect((await deploy(CUSTOMER_MANIFEST, 'mixed')).status).toBe(401);
+    expect(
+      await registry.getActiveByTenant({ org: 'acme', app: 'customer', env: 'prod' }),
+    ).toBeUndefined();
+  });
+
   it('requires server.auth for customers deployments and serves tenant-verified callers only', async () => {
     const missing = await deploy(NO_AUTH_MANIFEST, 'customers');
     expect(missing.status).toBe(400);

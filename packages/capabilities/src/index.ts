@@ -48,6 +48,14 @@ export const PRODUCT_FEATURES: readonly ProductFeature[] = [
     hosts: { claude: 'supported', chatgpt: 'supported', embedded: 'supported' },
   },
   {
+    id: 'mixed-customer-auth',
+    title: 'Mixed anonymous and customer access',
+    since: 'next',
+    description:
+      'Anonymous Help and protected customer tools share one MCP endpoint with direct or federated OIDC sign-in. Local Devtools supports optional sign-in; live host linking remains unverified.',
+    hosts: { claude: 'preview', chatgpt: 'preview', embedded: 'preview' },
+  },
+  {
     id: 'explicit-context-provider',
     title: 'Explicit context-provider tool',
     since: 'next',

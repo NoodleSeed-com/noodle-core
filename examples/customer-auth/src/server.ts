@@ -202,10 +202,23 @@ export default server(
     }),
   },
   [
+    tool('help', {
+      title: 'Help with organizations and apps',
+      description: 'Explain what customers can do before they sign in.',
+      input: z.object({}),
+      output: z.object({ help: z.string() }),
+      annotations: annotations.readOnly(),
+      fulfil() {
+        return {
+          help: 'Sign in to browse your organizations and apps. Archiving an app requires an administrator and confirmation.',
+        };
+      },
+    }),
     tool('list_org_apps', {
       title: 'List organization apps',
       description: 'List NoodleSeed.com apps for an organization from its customer API.',
       authorization: {
+        discovery: 'public',
         requiredScopes: ['org_apps:read'],
         allowedRoles: ['org_admin', 'org_member'],
       },
@@ -232,12 +245,10 @@ export default server(
     tool('list_my_organizations', {
       title: 'List my organizations',
       description: 'List the NoodleSeed.com organizations the signed-in customer belongs to.',
+      authorization: { discovery: 'public', requiredScopes: ['organizations:read'] },
       contextProvider: true,
       input: z.object({}),
-      // The customer API returns every organization for the signed-in customer in one response, with no
-      // page parameter to pass through, so the bound is declared on the shape. A customer belongs to a
-      // handful of organizations; `noodle check` reports an unbounded list as
-      // `tool_design_output_bounds`.
+      // The API returns all of the caller's organizations without pagination; bound the output shape.
       output: z.object({
         organizations: z.array(z.unknown()).max(100),
       }),

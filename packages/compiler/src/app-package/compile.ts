@@ -220,7 +220,14 @@ function compileAppPackageInternal(
     skill,
     surface,
     provenance: {
-      sourceManifestSha256: sha256Canonical(input.sourceManifest),
+      sourceManifestSha256: sha256Canonical({
+        ...input.sourceManifest,
+        tools: input.sourceManifest.tools.map((tool) => {
+          if (tool.authorization?.discovery !== 'authorized') return tool;
+          const { discovery: _discovery, ...authorization } = tool.authorization;
+          return { ...tool, authorization };
+        }),
+      }),
       mcpSurfaceSha256: sha256Canonical(surface),
       compilerVersion: '1',
     },

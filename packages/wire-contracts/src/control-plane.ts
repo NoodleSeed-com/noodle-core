@@ -2,6 +2,10 @@
 import { z } from 'zod';
 import { accessModeSchema } from './access-mode.js';
 
+/** Effective authority enforcing caller authentication for one deployment. */
+export const deploymentAuthenticationSchema = z.enum(['none', 'platform', 'customer']);
+export type DeploymentAuthentication = z.infer<typeof deploymentAuthenticationSchema>;
+
 function containsC0OrDel(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
     const codeUnit = value.charCodeAt(index);
@@ -52,6 +56,7 @@ export const accessUpdateResponseSchema = z
         deploymentId: z.string().min(1),
         serverVersion: z.string().min(1).optional(),
         accessMode: accessModeSchema,
+        authentication: deploymentAuthenticationSchema.optional(),
         ownerSubject: deploymentOwnerSubjectSchema.optional(),
       })
       .strict(),
@@ -59,6 +64,7 @@ export const accessUpdateResponseSchema = z
     previousOwnerSubject: deploymentOwnerSubjectSchema.optional(),
     accessChanged: z.boolean(),
     ownerChanged: z.boolean(),
+    policyChanged: z.boolean().optional(),
     changed: z.boolean(),
   })
   .strict()
@@ -73,11 +79,21 @@ export const accessUpdateResponseSchema = z
         message: 'owner-only access requires a current owner subject',
       });
     }
-    if (value.changed !== (value.accessChanged || value.ownerChanged)) {
+    if ((value.deployment.authentication === undefined) !== (value.policyChanged === undefined)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['policyChanged'],
+        message: 'authentication and policyChanged must be present together',
+      });
+    }
+    if (
+      value.changed !==
+      (value.accessChanged || value.ownerChanged || (value.policyChanged ?? false))
+    ) {
       context.addIssue({
         code: 'custom',
         path: ['changed'],
-        message: 'changed must equal accessChanged || ownerChanged',
+        message: 'changed must equal accessChanged || ownerChanged || policyChanged',
       });
     }
   });
@@ -100,12 +116,14 @@ export const accessUpdateClientResponseSchema = z
       deploymentId: z.string().min(1),
       serverVersion: z.string().min(1).optional(),
       accessMode: accessModeSchema,
+      authentication: deploymentAuthenticationSchema.optional(),
       ownerSubject: deploymentOwnerSubjectSchema.optional(),
     }),
     previousAccessMode: accessModeSchema,
     previousOwnerSubject: deploymentOwnerSubjectSchema.optional(),
     accessChanged: z.boolean().optional(),
     ownerChanged: z.boolean().optional(),
+    policyChanged: z.boolean().optional(),
     changed: z.boolean(),
   })
   .superRefine((value, context) => {
@@ -115,6 +133,20 @@ export const accessUpdateClientResponseSchema = z
         code: 'custom',
         path: ['accessChanged'],
         message: 'accessChanged and ownerChanged must be present together',
+      });
+    }
+    if ((value.deployment.authentication === undefined) !== (value.policyChanged === undefined)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['policyChanged'],
+        message: 'authentication and policyChanged must be present together',
+      });
+    }
+    if (value.policyChanged !== undefined && !modernComponents) {
+      context.addIssue({
+        code: 'custom',
+        path: ['policyChanged'],
+        message: 'policyChanged requires accessChanged and ownerChanged',
       });
     }
     if (
@@ -128,11 +160,15 @@ export const accessUpdateClientResponseSchema = z
         message: 'owner-only access requires a current owner subject',
       });
     }
-    if (modernComponents && value.changed !== (value.accessChanged || value.ownerChanged)) {
+    if (
+      modernComponents &&
+      value.changed !==
+        (value.accessChanged || value.ownerChanged || (value.policyChanged ?? false))
+    ) {
       context.addIssue({
         code: 'custom',
         path: ['changed'],
-        message: 'changed must equal accessChanged || ownerChanged',
+        message: 'changed must equal accessChanged || ownerChanged || policyChanged',
       });
     }
   })

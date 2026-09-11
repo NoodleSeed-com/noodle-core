@@ -34,10 +34,15 @@ describe('developer plugin service metadata', () => {
       version: '1.2.3',
       gitSha: 'abc',
       buildTime: 'now',
+      features: { mixedCustomerAuth: 1 },
       developerPlugin: { mcpCapabilityVersion: DEVELOPER_MCP_CAPABILITY_VERSION },
     });
 
     const disabled = await listen(false);
+    expect(await (await fetch(`${disabled}/v1/service/info`)).json()).toHaveProperty(
+      'features.mixedCustomerAuth',
+      1,
+    );
     expect(await (await fetch(`${disabled}/v1/service/info`)).json()).not.toHaveProperty(
       'developerPlugin',
     );

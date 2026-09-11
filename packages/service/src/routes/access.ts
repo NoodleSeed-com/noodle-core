@@ -3,6 +3,7 @@ import type { DeployAuthGate } from '@noodle-borg/control-plane/portable';
 import { normalizeServerVersion } from '@noodle-borg/module';
 import { readJsonBody, sendJson } from '@noodle-borg/transport-http';
 import { accessUpdateRequestSchema } from '@noodle-borg/wire-contracts';
+import { deploymentAuthenticationFor } from '../deployment-authentication.js';
 import type { ServerRegistry } from '../registry.js';
 import { deploymentOwnerSubject } from '../registry-helpers.js';
 import type { AuditSink } from '../store/audit.js';
@@ -60,6 +61,7 @@ export async function handleAccessUpdate(
 
   const accessMode = result.record.accessMode ?? 'owner-only';
   const ownerSubject = deploymentOwnerSubject(result.record);
+  const authentication = deploymentAuthenticationFor(result.record);
   await audit.emit({
     eventType: 'deployment.access.updated',
     org: tenant.org,
@@ -79,6 +81,9 @@ export async function handleAccessUpdate(
       ...(ownerSubject !== undefined ? { ownerSubject } : {}),
       accessChanged: result.accessChanged,
       ownerChanged: result.ownerChanged,
+      ...(authentication !== undefined
+        ? { authentication, policyChanged: result.policyChanged }
+        : {}),
       changed: result.changed,
     },
   });
@@ -91,6 +96,7 @@ export async function handleAccessUpdate(
         ? { serverVersion: result.record.serverVersion }
         : {}),
       accessMode,
+      ...(authentication !== undefined ? { authentication } : {}),
       ...(ownerSubject !== undefined ? { ownerSubject } : {}),
     },
     previousAccessMode: result.previousAccessMode,
@@ -99,6 +105,7 @@ export async function handleAccessUpdate(
       : {}),
     accessChanged: result.accessChanged,
     ownerChanged: result.ownerChanged,
+    ...(authentication !== undefined ? { policyChanged: result.policyChanged } : {}),
     changed: result.changed,
   });
 }

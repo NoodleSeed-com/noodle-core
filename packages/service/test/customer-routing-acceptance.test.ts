@@ -1,9 +1,11 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { createStaticSigningKeyProvider } from '@noodle-borg/auth';
 import type { CatalogConnector } from '@noodle-borg/compiler';
-import type { ConnectorCall } from '@noodle-borg/runtime';
-import { exportJWK, generateKeyPair, SignJWT } from 'jose';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import type { ConnectorCall, CredentialRequest } from '@noodle-borg/runtime';
+import { exportJWK, generateKeyPair, type JWTPayload, jwtVerify, SignJWT } from 'jose';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ManagedConfigBroker } from '../src/credential-broker.js';
 import {
   createCustomerVerifierFactory,
   createServiceHandler,
@@ -11,6 +13,7 @@ import {
   InMemoryControlPlaneStore,
   ServerRegistry,
 } from '../src/index.js';
+import { InMemoryConfigStore, resolveConfigScope } from '../src/store.js';
 import {
   type CustomerTlsBackends,
   createCustomerRouteConnector,
@@ -129,6 +132,7 @@ const MANIFEST = JSON.stringify({
   ],
 });
 
+let registry: ServerRegistry;
 let service: Server | undefined;
 let serviceBase: string;
 let endpoint: string;
@@ -154,7 +158,7 @@ beforeAll(async () => {
     slug: 'acme',
     owner: { subject: 'owner-sub', email: 'owner@noodleseed.com' },
   });
-  const registry = new ServerRegistry(new InMemoryArtifactStore(), undefined, undefined, {
+  registry = new ServerRegistry(new InMemoryArtifactStore(), undefined, undefined, {
     customerVerifierFactory: createCustomerVerifierFactory({
       fetchImpl: async (input) => {
         const url = input.toString();
@@ -272,7 +276,9 @@ describe('authenticated customer endpoint acceptance', () => {
         scopes: ['records.read'],
       }),
     ]);
-    expect(connectorCalls.every((call) => call.credential.token === '')).toBe(true);
+    expect(
+      connectorCalls.every((call) => 'token' in call.credential && call.credential.token === ''),
+    ).toBe(true);
     expect(JSON.stringify(connectorCalls.map((call) => call.caller))).not.toContain(
       'api.noodleseed.dev',
     );
@@ -355,6 +361,287 @@ describe('authenticated customer endpoint acceptance', () => {
     for (const forbidden of [tokenA, tokenB, ROUTE_A, ROUTE_B, 'customer_api', 'fingerprint']) {
       expect(exposed).not.toContain(forbidden);
     }
+  });
+});
+
+describe.each([
+  { mode: 'mixed', era: '2025-11-25' },
+  { mode: 'mixed', era: '2026-07-28' },
+  { mode: 'customers', era: '2025-11-25' },
+  { mode: 'customers', era: '2026-07-28' },
+] as const)('verified customer to delegated business API ($mode / $era)', ({ mode, era }) => {
+  let resource: string;
+  let deploymentId: string;
+  let app: string;
+  let brokerRequests: CredentialRequest[];
+  let exchangeAssertions: JWTPayload[];
+  let exchangedTokens: string[];
+  let tokenEndpoint: ReturnType<typeof vi.fn<typeof fetch>>;
+  const grants = { roles: ['support'], scopes: ['records.read', 'records.write'] };
+
+  beforeAll(async () => {
+    app = 'records';
+    const version = String((mode === 'mixed' ? 2 : 4) + (era === '2026-07-28' ? 1 : 0));
+    const manifest = JSON.parse(MANIFEST);
+    manifest.tools.unshift({
+      name: 'help',
+      description: 'Public Help',
+      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+      fulfilment: { steps: [], output: { message: 'Help is available' } },
+    });
+    const response = await fetch(`${serviceBase}/v1/orgs/acme/apps/${app}/envs/prod/deploy`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer owner-token' },
+      body: JSON.stringify({
+        manifest: JSON.stringify(manifest),
+        accessMode: mode,
+        serverVersion: version,
+      }),
+    });
+    const deployed = await response.json();
+    expect(response.status, JSON.stringify(deployed)).toBe(201);
+    expect(deployed.authentication).toBe('customer');
+    resource = deployed.url;
+    deploymentId = deployed.deploymentId;
+  });
+
+  beforeEach(async () => {
+    brokerRequests = [];
+    exchangeAssertions = [];
+    exchangedTokens = [];
+    const signer = await createStaticSigningKeyProvider();
+    const scope = resolveConfigScope({ org: 'acme', app, env: 'prod' });
+    const store = new InMemoryConfigStore();
+    await store.setConfigValue({
+      kind: 'secret',
+      scope,
+      name: 'DELEGATED_SECRET',
+      value: 'test-exchange-secret',
+    });
+    tokenEndpoint = vi.fn<typeof fetch>(async (url, init) => {
+      expect(String(url)).toBe('https://exchange.noodleseed.test/token');
+      const form = new URLSearchParams(String(init?.body));
+      expect(form.get('scope')).toBe('records:read records:write');
+      const { payload } = await jwtVerify(
+        form.get('subject_token') ?? '',
+        await signer.verifierKey(),
+        { issuer: 'https://platform.noodleseed.test', audience: 'customer-business-api' },
+      );
+      exchangeAssertions.push(payload);
+      const token = `issued-${payload.sub}-${exchangeAssertions.length}`;
+      exchangedTokens.push(token);
+      return Response.json({ access_token: token, token_type: 'Bearer', expires_in: 900 });
+    });
+    const broker = new ManagedConfigBroker(
+      [
+        {
+          connectorId: 'customer_records',
+          connectorVersion: '1.0.0',
+          authKind: 'delegatedTokenExchange',
+          customerEndpoint: 'customer_api',
+          secretRef: 'DELEGATED_SECRET',
+          tokenExchange: {
+            tokenUrl: 'https://exchange.noodleseed.test/token',
+            clientId: 'route-test',
+            authMethod: 'client_secret_basic',
+            audience: 'customer-business-api',
+            scopes: ['records:read', 'records:write'],
+          },
+        },
+      ],
+      store,
+      scope,
+      {
+        delegatedExchange: {
+          issuer: 'https://platform.noodleseed.test',
+          signer,
+          tenant: `acme/${app}/prod`,
+          deployment: deploymentId,
+        },
+        fetchImpl: tokenEndpoint,
+      },
+    );
+    const target = await registry.get(deploymentId);
+    if (!target) throw new Error('compiled target missing');
+    // Test-only real broker composition: the existing pinned TLS connector has a catalog binding.
+    // Production registry binding construction is separately proved by local-devtools-delegated-exchange.
+    Object.assign(target.served.deps, {
+      broker: {
+        getCredential: (request: CredentialRequest) => {
+          brokerRequests.push(request);
+          return broker.getCredential(request);
+        },
+      },
+    });
+  });
+
+  function request(name: string, token?: string, args: Record<string, unknown> = {}) {
+    return fetch(resource, {
+      method: 'POST',
+      headers: {
+        ...HEADERS,
+        'mcp-protocol-version': era,
+        ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+        ...(era === '2026-07-28' ? { 'mcp-method': 'tools/call', 'mcp-name': name } : {}),
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: ++rpcId,
+        method: 'tools/call',
+        params: {
+          name,
+          arguments: args,
+          ...(era === '2026-07-28'
+            ? {
+                _meta: {
+                  'io.modelcontextprotocol/protocolVersion': era,
+                  'io.modelcontextprotocol/clientCapabilities': {},
+                  'io.modelcontextprotocol/clientInfo': {
+                    name: 'customer-routing-test',
+                    version: '1',
+                  },
+                },
+              }
+            : {}),
+        },
+      }),
+    });
+  }
+
+  function noDownstreamCalls() {
+    expect(brokerRequests).toEqual([]);
+    expect(tokenEndpoint).not.toHaveBeenCalled();
+    expect(connectorCalls).toEqual([]);
+    expect(requireBackends().a.calls).toEqual([]);
+    expect(requireBackends().b.calls).toEqual([]);
+  }
+
+  it('preserves anonymous Help policy without touching the broker or business API', async () => {
+    const response = await request('help');
+    expect(response.status).toBe(mode === 'mixed' ? 200 : 401);
+    if (mode === 'mixed')
+      expect(await response.json()).toMatchObject({
+        result: { structuredContent: { message: 'Help is available' } },
+      });
+    noDownstreamCalls();
+  });
+
+  it.each([
+    'anonymous',
+    'wrong-role',
+    'missing-scope',
+  ] as const)('denies %s before real broker, exchange or egress', async (kind) => {
+    const token =
+      kind === 'anonymous'
+        ? undefined
+        : await signCustomerToken(`denied-${kind}`, ROUTE_A, {
+            roles: kind === 'wrong-role' ? ['viewer'] : ['support'],
+            scopes: kind === 'missing-scope' ? [] : ['records.read'],
+          });
+    const response = await request('list_records', token);
+    expect(response.status, await response.clone().text()).toBe(kind === 'anonymous' ? 401 : 403);
+    noDownstreamCalls();
+  });
+
+  it.each([
+    'list_records',
+    'archive_records',
+  ])('sends only exchanged credentials to each verified route for %s', async (operation) => {
+    const tokens = await Promise.all([
+      signCustomerToken('business-a', ROUTE_A, grants),
+      signCustomerToken('business-b', ROUTE_B, grants),
+    ]);
+    const outputs: unknown[] = [];
+    for (const token of tokens) {
+      const response = await request(operation, token);
+      expect(response.status, await response.clone().text()).toBe(200);
+      const output = await response.json();
+      expect(output.result.isError).not.toBe(true);
+      outputs.push(output);
+    }
+    expect(brokerRequests.map((request) => request.customerIssuer)).toEqual([ISSUER, ISSUER]);
+    expect(brokerRequests.map((request) => request.caller)).toEqual([
+      expect.objectContaining({
+        subject: 'business-a',
+        audience: resource,
+        identityKind: 'customer',
+        ...grants,
+      }),
+      expect.objectContaining({
+        subject: 'business-b',
+        audience: resource,
+        identityKind: 'customer',
+        ...grants,
+      }),
+    ]);
+    for (let index = 0; index < 2; index++) {
+      const route = brokerRequests[index]?.route;
+      expect(route).toEqual({
+        key: 'customer_api',
+        fingerprint: expect.stringMatching(/^sha256:[0-9a-f]{64}$/),
+      });
+      expect(exchangeAssertions[index]).toMatchObject({
+        sub: index === 0 ? 'business-a' : 'business-b',
+        tenant: `acme/${app}/prod`,
+        deployment: deploymentId,
+        customer_identity: { version: 1, issuer: ISSUER },
+        route,
+      });
+    }
+    expect(connectorCalls.map((call) => call.route?.baseUrl)).toEqual([ROUTE_A, ROUTE_B]);
+    expect(
+      connectorCalls.map((call) =>
+        'token' in call.credential ? call.credential.token : undefined,
+      ),
+    ).toEqual(exchangedTokens);
+    const action = operation === 'archive_records';
+    expect(requireBackends().a.calls).toEqual([
+      {
+        method: action ? 'POST' : 'GET',
+        path: `/v1/${action ? 'archive' : 'records'}`,
+        authorization: `Bearer ${exchangedTokens[0]}`,
+      },
+    ]);
+    expect(requireBackends().b.calls).toEqual([
+      {
+        method: action ? 'POST' : 'GET',
+        path: `/v2/${action ? 'archive' : 'records'}`,
+        authorization: `Bearer ${exchangedTokens[1]}`,
+      },
+    ]);
+    const publicData = JSON.stringify({ outputs, logs });
+    for (const secret of [
+      ...tokens,
+      ...exchangedTokens,
+      ROUTE_A,
+      ROUTE_B,
+      ISSUER,
+      'customer_api',
+      'fingerprint',
+    ])
+      expect(publicData).not.toContain(secret);
+    expect(JSON.stringify(exchangeAssertions)).not.toContain(ROUTE_A);
+    expect(JSON.stringify(exchangeAssertions)).not.toContain(ROUTE_B);
+  });
+
+  it('rejects forged routing and identity arguments before exchange, then retains the signed route', async () => {
+    const token = await signCustomerToken('forgery-a', ROUTE_A, grants);
+    const response = await request('list_records', token, {
+      route: ROUTE_B,
+      tenant: 'attacker',
+      subject: 'business-b',
+      customerIssuer: 'https://attacker.test',
+    });
+    const body = await response.json();
+    expect(body.error ?? body.result?.isError).toBeTruthy();
+    noDownstreamCalls();
+    const valid = await request('list_records', token);
+    expect(valid.status).toBe(200);
+    expect((await valid.json()).result.structuredContent.marker).toBe('tenant-a');
+    expect(brokerRequests[0]?.caller?.subject).toBe('forgery-a');
+    expect(brokerRequests[0]?.customerIssuer).toBe(ISSUER);
+    expect(connectorCalls[0]?.route?.baseUrl).toBe(ROUTE_A);
+    expect(requireBackends().b.calls).toEqual([]);
   });
 });
 

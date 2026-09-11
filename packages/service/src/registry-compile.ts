@@ -1,5 +1,6 @@
 import type { AppPackageArtifactV1 } from '@noodle-borg/app-package';
 import { publicSurfaceDelegatedAuthErrors } from '@noodle-borg/assistant-gateway/portable';
+import type { CapabilityName } from '@noodle-borg/capabilities';
 import {
   type CatalogConnector,
   compile,
@@ -24,6 +25,7 @@ import {
   resolveManagedOrigins,
   resolveVariableEnvironment,
 } from '@noodle-borg/runtime';
+import type { OwnerTokenVerifier, ServedTarget } from '@noodle-borg/transport-http';
 import {
   type AppPackageRenderer,
   AppPackageSnapshotError,
@@ -31,17 +33,26 @@ import {
   createAppPackageSnapshot,
 } from './app-package-snapshot.js';
 import { missingServerConfigErrors } from './assistant-bindings.js';
+import { normalizePersistedConnectorsForCompile } from './connector-normalize.js';
 import { ManagedConfigBroker } from './credential-broker.js';
 import { deploymentCredentialBrokerOptions } from './credential-broker-options.js';
+import { deploymentRecordVersionError } from './deployment-record-version.js';
 import { normalizePersistedManifestForCompile } from './manifest-normalize.js';
 import type { NativeRecordConnectorFactory } from './native-record-connector.js';
 import type { OAuthStore } from './oauth/store.js';
-import { missingSecretErrors, missingVariableErrors } from './registry-helpers.js';
+import {
+  missingCapabilityErrors,
+  missingSecretErrors,
+  missingVariableErrors,
+} from './registry-helpers.js';
+import type { RegistryStateView } from './registry-state.js';
+import { servedTargetFor } from './registry-targets.js';
 import type { DeployError, ServerRegistryOptions } from './registry-types.js';
 import {
   createDeploymentStateConnector,
   type StateHandleStoreFactory,
 } from './state-connector-factory.js';
+import type { DeployRecord, TenantAuthConfig } from './store.js';
 import {
   type ConfigStore,
   resolveConfigScope,
@@ -95,6 +106,32 @@ export type RegistryCompileResult =
       /** Structurally compiled input for independent checks, never a ready-to-serve artifact. */
       readonly compiledArtifact?: RuntimeArtifact;
     };
+
+/** Reject unsupported persisted semantics before constructing executable runtime dependencies. */
+export async function compilePersistedRegistryRecord(
+  record: DeployRecord,
+  compileTarget: (
+    tenant: TenantRef,
+    manifest: string,
+    connectors: string | undefined,
+    assets: readonly HostedPackagedAsset[] | undefined,
+    renderAppPackage: boolean,
+    deploymentId: string,
+  ) => Promise<RegistryCompileResult>,
+): Promise<RegistryCompileResult> {
+  const versionError = deploymentRecordVersionError(record);
+  if (versionError !== undefined) return { ok: false, errors: [versionError] };
+  return compileTarget(
+    { org: record.orgSlug, app: record.appSlug, env: record.environment },
+    record.manifest,
+    record.connectors === undefined
+      ? undefined
+      : normalizePersistedConnectorsForCompile(record.connectors),
+    record.hostedAssets,
+    false,
+    record.deploymentId,
+  );
+}
 
 export async function compileRegistryTarget(
   context: RegistryCompileContext,
@@ -344,4 +381,58 @@ export async function compileRegistryTarget(
     ...(compiled.appPackage !== undefined ? { appPackageArtifact: compiled.appPackage } : {}),
     ...(appPackageSnapshot !== undefined ? { appPackageSnapshot } : {}),
   };
+}
+
+/** Load and validate persisted semantics before publishing an executable target to caches. */
+export async function loadPersistedRegistryTarget(
+  source: string | DeployRecord,
+  context: {
+    readonly state: RegistryStateView;
+    readonly compile: (record: DeployRecord) => Promise<RegistryCompileResult>;
+    readonly capabilities: readonly CapabilityName[];
+    readonly customerVerifierFactory: ((auth: TenantAuthConfig) => OwnerTokenVerifier) | undefined;
+    readonly hasCustomerAuthConflict: (
+      record: DeployRecord,
+      auth: TenantAuthConfig | undefined,
+    ) => Promise<boolean>;
+  },
+): Promise<ServedTarget | undefined> {
+  const { state } = context;
+  const record =
+    typeof source === 'string'
+      ? state.store
+        ? await state.store.get(source)
+        : state.records.get(source)
+      : source;
+  if (
+    !record ||
+    record.archivedAt !== undefined ||
+    deploymentRecordVersionError(record) !== undefined
+  )
+    return undefined;
+  const deploymentId = record.deploymentId;
+  const built = await context.compile(record);
+  if (!built.ok) {
+    throw new Error(
+      `deployment ${deploymentId} failed to recompile (${built.errors.map((e) => e.code).join(',')})`,
+    );
+  }
+  const missingCapabilities = missingCapabilityErrors(
+    built.served.artifact.requirements?.capabilities ?? [],
+    context.capabilities,
+  );
+  if (missingCapabilities.length > 0) {
+    throw new Error(
+      `deployment ${deploymentId} failed capability requirements (${missingCapabilities.map((e) => e.path).join(',')})`,
+    );
+  }
+  if (
+    record.active &&
+    (await context.hasCustomerAuthConflict(record, built.served.artifact.server.auth))
+  )
+    return undefined;
+  const target = servedTargetFor(record, built.served, context.customerVerifierFactory);
+  state.servers.set(deploymentId, target);
+  state.records.set(deploymentId, record);
+  return target;
 }

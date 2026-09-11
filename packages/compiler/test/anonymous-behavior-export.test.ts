@@ -36,10 +36,21 @@ describe('anonymousBehavior is part of the compiler surface', () => {
     expect(anonymousBehavior(tool({ id: path('user', 'id') }))).toBe('requires-identity');
   });
 
-  it('classifies a tool that declares an authorization requirement as requires-identity', () => {
+  it.each([
+    undefined,
+    'public',
+  ])('keeps a protected tool with %s discovery identity-dependent', (discovery) => {
     expect(
       anonymousBehavior(
-        tool({ id: path('input', 'id') }, { authorization: { requiredScopes: ['orders'] } }),
+        tool(
+          { id: path('input', 'id') },
+          {
+            authorization: {
+              requiredScopes: ['orders'],
+              ...(discovery === undefined ? {} : { discovery }),
+            },
+          },
+        ),
       ),
     ).toBe('requires-identity');
   });

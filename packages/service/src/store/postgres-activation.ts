@@ -1,13 +1,24 @@
 import { randomUUID } from 'node:crypto';
 import type { NamedDeploymentActivationHook } from '@noodle-borg/module';
-import type { AccessMode } from '@noodle-borg/transport-http';
-import { translateCustomerAuthAudienceDatabaseError } from '../customer-auth-audience-binding.js';
+import {
+  requiresCustomerAuthProjection,
+  translateCustomerAuthAudienceDatabaseError,
+} from '../customer-auth-audience-binding.js';
+import { matchesDeploymentActivation } from '../deployment-activation-precondition.js';
+import {
+  assertDeploymentAppendPolicy,
+  assertDeploymentAppendVersion,
+} from '../deployment-record-version.js';
 import type { SqlClientProvider } from '../modules/context.js';
 import {
   assertPreparedDeploymentActivation,
   prepareDeploymentActivation,
 } from '../modules/context.js';
-import type { DeploymentActivationResult, TenantAuthConfig, TenantRef } from '../store.js';
+import type {
+  DeploymentActivationPrecondition,
+  DeploymentActivationResult,
+  TenantRef,
+} from '../store.js';
 import { DEPLOYMENT_ID_PATTERN, validateTenantRef } from '../store.js';
 import {
   lockDeploymentVersionScopeTx,
@@ -20,12 +31,7 @@ export async function activateDeploymentRows(
   pool: SqlClientProvider,
   ref: TenantRef,
   deploymentId: string,
-  precondition:
-    | {
-        readonly expectedAccessMode: AccessMode | undefined;
-        readonly serverAuth?: TenantAuthConfig;
-      }
-    | undefined,
+  precondition: DeploymentActivationPrecondition | undefined,
   activationHooks: readonly NamedDeploymentActivationHook[],
   options: { readonly automationId?: string } = {},
 ): Promise<DeploymentActivationResult | undefined> {
@@ -78,10 +84,7 @@ export async function activateDeploymentRows(
         return notActivated();
       }
       const targetRecord = rowToRecord(target);
-      if (
-        precondition !== undefined &&
-        targetRecord.accessMode !== precondition.expectedAccessMode
-      ) {
+      if (!matchesDeploymentActivation(targetRecord, precondition)) {
         return notActivated();
       }
       const { rows: activeRows } = await client.query<DeployRow>(
@@ -98,6 +101,14 @@ export async function activateDeploymentRows(
         [safe.org, safe.app, safe.env, target.server_version],
       );
       const previousActive = activeRows[0] ? rowToRecord(activeRows[0]) : undefined;
+      if (precondition === undefined && previousActive !== undefined) {
+        assertDeploymentAppendVersion([previousActive], { ...targetRecord, active: true });
+      }
+      assertDeploymentAppendPolicy(
+        previousActive === undefined ? [] : [previousActive],
+        { ...targetRecord, active: true },
+        precondition?.expectedActivePolicy,
+      );
       const alreadyActive = previousActive?.deploymentId === deploymentId;
       if (!alreadyActive) {
         await assertPreparedDeploymentActivation(preparedActivation);
@@ -115,7 +126,10 @@ export async function activateDeploymentRows(
           deploymentId,
         ]);
       }
-      if (targetRecord.accessMode === 'customers' && precondition?.serverAuth !== undefined) {
+      if (
+        requiresCustomerAuthProjection(targetRecord, precondition?.serverAuth) &&
+        precondition?.serverAuth !== undefined
+      ) {
         await client.query(
           'UPDATE deploy_records SET server_auth = $2::jsonb WHERE deployment_id = $1',
           [deploymentId, JSON.stringify(precondition.serverAuth)],
@@ -124,7 +138,8 @@ export async function activateDeploymentRows(
       const active = {
         ...targetRecord,
         active: true,
-        ...(targetRecord.accessMode === 'customers' && precondition?.serverAuth !== undefined
+        ...(requiresCustomerAuthProjection(targetRecord, precondition?.serverAuth) &&
+        precondition?.serverAuth !== undefined
           ? { serverAuth: precondition.serverAuth }
           : {}),
       };

@@ -1,15 +1,325 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { PROTOCOL_VERSION_META_KEY } from '@modelcontextprotocol/client';
-import { afterEach, describe, expect, it } from 'vitest';
+import { chromium } from 'playwright';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startPreview } from '../src/devtools-preview.js';
 
 const closers: Array<() => Promise<void>> = [];
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   while (closers.length > 0) await closers.pop()?.();
 });
 
 describe('authenticated Devtools preview', () => {
+  it('bounds pending browser tool sign-ins and expires them before a later unrelated sign-in', async () => {
+    const issuer = await fakeIssuer();
+    closers.push(issuer.close);
+    const mcp = await fakeProtectedMcp(issuer.issuer, false, ['Bearer access-secret'], true);
+    closers.push(mcp.close);
+    const preview = await startPreview({
+      mcpUrl: mcp.url,
+      theme: 'dark',
+      device: 'both',
+      accessMode: 'mixed',
+      customerAuth: { kind: 'oidc', issuer: issuer.issuer, allowInsecureLocalhost: true },
+    });
+    closers.push(preview.close);
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage();
+      await page.clock.install();
+      await page.goto(preview.url);
+      await page.waitForFunction(() => document.querySelector('.tool__name'));
+      await page.evaluate(() => {
+        const client = globalThis as typeof globalThis & {
+          completeRpc(method: string, params: unknown): Promise<{ error?: unknown }>;
+          completedSignIns: number;
+        };
+        client.completedSignIns = 0;
+        for (let index = 0; index < 33; index += 1) {
+          void client
+            .completeRpc('tools/call', { name: 'read_order', arguments: {} })
+            .then((result) => {
+              if (result.error) client.completedSignIns += 1;
+            });
+        }
+      });
+      const completed = () =>
+        page.evaluate(
+          () => (globalThis as typeof globalThis & { completedSignIns: number }).completedSignIns,
+        );
+      await expect.poll(completed, { timeout: 2_000 }).toBe(1);
+      await page.clock.fastForward(300_001);
+      await expect.poll(completed).toBe(33);
+      expect(mcp.bearers).toEqual([]);
+      const next = page.evaluate(async () => {
+        const client = globalThis as typeof globalThis & {
+          completeRpc(method: string, params: unknown): Promise<unknown>;
+        };
+        return client.completeRpc('tools/call', { name: 'read_order', arguments: {} });
+      });
+      await page.locator('#auth-sign-in').waitFor({ state: 'visible' });
+      await page.locator('#auth-sign-in').click();
+      expect(await next).toMatchObject({
+        result: { structuredContent: { message: 'Customer order' } },
+      });
+      expect(await completed()).toBe(33);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it('keeps mixed discovery anonymous before sign-in, after cancellation and after logout', async () => {
+    const issuer = await fakeIssuer();
+    closers.push(issuer.close);
+    const mcp = await fakeProtectedMcp(issuer.issuer, false);
+    closers.push(mcp.close);
+    const preview = await startPreview({
+      mcpUrl: mcp.url,
+      theme: 'both',
+      device: 'both',
+      accessMode: 'mixed',
+      customerAuth: { kind: 'oidc', issuer: issuer.issuer, allowInsecureLocalhost: true },
+    });
+    closers.push(preview.close);
+    const shell = await (await fetch(preview.url)).text();
+    const capability = shell.match(/var RPC_CAPABILITY="([^"]+)"/)?.[1] ?? '';
+    expect(shell).not.toContain('class="auth-required auth-locked"');
+    expect(shell).toContain('auth-optional');
+    expect(await rpc(preview.url, capability)).toHaveProperty('status', 200);
+    const start = await fetch(new URL('/auth/start', preview.url), {
+      method: 'POST',
+      headers: { 'x-noodle-devtools-capability': capability },
+    });
+    const authorize = new URL(
+      ((await start.json()) as { authorizationUrl: string }).authorizationUrl,
+    );
+    const callback = new URL(issuer.registeredRedirect());
+    callback.searchParams.set('state', authorize.searchParams.get('state') ?? '');
+    callback.searchParams.set('error', 'access_denied');
+    callback.searchParams.set('iss', issuer.issuer);
+    expect(await fetch(callback)).toHaveProperty('status', 400);
+    expect(await rpc(preview.url, capability)).toHaveProperty('status', 200);
+    await fetch(new URL('/auth/logout', preview.url), {
+      method: 'POST',
+      headers: { 'x-noodle-devtools-capability': capability },
+    });
+    expect(await rpc(preview.url, capability)).toHaveProperty('status', 200);
+    expect(mcp.bearers).toEqual([]);
+  });
+
+  it('keeps anonymous requests available after expiry without refreshing or sending an expired credential', async () => {
+    const issuer = await fakeIssuer({ expiresIn: 1, noRefresh: true });
+    closers.push(issuer.close);
+    const mcp = await fakeProtectedMcp(issuer.issuer, false);
+    closers.push(mcp.close);
+    const preview = await startPreview({
+      mcpUrl: mcp.url,
+      theme: 'both',
+      device: 'both',
+      accessMode: 'mixed',
+      customerAuth: { kind: 'oidc', issuer: issuer.issuer, allowInsecureLocalhost: true },
+    });
+    closers.push(preview.close);
+    const shell = await (await fetch(preview.url)).text();
+    const capability = shell.match(/var RPC_CAPABILITY="([^"]+)"/)?.[1] ?? '';
+    const start = await fetch(new URL('/auth/start', preview.url), {
+      method: 'POST',
+      headers: { 'x-noodle-devtools-capability': capability },
+    });
+    const authorize = new URL(
+      ((await start.json()) as { authorizationUrl: string }).authorizationUrl,
+    );
+    const callback = new URL(issuer.registeredRedirect());
+    callback.searchParams.set('code', issuer.code);
+    callback.searchParams.set('state', authorize.searchParams.get('state') ?? '');
+    callback.searchParams.set('iss', issuer.issuer);
+    expect(await fetch(callback)).toHaveProperty('status', 200);
+    const now = Date.now();
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 2_000);
+    try {
+      expect(await rpc(preview.url, capability)).toHaveProperty('status', 200);
+    } finally {
+      clock.mockRestore();
+    }
+    expect(await authStatus(preview.url, capability)).toMatchObject({
+      required: false,
+      state: 'signed_out',
+    });
+    expect(mcp.bearers).toEqual([]);
+  });
+
+  it.each([
+    1600, 720,
+  ])('completes optional OIDC sign-in and protected retry without blocking Help at width %s', async (width) => {
+    const issuer = await fakeIssuer();
+    closers.push(issuer.close);
+    const mcp = await fakeProtectedMcp(issuer.issuer, false, ['Bearer access-secret'], true);
+    closers.push(mcp.close);
+    const preview = await startPreview({
+      mcpUrl: mcp.url,
+      theme: 'dark',
+      device: 'both',
+      accessMode: 'mixed',
+      customerAuth: { kind: 'oidc', issuer: issuer.issuer, allowInsecureLocalhost: true },
+    });
+    closers.push(preview.close);
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage({ viewport: { width, height: 900 } });
+      await page.goto(preview.url);
+      await page.waitForFunction(() => document.querySelector('.tool__name'));
+      expect(await page.locator('body').getAttribute('class')).not.toContain('auth-locked');
+      const call = (name: string) =>
+        page.evaluate(async (toolName) => {
+          const client = globalThis as typeof globalThis & {
+            completeRpc(method: string, params: unknown): Promise<unknown>;
+          };
+          return client.completeRpc('tools/call', { name: toolName, arguments: {} });
+        }, name);
+      expect(await call('help')).toMatchObject({
+        result: { structuredContent: { message: 'Help is available' } },
+      });
+      await page.evaluate(() => {
+        const client = globalThis as typeof globalThis & {
+          loadWidget(name: string, args: unknown): void;
+        };
+        client.loadWidget('help', {});
+      });
+      await page.waitForFunction(() =>
+        Array.from(document.querySelectorAll('iframe')).some((frame) =>
+          frame.srcdoc.includes('Help preview'),
+        ),
+      );
+      const cancelled = call('read_order');
+      await page.locator('#auth-cancel').waitFor({ state: 'visible' });
+      expect(await page.locator('body').getAttribute('class')).not.toContain('auth-locked');
+      await page.locator('#auth-cancel').click();
+      expect(await cancelled).toMatchObject({ error: { code: -32001 } });
+      expect(await call('help')).toMatchObject({
+        result: { structuredContent: { message: 'Help is available' } },
+      });
+      const protectedCall = call('read_order');
+      await page.locator('#auth-sign-in').waitFor({ state: 'visible' });
+      await page.screenshot({ path: `/tmp/mixed-auth-cli-optional-${width}.png` });
+      await page.locator('#auth-sign-in').click();
+      expect(await protectedCall).toMatchObject({
+        result: { structuredContent: { message: 'Customer order' } },
+      });
+      expect(await page.locator('body').getAttribute('class')).not.toContain('auth-locked');
+      await page.locator('#auth-logout').click();
+      await page.waitForFunction(
+        () =>
+          document.getElementById('auth-session-label')?.textContent === 'Using anonymous tools',
+      );
+      expect(await call('help')).toMatchObject({
+        result: { structuredContent: { message: 'Help is available' } },
+      });
+      await page.evaluate(() => {
+        const client = globalThis as typeof globalThis & {
+          loadWidget(name: string, args: unknown): void;
+        };
+        client.loadWidget('help', {});
+      });
+      await page.waitForFunction(() =>
+        Array.from(document.querySelectorAll('iframe')).some((frame) =>
+          frame.srcdoc.includes('Help preview'),
+        ),
+      );
+      expect(await page.content()).not.toMatch(/access-secret|direct-refresh/);
+    } finally {
+      await browser.close();
+    }
+  });
+
+  it.each([
+    true,
+    false,
+  ])('pauses only the protected chat call and resumes or cancels sign-in: %s', async (signIn) => {
+    const issuer = await fakeIssuer();
+    closers.push(issuer.close);
+    const mcp = await fakeProtectedMcp(issuer.issuer, false, ['Bearer access-secret'], true);
+    closers.push(mcp.close);
+    let modelCalls = 0;
+    const model = createServer((_req, res) => {
+      modelCalls++;
+      writeJson(res, {
+        choices: [
+          {
+            message:
+              modelCalls === 1
+                ? {
+                    role: 'assistant',
+                    content: null,
+                    tool_calls: [
+                      {
+                        id: 'call-1',
+                        type: 'function',
+                        function: { name: 'read_order', arguments: '{}' },
+                      },
+                    ],
+                  }
+                : { role: 'assistant', content: 'Finished' },
+          },
+        ],
+      });
+    });
+    await listen(model);
+    closers.push(() => close(model));
+    vi.stubEnv('OPENAI_BASE_URL', serverOrigin(model));
+    const preview = await startPreview({
+      mcpUrl: mcp.url,
+      theme: 'both',
+      device: 'both',
+      accessMode: 'mixed',
+      customerAuth: { kind: 'oidc', issuer: issuer.issuer, allowInsecureLocalhost: true },
+    });
+    closers.push(preview.close);
+    const shell = await (await fetch(preview.url)).text();
+    const capability = shell.match(/var RPC_CAPABILITY="([^"]+)"/)?.[1] ?? '';
+    const headers = {
+      'content-type': 'application/json',
+      'x-noodle-devtools-capability': capability,
+    };
+    await fetch(new URL('/chat/key', preview.url), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ key: 'local-test-model-key' }),
+    });
+    const response = fetch(new URL('/chat', preview.url), {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        provider: 'openai',
+        messages: [{ role: 'user', content: 'Get my order' }],
+      }),
+    });
+    await vi.waitFor(async () =>
+      expect(await authStatus(preview.url, capability)).toMatchObject({ signInRequested: true }),
+    );
+    expect(modelCalls).toBe(1);
+    expect(await rpc(preview.url, capability)).toHaveProperty('status', 200);
+    if (signIn) {
+      const start = await fetch(new URL('/auth/start', preview.url), { method: 'POST', headers });
+      const authorize = new URL(
+        ((await start.json()) as { authorizationUrl: string }).authorizationUrl,
+      );
+      const callback = new URL(issuer.registeredRedirect());
+      callback.searchParams.set('code', issuer.code);
+      callback.searchParams.set('state', authorize.searchParams.get('state') ?? '');
+      callback.searchParams.set('iss', issuer.issuer);
+      expect(await fetch(callback)).toHaveProperty('status', 200);
+    } else {
+      await fetch(new URL('/auth/logout', preview.url), { method: 'POST', headers });
+    }
+    expect(await response).toHaveProperty('status', 200);
+    const result = await (await response).json();
+    expect(result.toolCalls[0].isError).toBe(!signIn);
+    expect(modelCalls).toBe(2);
+    expect(JSON.stringify(result)).not.toMatch(/access-secret|direct-refresh/);
+  });
+
   it('signs in through direct OIDC and injects the bearer only from the loopback host', async () => {
     const issuer = await fakeIssuer();
     closers.push(issuer.close);
@@ -112,13 +422,17 @@ describe('authenticated Devtools preview', () => {
     expect((await authStatus(preview.url, capability)).state).toBe('signed_out');
   });
 
-  it('reports a rejected issued token safely and permits a fresh sign-in attempt', async () => {
+  it.each([
+    'customers',
+    'mixed',
+  ] as const)('reports a rejected issued token safely without anonymous downgrade in %s and permits a fresh sign-in attempt', async (accessMode) => {
     const issuer = await fakeIssuer({ accessToken: 'wrong-audience-access-secret' });
     closers.push(issuer.close);
-    const mcp = await fakeProtectedMcp(issuer.issuer, true, []);
+    const mcp = await fakeProtectedMcp(issuer.issuer, accessMode !== 'mixed', []);
     closers.push(mcp.close);
     const preview = await startPreview({
       mcpUrl: mcp.url,
+      accessMode,
       theme: 'both',
       device: 'both',
       customerAuth: {
@@ -426,7 +740,12 @@ async function authStatus(
 }
 
 async function fakeIssuer(
-  options: { readonly name?: string; readonly accessToken?: string } = {},
+  options: {
+    readonly name?: string;
+    readonly accessToken?: string;
+    readonly expiresIn?: number;
+    readonly noRefresh?: boolean;
+  } = {},
 ): Promise<{
   readonly issuer: string;
   readonly code: string;
@@ -455,6 +774,14 @@ async function fakeIssuer(
       });
       return;
     }
+    if (req.method === 'GET' && url.pathname === '/authorize') {
+      const callback = new URL(url.searchParams.get('redirect_uri') ?? '');
+      callback.searchParams.set('code', authorizationCode);
+      callback.searchParams.set('state', url.searchParams.get('state') ?? '');
+      callback.searchParams.set('iss', origin);
+      res.writeHead(302, { location: callback.href }).end();
+      return;
+    }
     if (req.method === 'POST' && url.pathname === '/register') {
       readBody(req).then((raw) => {
         Object.assign(registration, JSON.parse(raw) as Record<string, unknown>);
@@ -475,9 +802,9 @@ async function fakeIssuer(
           }
           writeJson(res, {
             access_token: accessToken,
-            refresh_token: `${name}-refresh`,
+            ...(options.noRefresh ? {} : { refresh_token: `${name}-refresh` }),
             token_type: 'Bearer',
-            expires_in: 300,
+            expires_in: options.expiresIn ?? 300,
             scope: 'tools:read',
           });
           return;
@@ -492,9 +819,9 @@ async function fakeIssuer(
         }
         writeJson(res, {
           access_token: accessToken,
-          refresh_token: `${name}-refresh`,
+          ...(options.noRefresh ? {} : { refresh_token: `${name}-refresh` }),
           token_type: 'Bearer',
-          expires_in: 300,
+          expires_in: options.expiresIn ?? 300,
           scope: 'tools:read',
         });
       });
@@ -518,6 +845,7 @@ async function fakeProtectedMcp(
   issuer: string | readonly string[],
   requireAuth = true,
   allowedBearers: readonly string[] = ['Bearer access-secret'],
+  mixed = false,
 ): Promise<{
   readonly url: string;
   readonly bearers: string[];
@@ -552,7 +880,10 @@ async function fakeProtectedMcp(
     }
     if (req.method === 'POST' && url.pathname === '/o/local/app/dev/mcp') {
       const bearer = req.headers.authorization;
-      if (requireAuth && (bearer === undefined || !allowedBearers.includes(bearer))) {
+      if (
+        (requireAuth && bearer === undefined) ||
+        (bearer !== undefined && !allowedBearers.includes(bearer))
+      ) {
         res.writeHead(401, {
           'www-authenticate': `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/o/local/app/dev/mcp"`,
         });
@@ -564,7 +895,7 @@ async function fakeProtectedMcp(
         const body = JSON.parse(raw) as {
           id: unknown;
           method: string;
-          params?: { _meta?: Record<string, unknown> };
+          params?: { _meta?: Record<string, unknown>; name?: string };
         };
         requests.push({
           method: body.method,
@@ -572,6 +903,42 @@ async function fakeProtectedMcp(
           routedMethod: String(req.headers['mcp-method'] ?? ''),
           metadataVersion: String(body.params?._meta?.[PROTOCOL_VERSION_META_KEY] ?? ''),
         });
+        if (mixed && body.method === 'resources/read') {
+          writeJson(res, {
+            jsonrpc: '2.0',
+            id: body.id,
+            result: {
+              contents: [
+                {
+                  uri: 'ui://help',
+                  mimeType: 'text/html',
+                  text: '<!doctype html><html><body><h1>Help preview</h1><p>Help is available without sign-in.</p></body></html>',
+                },
+              ],
+            },
+          });
+          return;
+        }
+        if (mixed && body.method === 'tools/call') {
+          if (body.params?.name !== 'help' && bearer === undefined) {
+            writeJson(
+              res,
+              { jsonrpc: '2.0', id: body.id, error: { code: -32001, message: 'Sign in required' } },
+              401,
+            );
+            return;
+          }
+          writeJson(res, {
+            jsonrpc: '2.0',
+            id: body.id,
+            result: {
+              structuredContent: {
+                message: body.params?.name === 'help' ? 'Help is available' : 'Customer order',
+              },
+            },
+          });
+          return;
+        }
         if (body.method === 'server/discover') {
           writeJson(res, {
             jsonrpc: '2.0',
@@ -585,6 +952,15 @@ async function fakeProtectedMcp(
           id: body.id,
           result: {
             tools: [
+              ...(mixed
+                ? [
+                    {
+                      name: 'help',
+                      inputSchema: { type: 'object' },
+                      _meta: { ui: { resourceUri: 'ui://help' } },
+                    },
+                  ]
+                : []),
               {
                 name: 'read_order',
                 annotations: {

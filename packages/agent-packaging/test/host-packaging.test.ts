@@ -239,6 +239,51 @@ function issueCodes(result: ReturnType<typeof packageHostTarget>): readonly stri
 }
 
 describe('host packaging framework', () => {
+  it.each([
+    { discovery: 'public' },
+    { discovery: 'public', allowedRoles: [] },
+    { discovery: 'everyone', allowedRoles: ['support'] },
+    { discover: 'public', allowedRoles: ['support'] },
+    { securitySchemes: [{ type: 'noauth' }], allowedRoles: ['support'] },
+  ])('rejects malformed discovery authorization before packaging %j', (authorization) => {
+    const result = packageHostTarget(
+      request({
+        appPackage: {
+          ...PRODUCT_SKILL_INPUT,
+          surface: {
+            ...PRODUCT_SKILL_INPUT.surface,
+            tools: [{ ...PRODUCT_SKILL_INPUT.surface.tools[0], authorization }],
+          },
+        },
+      }),
+      adapter(),
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it('preserves public discovery and execution rules for the host adapter', () => {
+    const authorization = { requiredScopes: ['tasks:read'], discovery: 'public' as const };
+    const input = request({
+      appPackage: {
+        ...PRODUCT_SKILL_INPUT,
+        surface: {
+          ...PRODUCT_SKILL_INPUT.surface,
+          tools: [{ ...PRODUCT_SKILL_INPUT.surface.tools[0], authorization }],
+        },
+      },
+    });
+    let received: unknown;
+    const result = packageHostTarget(input, {
+      ...adapter(),
+      validate: (value) => {
+        received = value.appPackage.surface.tools[0]?.authorization;
+        return [];
+      },
+    });
+    expect(result.ok).toBe(true);
+    expect(received).toEqual({ requiredScopes: ['tasks:read'], discovery: 'public' });
+  });
+
   it('renders every framework file role into a deterministic ZIP with stable provenance', () => {
     const first = packageHostTarget(request(), adapter());
     const second = packageHostTarget(

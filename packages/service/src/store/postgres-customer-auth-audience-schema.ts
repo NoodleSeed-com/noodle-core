@@ -1,5 +1,8 @@
 import type { Pool } from 'pg';
 
+// Match ECMAScript String.trim() exactly, independent of the database locale.
+const SQL_TRIM_CHARACTERS = String.raw`U&'\0009\000A\000B\000C\000D\0020\00A0\1680\2000\2001\2002\2003\2004\2005\2006\2007\2008\2009\200A\2028\2029\202F\205F\3000\FEFF'`;
+
 export interface CustomerAuthAudienceReconciliation {
   readonly invalidBoundaries: number;
   readonly conflictingBindings: number;
@@ -28,11 +31,14 @@ export async function ensureCustomerAuthAudienceSchema(
     await client.query('BEGIN');
     await client.query('LOCK TABLE deploy_records IN SHARE ROW EXCLUSIVE MODE');
     await client.query(`
-      CREATE INDEX IF NOT EXISTS deploy_records_active_customer_auth
+      CREATE INDEX IF NOT EXISTS deploy_records_active_customer_auth_v2
       ON deploy_records(org_slug, app_slug, environment)
       INCLUDE(server_auth)
-      WHERE active AND archived_at IS NULL AND access_mode = 'customers' AND server_auth IS NOT NULL
+      WHERE active AND archived_at IS NULL AND server_auth IS NOT NULL
+        AND (access_mode = 'customers' OR (access_mode = 'mixed' AND schema_version = 2))
     `);
+    // Install the replacement before retiring the v1 predicate; repeated startup keeps the v2 index.
+    await client.query('DROP INDEX IF EXISTS deploy_records_active_customer_auth');
     await client.query(`
       CREATE TABLE IF NOT EXISTS customer_auth_audience_bindings (
         issuer      text NOT NULL,
@@ -52,8 +58,11 @@ export async function ensureCustomerAuthAudienceSchema(
         SELECT CASE
           WHEN auth IS NULL OR jsonb_typeof(auth) <> 'object'
             THEN false
+          WHEN auth ? 'kind' AND jsonb_typeof(auth->'kind') <> 'string'
+            THEN false
           WHEN COALESCE(auth->>'kind', 'oidc') = 'bridge'
-            THEN COALESCE(btrim(auth->>'provider'), '') <> ''
+            THEN jsonb_typeof(auth->'provider') = 'string'
+              AND COALESCE(btrim(auth->>'provider', ${SQL_TRIM_CHARACTERS}), '') <> ''
           WHEN COALESCE(auth->>'kind', 'oidc') = 'federatedOidc'
             THEN jsonb_typeof(auth->'issuers') = 'array'
               AND jsonb_array_length(
@@ -71,12 +80,16 @@ export async function ensureCustomerAuthAudienceSchema(
                   END
                 ) issuer
                 WHERE jsonb_typeof(issuer) <> 'object'
-                  OR COALESCE(btrim(issuer->>'issuer'), '') = ''
-                  OR COALESCE(btrim(issuer->>'audience'), '') = ''
+                  OR jsonb_typeof(issuer->'issuer') IS DISTINCT FROM 'string'
+                  OR jsonb_typeof(issuer->'audience') IS DISTINCT FROM 'string'
+                  OR COALESCE(btrim(issuer->>'issuer', ${SQL_TRIM_CHARACTERS}), '') = ''
+                  OR COALESCE(btrim(issuer->>'audience', ${SQL_TRIM_CHARACTERS}), '') = ''
               )
           WHEN COALESCE(auth->>'kind', 'oidc') = 'oidc'
-            THEN COALESCE(btrim(auth->>'issuer'), '') <> ''
-              AND COALESCE(btrim(auth->>'audience'), '') <> ''
+            THEN jsonb_typeof(auth->'issuer') = 'string'
+              AND jsonb_typeof(auth->'audience') = 'string'
+              AND COALESCE(btrim(auth->>'issuer', ${SQL_TRIM_CHARACTERS}), '') <> ''
+              AND COALESCE(btrim(auth->>'audience', ${SQL_TRIM_CHARACTERS}), '') <> ''
           ELSE false
         END
       $$
@@ -116,7 +129,9 @@ export async function ensureCustomerAuthAudienceSchema(
         CROSS JOIN LATERAL noodle_customer_auth_bindings(record.server_auth) binding
         WHERE record.active
           AND record.archived_at IS NULL
-          AND record.access_mode = 'customers'
+          AND (record.access_mode = 'customers'
+            OR (record.access_mode = 'mixed' AND record.schema_version = 2
+                AND record.server_auth IS NOT NULL))
           AND noodle_customer_auth_is_valid(record.server_auth)
         ORDER BY binding.issuer, binding.audience,
                  record.org_slug, record.app_slug, record.environment;
@@ -137,7 +152,9 @@ export async function ensureCustomerAuthAudienceSchema(
         IF TG_OP <> 'DELETE'
           AND NEW.active
           AND NEW.archived_at IS NULL
-          AND NEW.access_mode = 'customers'
+          AND (NEW.access_mode = 'customers'
+            OR (NEW.access_mode = 'mixed' AND NEW.schema_version = 2
+                AND NEW.server_auth IS NOT NULL))
         THEN
           IF NOT noodle_customer_auth_is_valid(NEW.server_auth) THEN
             RAISE EXCEPTION USING
@@ -156,7 +173,9 @@ export async function ensureCustomerAuthAudienceSchema(
                 noodle_customer_auth_bindings(current_record.server_auth) current_binding
               WHERE current_record.active
                 AND current_record.archived_at IS NULL
-                AND current_record.access_mode = 'customers'
+                AND (current_record.access_mode = 'customers'
+                  OR (current_record.access_mode = 'mixed' AND current_record.schema_version = 2
+                      AND current_record.server_auth IS NOT NULL))
                 AND noodle_customer_auth_is_valid(current_record.server_auth)
                 AND current_binding.issuer = binding.issuer
                 AND current_binding.audience = binding.audience
@@ -248,7 +267,9 @@ export async function ensureCustomerAuthAudienceSchema(
                   noodle_customer_auth_bindings(current_record.server_auth) current_binding
                 WHERE current_record.active
                   AND current_record.archived_at IS NULL
-                  AND current_record.access_mode = 'customers'
+                  AND (current_record.access_mode = 'customers'
+                    OR (current_record.access_mode = 'mixed' AND current_record.schema_version = 2
+                        AND current_record.server_auth IS NOT NULL))
                   AND current_record.org_slug = owner_org
                   AND current_record.app_slug = owner_app
                   AND current_record.environment = owner_environment
@@ -294,7 +315,9 @@ export async function ensureCustomerAuthAudienceSchema(
         FROM deploy_records
         WHERE active
           AND archived_at IS NULL
-          AND access_mode = 'customers'
+          AND (access_mode = 'customers'
+            OR (access_mode = 'mixed' AND schema_version = 2
+                AND server_auth IS NOT NULL))
       ),
       valid_bindings AS (
         SELECT DISTINCT binding.issuer, binding.audience,

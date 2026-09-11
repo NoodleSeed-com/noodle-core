@@ -311,6 +311,102 @@ describe('noodle access set', () => {
     expect(stdout()).not.toContain('ownerChanged');
   });
 
+  it.each([
+    undefined,
+    {},
+    { mixedCustomerAuth: 0 },
+  ])('refuses ambiguous mixed adoption on an older service %j', async (features) => {
+    writeConfig(
+      {
+        serviceUrl: 'https://service.example.test',
+        authToken: 'policy-client-token',
+        defaultOrg: TARGET.org,
+      },
+      home,
+    );
+    const fetchSpy = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        ok: true,
+        status: 'ok',
+        version: 'old',
+        gitSha: 'abc',
+        buildTime: 'now',
+        ...(features === undefined ? {} : { features }),
+      }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    expect(await run(accessArgs('legacy-mixed', 'mixed'), {}, home)).not.toBe(0);
+    expect(JSON.parse(stdout())).toMatchObject({
+      ok: false,
+      error: { code: 'mixed_customer_auth_unsupported' },
+    });
+    expect(fetchSpy.mock.calls.every(([url]) => String(url).endsWith('/v1/service/info'))).toBe(
+      true,
+    );
+  });
+
+  it('shows future effective authentication separately from mixed access', async () => {
+    writeConfig(
+      {
+        serviceUrl: 'https://service.example.test',
+        authToken: 'policy-client-token',
+        defaultOrg: TARGET.org,
+      },
+      home,
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async (url) =>
+        String(url).endsWith('/v1/service/info')
+          ? Response.json({
+              ok: true,
+              status: 'ok',
+              version: 'new',
+              gitSha: 'abc',
+              buildTime: 'now',
+              features: { mixedCustomerAuth: 1 },
+            })
+          : Response.json({
+              ok: true,
+              target: { ...TARGET, app: 'policy-response' },
+              deployment: {
+                deploymentId: 'dep_policy',
+                accessMode: 'mixed',
+                authentication: 'customer',
+              },
+              previousAccessMode: 'mixed',
+              accessChanged: false,
+              ownerChanged: false,
+              policyChanged: true,
+              changed: true,
+            }),
+      ),
+    );
+
+    expect(
+      await run(
+        accessArgs('policy-response', 'mixed').filter((arg) => arg !== '--json'),
+        {},
+        home,
+      ),
+    ).toBe(0);
+    expect(stdout()).toContain('access:  mixed');
+    expect(stdout()).toContain('auth:    customer');
+    expect(stdout()).toContain('policy:  updated');
+    logSpy.mockClear();
+    expect(await run(accessArgs('policy-response', 'mixed'), {}, home)).toBe(0);
+    expect(JSON.parse(stdout())).toMatchObject({
+      ok: true,
+      data: {
+        accessChanged: false,
+        policyChanged: true,
+        changed: true,
+        deployment: { accessMode: 'mixed', authentication: 'customer' },
+      },
+    });
+    expect(stdout()).not.toContain('policy-client-token');
+  });
+
   it.each(
     ACCESS_MODES.filter((mode) => mode !== 'owner-only'),
   )('rejects --owner-subject locally for %s access', async (mode) => {
@@ -375,7 +471,16 @@ describe('noodle access set', () => {
         ok: true,
         data: {
           target: TARGET,
-          deployment: { accessMode: mode },
+          deployment: {
+            accessMode: mode,
+            authentication:
+              mode === 'public'
+                ? 'none'
+                : mode === 'customers' || mode === 'mixed'
+                  ? 'customer'
+                  : 'platform',
+          },
+          policyChanged: mode === 'mixed',
         },
       });
       logSpy.mockClear();

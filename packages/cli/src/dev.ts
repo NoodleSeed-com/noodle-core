@@ -61,6 +61,8 @@ class LocalConfirmationNonceLedger implements ConfirmationNonceLedger {
 }
 
 export interface DevOptions {
+  /** Local access override; declared auth defaults to customers. */
+  readonly accessMode?: 'mixed' | 'customers';
   readonly manifestPath: string;
   readonly connectorsPath?: string;
   readonly org?: string;
@@ -360,11 +362,22 @@ export async function dev(options: DevOptions): Promise<DevHandle> {
     }
 
     const authDeclared = manifestDeclaresServerAuth(manifest);
+    if (options.accessMode === 'customers' && !authDeclared)
+      return {
+        ok: false,
+        errors: [
+          {
+            code: 'server_auth_required',
+            path: 'server.auth',
+            message: 'customers access mode requires server.auth',
+          },
+        ],
+      };
     let result: Awaited<ReturnType<typeof service.registry.deploy>>;
     try {
       result = await service.registry.deploy({ org, app, env }, manifest, {
         connectors,
-        accessMode: authDeclared ? 'customers' : 'mixed',
+        accessMode: options.accessMode ?? (authDeclared ? 'customers' : 'mixed'),
         ...(authDeclared
           ? {
               actor: {

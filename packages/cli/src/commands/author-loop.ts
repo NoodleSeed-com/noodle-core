@@ -13,7 +13,11 @@ import {
   UNLINKED_LOCAL_TARGET_HINT,
 } from '../local-target.js';
 import { previewBannerLines, startPreviewSession } from '../preview-session.js';
-import { resolveLocalEntrypoint, resolveLocalEntrypointResult } from '../project.js';
+import {
+  readResolvedProjectConfig,
+  resolveLocalEntrypoint,
+  resolveLocalEntrypointResult,
+} from '../project.js';
 import { type Column, renderTable, type TableOptions } from '../table.js';
 import { startTunnel } from '../tunnel.js';
 import { type ValidationIssue, validate } from '../validate.js';
@@ -523,6 +527,7 @@ export async function runDev(
   let port: number | undefined;
   let tunnel = false;
   let noPreview = false;
+  let accessMode: string | undefined;
   let previewForce = false;
   let previewPort: number | undefined;
   let model: string | undefined;
@@ -539,7 +544,15 @@ export async function runDev(
     else if (arg === '--env') targetEnv = rest[++i];
     else if (arg === '--port') port = Number(rest[++i]);
     else if (arg === '--tunnel') tunnel = true;
-    else if (arg === '--no-preview') noPreview = true;
+    else if (arg === '--access') {
+      accessMode = rest[++i];
+      if (accessMode !== 'mixed' && accessMode !== 'customers') {
+        console.error(
+          'dev: --access must be mixed or customers; hosted identity modes are unavailable locally.',
+        );
+        return 2;
+      }
+    } else if (arg === '--no-preview') noPreview = true;
     else if (arg === '--preview') previewForce = true;
     else if (arg === '--preview-port') previewPort = Number(rest[++i]);
     else if (arg === '--model') model = rest[++i];
@@ -553,6 +566,16 @@ export async function runDev(
   }
   if (!manifestPath) manifestPath = resolveLocalEntrypoint();
   if (!manifestPath) return missingProjectEntrypoint('dev');
+
+  const watchDir = dirname(resolve(manifestPath));
+  const projectRoot = findDeployProjectRoot(watchDir) ?? watchDir;
+  accessMode ??= _env.NOODLE_ACCESS_MODE ?? readResolvedProjectConfig(projectRoot).accessMode;
+  if (accessMode !== undefined && accessMode !== 'mixed' && accessMode !== 'customers') {
+    console.error(
+      'dev: local access must be mixed or customers; use --access to override the hosted project setting.',
+    );
+    return 2;
+  }
 
   const previewOn = !noPreview && (previewForce || process.stdin.isTTY === true);
 
@@ -583,8 +606,6 @@ export async function runDev(
   }
 
   let handle: Awaited<ReturnType<typeof dev>>;
-  const watchDir = dirname(resolve(manifestPath));
-  const projectRoot = findDeployProjectRoot(watchDir) ?? watchDir;
   const targetResolution = resolveEffectiveLocalTarget({
     manifestPath,
     cwd: projectRoot,
@@ -597,6 +618,7 @@ export async function runDev(
   try {
     handle = await dev({
       manifestPath,
+      ...(accessMode === undefined ? {} : { accessMode }),
       ...(connectorsPath ? { connectorsPath } : {}),
       ...target,
       projectRoot,
@@ -629,6 +651,7 @@ export async function runDev(
     try {
       session = await startPreviewSession({
         handle,
+        ...(accessMode === undefined ? {} : { accessMode }),
         watchDir,
         theme,
         device,

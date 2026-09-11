@@ -70,6 +70,16 @@ function subcommand(value: CommandSpec | SubcommandSpec, name: string): Subcomma
 }
 
 describe('typed bootstrap and authoring command catalog schema', () => {
+  it('documents local mixed/customer access and rejects unsupported flags before boot', async () => {
+    expect(command('dev').flags?.find((flag) => flag.name === 'access')).toMatchObject({
+      constraints: { choices: ['mixed', 'customers'] },
+    });
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await runDev(['--access', 'owner-only'], {})).toBe(2);
+    expect(await runDev(['--access'], {})).toBe(2);
+    expect(error.mock.calls.flat().join(' ')).toContain('mixed or customers');
+  });
+
   it('keeps the bootstrap raw-data sources below the handwritten size threshold', () => {
     for (const file of [
       'catalog-data-bootstrap-authoring.ts',

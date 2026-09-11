@@ -3,18 +3,18 @@ import type {
   AccessMode,
   DataPlaneIdentityAuthorizer,
   OrgMembershipSource,
-  OwnerTokenVerifier,
 } from '@noodle-borg/module';
 import { JSON_RPC, type ProtocolRequestContext } from '@noodle-borg/protocol';
 import { effectiveProto } from './front-door.js';
 import { header } from './request-capture.js';
+import type { TargetAuthentication } from './target-authentication.js';
 
 export interface IdentityAuthorizationOptions {
   readonly accessMode: AccessMode | undefined;
   readonly ownerSubject: string | undefined;
   readonly org: string | undefined;
   readonly orgMembershipSources: readonly OrgMembershipSource[] | undefined;
-  readonly verifyOwnerToken: OwnerTokenVerifier | undefined;
+  readonly authentication: TargetAuthentication;
   readonly authorizeDataPlaneIdentity: DataPlaneIdentityAuthorizer | undefined;
   /** Whether to trust forwarded-proto when reconstructing the public resource/PRM URLs. */
   readonly trustProxy: boolean;
@@ -57,13 +57,16 @@ export async function authorizeIdentityMode(
 ): Promise<IdentityAuthResult> {
   const challenge = protectedResourceMetadataUrl(req, auth);
   const token = bearerToken(header(req, 'authorization'));
-  if (token === null || auth.verifyOwnerToken === undefined) {
+  if (token === null || auth.authentication.verifyToken === undefined) {
     sendUnauthorized(res, challenge);
     return { allow: false, reason: token === null ? 'missing_token' : 'verifier_unavailable' };
   }
-  const verification = await auth.verifyOwnerToken(token, canonicalResourceUrl(req, auth));
+  const verification = await auth.authentication.verifyToken(
+    token,
+    canonicalResourceUrl(req, auth),
+  );
   if (verification === null) {
-    sendUnauthorized(res, challenge);
+    sendUnauthorized(res, challenge, 'invalid_token');
     return { allow: false, reason: 'token_rejected' };
   }
   const { caller: identity } = verification;
@@ -129,8 +132,11 @@ export async function authorizePublicServiceMode(
   auth: IdentityAuthorizationOptions,
 ): Promise<IdentityAuthResult> {
   const token = bearerToken(header(req, 'authorization'));
-  if (token === null || auth.verifyOwnerToken === undefined) return { allow: true };
-  const verification = await auth.verifyOwnerToken(token, canonicalResourceUrl(req, auth));
+  if (token === null || auth.authentication.verifyToken === undefined) return { allow: true };
+  const verification = await auth.authentication.verifyToken(
+    token,
+    canonicalResourceUrl(req, auth),
+  );
   return verification?.caller.identityKind === 'service'
     ? { allow: true, caller: verification.caller }
     : { allow: true };
@@ -141,17 +147,33 @@ export async function authorizeMixedMode(
   res: ServerResponse,
   auth: IdentityAuthorizationOptions,
 ): Promise<IdentityAuthResult> {
-  const token = bearerToken(header(req, 'authorization'));
-  if (token === null) return { allow: true };
+  const authorization = header(req, 'authorization');
+  if (authorization === undefined) return { allow: true };
+  const token = bearerToken(authorization);
   const challenge = protectedResourceMetadataUrl(req, auth);
-  if (auth.verifyOwnerToken === undefined) {
+  if (token === null) {
+    sendUnauthorized(res, challenge, 'invalid_token');
+    return { allow: false, reason: 'token_rejected' };
+  }
+  if (auth.authentication.verifyToken === undefined) {
     sendUnauthorized(res, challenge);
     return { allow: false, reason: 'verifier_unavailable' };
   }
-  const verification = await auth.verifyOwnerToken(token, canonicalResourceUrl(req, auth));
+  const verification = await auth.authentication.verifyToken(
+    token,
+    canonicalResourceUrl(req, auth),
+  );
   if (verification === null) {
-    sendUnauthorized(res, challenge);
+    sendUnauthorized(res, challenge, 'invalid_token');
     return { allow: false, reason: 'token_rejected' };
+  }
+  if (
+    auth.authentication.kind === 'customer' &&
+    verification.caller.identityKind !== 'customer' &&
+    verification.caller.identityKind !== 'service'
+  ) {
+    sendUnauthorized(res, challenge, 'invalid_token');
+    return { allow: false, reason: 'identity_not_customer' };
   }
   return {
     allow: true,
@@ -186,14 +208,18 @@ export function bearerToken(headerValue: string | undefined): string | null {
  * `resourceMetadataUrl` is included so an MCP client can discover the authorization server (RFC 9728 /
  * the MCP authorization spec).
  */
-function sendUnauthorized(res: ServerResponse, resourceMetadataUrl?: string): void {
+function sendUnauthorized(
+  res: ServerResponse,
+  resourceMetadataUrl?: string,
+  error?: 'invalid_token',
+): void {
   const challenge =
     resourceMetadataUrl !== undefined
       ? `Bearer realm="noodle", resource_metadata="${resourceMetadataUrl}"`
       : 'Bearer realm="noodle"';
   res.writeHead(401, {
     'content-type': 'application/json; charset=utf-8',
-    'www-authenticate': challenge,
+    'www-authenticate': error === undefined ? challenge : `${challenge}, error="${error}"`,
   });
   res.end(JSON.stringify(rpcError(JSON_RPC.INVALID_REQUEST, 'unauthorized')));
 }

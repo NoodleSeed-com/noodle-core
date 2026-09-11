@@ -2,11 +2,14 @@ import type { OwnerTokenVerifier, ServedTarget } from '@noodle-borg/transport-ht
 import {
   assertUniqueActiveCustomerAuthAudienceBindings,
   CustomerAuthAudienceConflictError,
+  hasExactCustomerAuthProjection,
 } from './customer-auth-audience-binding.js';
+import { deploymentRecordVersionError } from './deployment-record-version.js';
 import { deploymentOwnerSubject } from './registry-helpers.js';
 import { activeRecord, activeRecordVersion, type RegistryStateView } from './registry-state.js';
 import { tenantDeploymentKey, tryServedTargetFor } from './registry-targets.js';
 import type { AccessUpdateOptions, AccessUpdateResult } from './registry-types.js';
+import { resolveActiveAccessUpdate } from './store/records.js';
 import type {
   ActiveAccessUpdateInput,
   DeployRecord,
@@ -30,7 +33,7 @@ export async function updateRegistryAccess(
   customerVerifierFactory: CustomerVerifierFactory | undefined,
   hasCustomerAuthConflict: CustomerAuthConflictGuard,
 ): Promise<AccessUpdateResult> {
-  if (options.accessMode === 'customers') {
+  if (options.accessMode === 'customers' || options.accessMode === 'mixed') {
     const record =
       options.serverVersion === undefined
         ? await activeRecord(state, tenant)
@@ -40,7 +43,14 @@ export async function updateRegistryAccess(
     if (
       record !== undefined &&
       auth !== undefined &&
-      (await hasCustomerAuthConflict({ ...record, accessMode: 'customers' }, auth))
+      (await hasCustomerAuthConflict(
+        {
+          ...record,
+          accessMode: options.accessMode,
+          ...(options.accessMode === 'mixed' ? { schemaVersion: 2 } : {}),
+        },
+        auth,
+      ))
     ) {
       return customerAuthAudienceConflict();
     }
@@ -77,6 +87,15 @@ export async function updateActiveAccess(
       ? await activeRecord(state, tenant)
       : await activeRecordVersion(state, tenant, options.serverVersion);
   if (record === undefined) return noActiveDeployment();
+  const versionError = deploymentRecordVersionError(record);
+  if (versionError !== undefined) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'unsupported_deployment_record_version',
+      message: versionError.message,
+    };
+  }
 
   const nextAccessMode = options.accessMode;
   const previousAccessMode = record.accessMode ?? 'owner-only';
@@ -85,11 +104,25 @@ export async function updateActiveAccess(
   const accessChanged = previousAccessMode !== nextAccessMode;
   const ownerChanged = previousOwnerSubject !== nextOwnerSubject;
   const served =
-    accessChanged || ownerChanged || nextAccessMode === 'customers'
+    accessChanged || ownerChanged || nextAccessMode === 'customers' || nextAccessMode === 'mixed'
       ? await loadServed(record.deploymentId)
       : undefined;
   const serverAuth = served?.served.artifact.server.auth;
-  if (nextAccessMode === 'customers' && serverAuth === undefined) {
+  const schemaVersion =
+    record.schemaVersion === 2 || (nextAccessMode === 'mixed' && serverAuth !== undefined) ? 2 : 1;
+  const policyChanged = schemaVersion !== record.schemaVersion;
+  if (
+    (nextAccessMode === 'customers' && serverAuth === undefined) ||
+    !hasExactCustomerAuthProjection(
+      {
+        ...record,
+        schemaVersion,
+        accessMode: nextAccessMode,
+        ...(record.serverAuth === undefined && serverAuth !== undefined ? { serverAuth } : {}),
+      },
+      serverAuth,
+    )
+  ) {
     return {
       ok: false,
       status: 409,
@@ -97,18 +130,24 @@ export async function updateActiveAccess(
       message: 'Customer access requires server authentication.',
     };
   }
-  if (!accessChanged && !ownerChanged) {
+  if (!accessChanged && !ownerChanged && !policyChanged) {
     const committed =
       state.store === undefined
         ? commitInMemoryAccessUpdate(state, tenant, record, {
             accessMode: nextAccessMode,
             expectedAccessMode: record.accessMode,
+            ...(schemaVersion === 2 ? { schemaVersion: 2 as const } : {}),
+            expectedSchemaVersion: record.schemaVersion,
+            expectedManifest: record.manifest,
             expectedOwnerSubject: previousOwnerSubject,
             ...(serverAuth !== undefined ? { serverAuth } : {}),
           })
         : await state.store.updateActiveAccess(tenant, record.deploymentId, {
             accessMode: nextAccessMode,
             expectedAccessMode: record.accessMode,
+            ...(schemaVersion === 2 ? { schemaVersion: 2 as const } : {}),
+            expectedSchemaVersion: record.schemaVersion,
+            expectedManifest: record.manifest,
             expectedOwnerSubject: previousOwnerSubject,
             ...(serverAuth !== undefined ? { serverAuth } : {}),
           });
@@ -118,6 +157,7 @@ export async function updateActiveAccess(
       ok: true,
       changed: false,
       accessChanged: false,
+      policyChanged: false,
       ownerChanged: false,
       previousAccessMode,
       ...(previousOwnerSubject !== undefined ? { previousOwnerSubject } : {}),
@@ -146,8 +186,9 @@ export async function updateActiveAccess(
   const updated = {
     ...record,
     accessMode: nextAccessMode,
+    schemaVersion,
     ...(ownerChanged && nextOwnerSubject !== undefined ? { ownerSubject: nextOwnerSubject } : {}),
-    ...(nextAccessMode === 'customers' && serverAuth !== undefined ? { serverAuth } : {}),
+    ...(serverAuth !== undefined ? { serverAuth } : {}),
   };
   const target = tryServedTargetFor(updated, served.served, customerVerifierFactory);
   if (target === undefined) return accessUpdateConflict();
@@ -159,6 +200,9 @@ export async function updateActiveAccess(
             ? { ownerSubject: nextOwnerSubject }
             : {}),
           expectedAccessMode: record.accessMode,
+          ...(schemaVersion === 2 ? { schemaVersion: 2 as const } : {}),
+          expectedSchemaVersion: record.schemaVersion,
+          expectedManifest: record.manifest,
           expectedOwnerSubject: previousOwnerSubject,
           ...(serverAuth !== undefined ? { serverAuth } : {}),
         })
@@ -168,6 +212,9 @@ export async function updateActiveAccess(
             ? { ownerSubject: nextOwnerSubject }
             : {}),
           expectedAccessMode: record.accessMode,
+          ...(schemaVersion === 2 ? { schemaVersion: 2 as const } : {}),
+          expectedSchemaVersion: record.schemaVersion,
+          expectedManifest: record.manifest,
           expectedOwnerSubject: previousOwnerSubject,
           ...(serverAuth !== undefined ? { serverAuth } : {}),
         });
@@ -179,6 +226,7 @@ export async function updateActiveAccess(
     ok: true,
     changed: true,
     accessChanged,
+    policyChanged,
     ownerChanged,
     previousAccessMode,
     ...(previousOwnerSubject !== undefined ? { previousOwnerSubject } : {}),
@@ -192,34 +240,12 @@ function commitInMemoryAccessUpdate(
   observed: DeployRecord,
   input: ActiveAccessUpdateInput,
 ): DeployRecord | undefined {
-  const current = state.records.get(observed.deploymentId);
-  if (
-    current === undefined ||
-    !current.active ||
-    current.archivedAt !== undefined ||
-    current.orgSlug !== tenant.org ||
-    current.appSlug !== tenant.app ||
-    current.environment !== tenant.env ||
-    current.accessMode !== input.expectedAccessMode ||
-    deploymentOwnerSubject(current) !== input.expectedOwnerSubject
-  ) {
-    return undefined;
-  }
-  if (
-    (current.accessMode ?? 'owner-only') === input.accessMode &&
-    (input.ownerSubject === undefined || deploymentOwnerSubject(current) === input.ownerSubject) &&
-    input.accessMode !== 'customers'
-  ) {
-    return current;
-  }
-  const committed = {
-    ...current,
-    accessMode: input.accessMode,
-    ...(input.ownerSubject !== undefined ? { ownerSubject: input.ownerSubject } : {}),
-    ...(input.accessMode === 'customers' && input.serverAuth !== undefined
-      ? { serverAuth: input.serverAuth }
-      : {}),
-  };
+  const committed = resolveActiveAccessUpdate(
+    state.records.get(observed.deploymentId),
+    tenant,
+    input,
+  );
+  if (committed === undefined) return undefined;
   const proposed = new Map(state.records).set(committed.deploymentId, committed);
   assertUniqueActiveCustomerAuthAudienceBindings([...proposed.values()]);
   state.records.set(committed.deploymentId, committed);

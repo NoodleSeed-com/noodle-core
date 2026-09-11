@@ -251,6 +251,7 @@ describe('deployment-bound App Package snapshots', () => {
       deploymentId: first.deploymentId,
       deploymentVersion: first.deploymentVersion,
       accessMode: DEPLOY_OPTIONS.accessMode,
+      authentication: 'platform',
       ownerSubject: DEPLOY_OPTIONS.actor.subject,
       replayed: true,
     });

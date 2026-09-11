@@ -11,11 +11,17 @@ import {
   assertUniqueActiveCustomerAuthAudienceBindings,
   CustomerAuthAudienceProjectionError,
   hasExactCustomerAuthProjection,
+  requiresCustomerAuthProjection,
 } from './customer-auth-audience-binding.js';
+import { matchesDeploymentActivation } from './deployment-activation-precondition.js';
 import {
   assertDeploymentActivationUnlocked,
   assertDeploymentAppendUnlocked,
 } from './deployment-lock.js';
+import {
+  assertDeploymentAppendPolicy,
+  assertDeploymentAppendVersion,
+} from './deployment-record-version.js';
 import { defaultActiveRecord } from './deployment-versioning.js';
 import { recordMatchesTenant, tenantDeploymentKey, tenantKey } from './registry-targets.js';
 import {
@@ -38,8 +44,10 @@ import type {
   AppSummary,
   ArtifactStore,
   CustomerAuthRestoreProjection,
+  DeploymentActivationPrecondition,
   DeploymentLock,
   DeploymentLockUpdateResult,
+  DeploymentPolicyPrecondition,
   DeploymentSummary,
   DeployRecord,
   EnvSummary,
@@ -92,13 +100,16 @@ export async function persistDeployRecord(
   record: DeployRecord,
   tenant: TenantRef,
   activatesNow: boolean,
+  precondition?: DeploymentPolicyPrecondition,
 ): Promise<DeployRecord> {
   if (view.store) {
-    await view.store.append(record);
+    await view.store.append(record, precondition);
     const persisted = (await view.store.get(record.deploymentId)) ?? record;
     view.records.set(record.deploymentId, persisted);
     return persisted;
   } else {
+    assertDeploymentAppendVersion([...view.records.values()], record);
+    assertDeploymentAppendPolicy([...view.records.values()], record, precondition);
     if (!assertDeploymentAppendUnlocked([...view.records.values()], record)) {
       return view.records.get(record.deploymentId) as DeployRecord;
     }
@@ -132,10 +143,7 @@ export function activateInMemory(
   records: Map<string, DeployRecord>,
   ref: TenantRef,
   deploymentId: string,
-  precondition?: {
-    readonly expectedAccessMode: DeployRecord['accessMode'];
-    readonly serverAuth?: DeployRecord['serverAuth'];
-  },
+  precondition?: DeploymentActivationPrecondition,
 ):
   | {
       readonly active: DeployRecord;
@@ -146,18 +154,22 @@ export function activateInMemory(
   const target = records.get(deploymentId);
   if (target === undefined || !recordMatchesTenant(target, ref)) return undefined;
   assertDeploymentActivationUnlocked([...records.values()], target);
-  if (precondition !== undefined && target.accessMode !== precondition.expectedAccessMode) {
+  if (!matchesDeploymentActivation(target, precondition)) {
     return undefined;
   }
   const previousActive = [...records.values()]
     .filter((record) => record.active && recordMatchesTenant(record, ref))
     .filter((record) => record.serverVersion === target.serverVersion)
     .sort((a, b) => b.deploymentVersion - a.deploymentVersion)[0];
+  if (precondition === undefined && previousActive !== undefined) {
+    assertDeploymentAppendVersion([previousActive], { ...target, active: true });
+  }
   const alreadyActive = previousActive?.deploymentId === deploymentId;
   const activated = {
     ...target,
     active: true,
-    ...(target.accessMode === 'customers' && precondition?.serverAuth !== undefined
+    ...(requiresCustomerAuthProjection(target, precondition?.serverAuth) &&
+    precondition?.serverAuth !== undefined
       ? { serverAuth: precondition.serverAuth }
       : {}),
   };
@@ -324,7 +336,7 @@ export async function registryRestoreApp(
   if (plan === undefined) return undefined;
   const projections: AppRestorePrecondition['customerAuthProjections'][number][] = [];
   for (const record of plan.clear) {
-    if (!record.active || record.accessMode !== 'customers') continue;
+    if (!record.active || !requiresCustomerAuthProjection(record)) continue;
     const built = await compileRecord(record);
     const compiledAuth = built.ok ? built.served.artifact.server.auth : undefined;
     if (compiledAuth === undefined || !hasExactCustomerAuthProjection(record, compiledAuth)) {
@@ -367,7 +379,7 @@ export async function registryCustomerAuthRestoreProjections(
   );
   const projections: CustomerAuthRestoreProjection[] = [];
   for (const record of records) {
-    if (record === undefined || !record.active || record.accessMode !== 'customers') continue;
+    if (record === undefined || !record.active || !requiresCustomerAuthProjection(record)) continue;
     const built = await compileRecord(record);
     const compiledAuth = built.ok ? built.served.artifact.server.auth : undefined;
     if (compiledAuth === undefined || !hasExactCustomerAuthProjection(record, compiledAuth)) {

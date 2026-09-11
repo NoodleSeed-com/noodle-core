@@ -184,6 +184,34 @@ describe('embedded assistant model tools', () => {
     expect(admin.map((tool) => tool.name)).toEqual(['list_cases', 'close_case']);
   });
 
+  it('does not expand embedded assistant access through MCP public discovery', () => {
+    const published: ArtifactTool = {
+      ...LIST,
+      authorization: {
+        requiredScopes: ['cases:read'],
+        allowedRoles: ['support_agent'],
+        discovery: 'public',
+      },
+    };
+    const artifact = runtimeArtifact([published]);
+    expect(selectAssistantModelTools(artifact, undefined)).toEqual([]);
+    expect(selectAssistantModelTools(artifact, { identityKind: 'anonymous' })).toEqual([]);
+    expect(
+      selectAssistantModelTools(artifact, {
+        identityKind: 'customer',
+        scopes: ['cases:read'],
+        roles: ['viewer'],
+      }),
+    ).toEqual([]);
+    expect(
+      selectAssistantModelTools(artifact, {
+        identityKind: 'customer',
+        scopes: ['cases:read'],
+        roles: ['support_agent'],
+      }).map((tool) => tool.name),
+    ).toEqual(['list_cases']);
+  });
+
   it('projects a public surface before applying anonymous or mixed sign-in behavior', () => {
     const artifact = runtimeArtifact([LIST, CLOSE, WIDGET_ONLY]);
     const anonymous = { subject: 'anon', identityKind: 'anonymous' as const };

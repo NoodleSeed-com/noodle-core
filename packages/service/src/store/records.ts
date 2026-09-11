@@ -6,6 +6,7 @@
  * backend groups, ranks, and sorts identically.
  */
 
+import { requiresCustomerAuthProjection } from '../customer-auth-audience-binding.js';
 import { sameTenantRecord } from '../deployment-versioning.js';
 import { deploymentOwnerSubject } from '../registry-helpers.js';
 import type {
@@ -185,20 +186,38 @@ export function resolveActiveAccessUpdate(
     record.archivedAt !== undefined ||
     !sameTenantRecord(record, ref) ||
     record.accessMode !== input.expectedAccessMode ||
+    record.schemaVersion !== (input.expectedSchemaVersion ?? 1) ||
+    (input.expectedManifest !== undefined && record.manifest !== input.expectedManifest) ||
     deploymentOwnerSubject(record) !== input.expectedOwnerSubject
   )
     return undefined;
   if (
     (record.accessMode ?? 'owner-only') === input.accessMode &&
+    (input.schemaVersion === undefined || record.schemaVersion === input.schemaVersion) &&
     (input.ownerSubject === undefined || deploymentOwnerSubject(record) === input.ownerSubject) &&
-    input.accessMode !== 'customers'
+    !requiresCustomerAuthProjection(
+      {
+        ...record,
+        accessMode: input.accessMode,
+        schemaVersion: input.schemaVersion ?? record.schemaVersion,
+      },
+      input.serverAuth,
+    )
   )
     return record;
   return {
     ...record,
     accessMode: input.accessMode,
+    schemaVersion: input.schemaVersion ?? record.schemaVersion,
     ...(input.ownerSubject !== undefined ? { ownerSubject: input.ownerSubject } : {}),
-    ...(input.accessMode === 'customers' && input.serverAuth !== undefined
+    ...(requiresCustomerAuthProjection(
+      {
+        ...record,
+        accessMode: input.accessMode,
+        schemaVersion: input.schemaVersion ?? record.schemaVersion,
+      },
+      input.serverAuth,
+    ) && input.serverAuth !== undefined
       ? { serverAuth: input.serverAuth }
       : {}),
   };

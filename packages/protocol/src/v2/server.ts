@@ -167,6 +167,9 @@ function registerV2Tools(
     const mapped = mapToolsList(artifact, context.caller, {
       knowledgeTools: await knowledgeToolsEnabled(artifact, deps),
       intentCapture: context.intentCapture?.enabled === true,
+      ...(context.toolAuthentication === undefined
+        ? {}
+        : { authentication: context.toolAuthentication }),
     });
     return (era === 'modern' ? shapeModernToolsList(mapped) : mapped) as ListToolsResult;
   });

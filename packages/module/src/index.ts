@@ -1,5 +1,6 @@
 export * from './asset-store.js';
 export * from './contract.js';
+export * from './customer-auth-access.js';
 export * from './deployment-activation.js';
 export * from './deployment-automation.js';
 export * from './endpoint-url.js';

@@ -26,6 +26,7 @@ type PreviewWatchFactory = (watchDir: string, listener: PreviewWatchListener) =>
  */
 
 export interface PreviewSessionOptions {
+  readonly accessMode?: 'mixed' | 'customers';
   /** The already-booted dev runtime (boot it with `watch: false` — this session owns the watcher). */
   readonly handle: DevHandle;
   /** Project source root to watch recursively (so imported view files like `views/*.tsx` trigger reloads). */
@@ -65,6 +66,7 @@ export async function startPreviewSession(opts: PreviewSessionOptions): Promise<
   const delegatedCredentialSink = opts.handle.delegatedCredentialSink();
   const preview = await startPreview({
     mcpUrl: opts.handle.url,
+    ...(opts.accessMode === undefined ? {} : { accessMode: opts.accessMode }),
     theme: opts.theme,
     device: opts.device,
     ...(opts.port !== undefined ? { port: opts.port } : {}),

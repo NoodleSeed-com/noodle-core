@@ -363,6 +363,7 @@ describe('deployed-version visibility (/v1/service/info)', () => {
       expect(await res.json()).toEqual({
         ok: true,
         status: 'ok',
+        features: { mixedCustomerAuth: 1 },
         version: '9.9.9',
         gitSha: 'deadbeef',
         buildTime: '2026-06-17T12:00:00Z',

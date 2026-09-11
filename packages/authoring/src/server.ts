@@ -158,7 +158,7 @@ export interface ToolOptions {
   /** Human-readable action name shown by MCP hosts and confirmation surfaces. */
   readonly title?: string;
   readonly description: string;
-  /** Verified caller claims required to discover and invoke this tool. */
+  /** Verified caller claims required to invoke this tool; discovery is restricted by default. */
   readonly authorization?: ToolAuthorizationOptions;
   /** Designate this ordinary zero-input MCP tool as the application context provider. */
   readonly contextProvider?: true;
@@ -195,6 +195,8 @@ export interface ToolOptions {
 }
 
 export interface ToolAuthorizationOptions {
+  /** Expose the descriptor before authorization; never grants execution permission. */
+  readonly discovery?: 'authorized' | 'public';
   /** Every scope must be present on the verified caller. */
   readonly requiredScopes?: readonly string[];
   /** At least one role must be present on the verified caller. */
@@ -441,6 +443,7 @@ export function server(
 }
 
 export function tool(name: string, options: ToolOptions): ServerComponent {
+  if ('securitySchemes' in options) throw new Error('Use authorization, not raw securitySchemes');
   return { kind: 'tool', name, options };
 }
 
@@ -531,6 +534,8 @@ class ServerBuilder implements ServerDefinition {
     const tools: Manifest['tools'] = [];
     for (const tool of this.tools) {
       const recorded = await recordTool(tool.options.fulfil, this.connectors);
+      const { discovery, requiredScopes, allowedRoles, ...authorization } =
+        tool.options.authorization ?? {};
       tools.push({
         name: tool.name,
         ...(tool.options.title ? { title: tool.options.title } : {}),
@@ -538,12 +543,10 @@ class ServerBuilder implements ServerDefinition {
         ...(tool.options.authorization
           ? {
               authorization: {
-                ...(tool.options.authorization.requiredScopes
-                  ? { requiredScopes: [...tool.options.authorization.requiredScopes] }
-                  : {}),
-                ...(tool.options.authorization.allowedRoles
-                  ? { allowedRoles: [...tool.options.authorization.allowedRoles] }
-                  : {}),
+                ...(requiredScopes ? { requiredScopes: [...requiredScopes] } : {}),
+                ...(allowedRoles ? { allowedRoles: [...allowedRoles] } : {}),
+                ...authorization,
+                ...(discovery === undefined || discovery === 'authorized' ? {} : { discovery }),
               },
             }
           : {}),

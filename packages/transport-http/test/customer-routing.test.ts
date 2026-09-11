@@ -66,23 +66,26 @@ describe('HTTP private customer routing context', () => {
         deploymentId: 'dep-1',
         accessMode: 'customers',
         org: 'acme',
-        verifyToken: async (token, resource) => {
-          verifiedResources.push(resource);
-          const baseUrl =
-            token === 'tenant-a' ? ROUTE_A : token === 'tenant-b' ? ROUTE_B : undefined;
-          return baseUrl === undefined
-            ? null
-            : {
-                caller: {
-                  subject: 'customer-123',
-                  identityKind: 'customer',
-                  scopes: ['records.read'],
-                  roles: ['support'],
-                  audience: resource,
-                },
-                customerIssuer: token === 'tenant-a' ? ISSUER_A : ISSUER_B,
-                customerRouting: { customer_api: baseUrl },
-              };
+        authentication: {
+          kind: 'customer',
+          verifyToken: async (token, resource) => {
+            verifiedResources.push(resource);
+            const baseUrl =
+              token === 'tenant-a' ? ROUTE_A : token === 'tenant-b' ? ROUTE_B : undefined;
+            return baseUrl === undefined
+              ? null
+              : {
+                  caller: {
+                    subject: 'customer-123',
+                    identityKind: 'customer',
+                    scopes: ['records.read'],
+                    roles: ['support'],
+                    audience: resource,
+                  },
+                  customerIssuer: token === 'tenant-a' ? ISSUER_A : ISSUER_B,
+                  customerRouting: { customer_api: baseUrl },
+                };
+          },
         },
       }),
       admissionGate: async (context) => {

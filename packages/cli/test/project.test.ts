@@ -850,7 +850,11 @@ describe.sequential('noodle project bootstrap', () => {
     ).toBe(0);
     process.chdir(tmp);
     expect(
-      await run(['link', '--org', 'acme', '--app', 'hello-world', '--env', 'dev'], {}, home),
+      await run(
+        ['link', '--org', 'acme', '--app', 'hello-world', '--env', 'dev', '--access', 'mixed'],
+        {},
+        home,
+      ),
     ).toBe(0);
     expect(await run(['validate'], {}, home)).toBe(0);
     const running = run(['dev'], {}, home);

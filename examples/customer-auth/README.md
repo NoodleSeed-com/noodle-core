@@ -7,20 +7,16 @@ This curated example owns the customer/end-user authentication capability slot. 
 can protect an MCP endpoint with direct OIDC, retain role/scope-based tool authorization, and route ordinary
 reads and confirmed actions to the API origin selected by the verified customer's identity provider.
 
-It also owns the customer-branded embedded-assistant presentation showcase. Direct MCP calls obtain the
-route from the verified OIDC claim; embedded sessions obtain it from the authenticated customer backend's
-session exchange. Both paths keep the URL outside tool/model/browser-visible state. The built-in card hides
-its optional technical Additional details disclosure while retaining the business review and confirmation
-controls; this presentation setting does not weaken the exact runtime confirmation boundary.
+Direct MCP calls obtain the private route from verified OIDC claims; embedded sessions obtain it from the authenticated backend. Both keep routes out of model and browser state.
 
 The public developer entrypoint is [`src/server.ts`](src/server.ts). It exposes a deliberately small MCP
 surface for organization discovery and app lifecycle operations:
 
-- `list_my_organizations` lists the NoodleSeed.com organizations the signed-in customer belongs to (no
-  arguments — the org set comes from the verified customer session).
-- `list_org_apps` lists apps for one of those organizations through that tenant's API. It is visible and
-  callable only when the verified customer has the `org_apps:read` scope and either the `org_admin` or
-  `org_member` role.
+- `help` explains the product without customer identity.
+- `list_my_organizations` publicly advertises its descriptor but requires `organizations:read` to list the signed-in customer’s organizations.
+- `list_org_apps` uses `authorization.discovery: 'public'` to expose its descriptor on an anonymously
+  accessible endpoint. Execution still requires `org_apps:read` and `org_admin` or `org_member`. Visibility
+  grants no permissions, records, role disclosure, or product-guide eligibility. ChatGPT sign-in is unproven.
 - `archive_org_app` archives one app only after exact runtime confirmation. It requires the
   `org_apps:write` scope and `org_admin` role.
 
@@ -28,22 +24,7 @@ The tools chain: `list_my_organizations` surfaces the `org_id`s the customer can
 `list_org_apps` takes one of those ids, and `archive_org_app` accepts the selected app id. Tool code remains
 independent of the selected origin.
 
-The server also declares one typed `agentGuide` for those product workflows. The deployed embedded assistant
-uses it automatically: each turn keeps only complete workflows supported by the verified session's roles,
-scopes, and model-visible tools. An organization member can receive organization/app review guidance, while
-only an administrator with `org_apps:write` receives the complete archive workflow and its confirmation
-boundary. The guide stays server-side, so the Web Component, React renderer, headless hook, and public client
-need no new option and receive no raw skill content. See
-[using a product guide at runtime](https://docs.noodleseed.dev/docs/guides/product-agent-guides#use-the-guide-at-runtime)
-for the public behavior guide.
-
-A skill-aware external agent connected directly to the same tenant MCP URL receives the same
-complete-workflow filtering through the modern draft MCP Skills extension. Members and administrators may
-therefore receive different `SKILL.md` and MCP-surface bytes, each with matching caller-specific digests.
-This reuses the configured customer OAuth boundary; it does not require a second skill installation or auth
-system, and it is not a claim that every external host currently implements the draft extension. The
-same [runtime guide](https://docs.noodleseed.dev/docs/guides/product-agent-guides#use-the-guide-at-runtime)
-explains this preview boundary.
+The typed `agentGuide` retains only complete workflows the verified caller can execute. Public descriptor discovery does not grant workflow access. See the [runtime guide](https://docs.noodleseed.dev/docs/guides/product-agent-guides#use-the-guide-at-runtime) for embedded behavior and the draft MCP Skills preview.
 
 ## Declare the customer endpoint
 
@@ -212,6 +193,7 @@ rule beside the rest of its public contract:
 ```ts
 tool('list_org_apps', {
   authorization: {
+    discovery: 'public',
     requiredScopes: ['org_apps:read'],
     allowedRoles: ['org_admin', 'org_member'],
   },
@@ -220,9 +202,9 @@ tool('list_org_apps', {
 ```
 
 Every required scope must be present and at least one allowed role must match. When both lists are declared,
-both conditions apply. Route availability never changes `tools/list`: discovery remains based only on
-roles/scopes. A restricted tool is omitted for an ineligible customer and a guessed direct call still fails
-closed.
+both conditions apply. In mixed customer mode, `discovery: 'public'` exposes this descriptor before sign-in;
+execution still requires those scopes and roles. Other restricted tools remain filtered by authorization.
+Route availability never changes discovery, and unauthorized direct calls fail closed.
 
 Tool code calls the connector normally:
 
@@ -811,11 +793,7 @@ subject assertion and mints a short-lived token scoped to the signed-in user and
 
 ## Launch and qualified-usage proof
 
-Use the [embedded assistant guide](https://docs.noodleseed.dev/docs/guides/embedded-assistant) for the complete
-pre-launch, browser-proof, qualified-usage, recovery, measurement, and operator procedure; do not copy those
-commands into this example. Keep deployed capability, production-browser proof, qualified usage, and measured
-outcome separate; raw turn volume is utilization rather than outcome. Platform-owned completion events still
-require a separate human-approved analytics and customer-data contract.
+For launch, browser verification, and qualified usage, follow the [embedded assistant guide](https://docs.noodleseed.dev/docs/guides/embedded-assistant).
 
 ## Deploy customer-protected to Noodle Seed Cloud
 
@@ -833,13 +811,23 @@ Endpoint:
 https://cloud.noodleseed.dev/o/noodleseed/customer-auth/mcp
 ```
 
-## MCP Primitives
+## Preview anonymous Help with customer sign-in
 
-- Tool `list_my_organizations`: calls `GET /api/organizations` and returns the organizations the signed-in
-  customer is a member of. Takes no arguments; the org set is scoped by the verified customer session.
-- Tool `list_org_apps`: calls `GET /api/organizations/{org_id}/apps` for one organization `org_id`.
-- Tool `archive_org_app`: after confirmation, calls
-  `POST /api/organizations/{org_id}/apps/{app_id}/archive`.
+Use `noodle dev examples/customer-auth/src/server.ts --access mixed`. Help remains available before sign-in;
+protected reads advertise descriptors and require their verified scopes/roles to execute. Customer mode
+remains the default. Local Devtools retries a protected call after successful sign-in; cancellation executes
+nothing and leaves Help available. With a hosted service, a new target may use
+`--access mixed` only after every customer tool has an authorization rule. For an existing customer-only
+target, preserve its org/app/env, endpoint, issuer, and audience. Follow the public guide: verify an inactive
+`customers` record for the exact version, creating it by unchanged secured redeploy if absent; add and
+validate every tool rule; deploy the prepared source as `customers`; recheck the rollback; then adopt mixed
+access. On pilot failure, use
+`noodle rollback <deployment-id>` with the same org/app/env. This app-history rollback is separate from the
+compatible hosted service-release floor. Keep the public Help endpoint through the post-deployment ChatGPT
+and customer API pilot. Local behavior and wire checks do not prove that host
+journey. See the
+[customer auth rollback and adoption procedure](https://docs.noodleseed.dev/docs/guides/customer-auth#preserve-an-app-rollback-target-and-adopt)
+for the exact commands and checks.
 
 ## Auth boundary
 

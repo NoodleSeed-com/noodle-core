@@ -40,7 +40,7 @@ describe('live auth doctor', () => {
     const registry = {
       getActiveByTenant: vi.fn().mockResolvedValue({
         accessMode: 'customers',
-        verifyToken,
+        authentication: { kind: 'customer', verifyToken },
         served: {
           artifact: {
             customerEndpoints: {
@@ -105,7 +105,7 @@ describe('live auth doctor', () => {
     const getActiveByTenant = vi.fn();
     const getActiveByTenantVersion = vi.fn().mockResolvedValue({
       accessMode: 'customers',
-      verifyToken,
+      authentication: { kind: 'customer', verifyToken },
       served: {
         artifact: { customerEndpoints: {} },
         deps: { broker: { getCredential: vi.fn(), probeDelegatedCredentials: probe } },
@@ -152,7 +152,7 @@ describe('live auth doctor', () => {
     });
     const getActiveByTenantVersion = vi.fn().mockResolvedValue({
       accessMode: 'customers',
-      verifyToken,
+      authentication: { kind: 'customer', verifyToken },
       served: {
         artifact: { customerEndpoints: {} },
         deps: {
@@ -261,9 +261,12 @@ describe('live auth doctor', () => {
     const registry = {
       getActiveByTenant: vi.fn().mockResolvedValue({
         accessMode: 'customers',
-        verifyToken: vi.fn().mockResolvedValue({
-          caller: { subject: 'owner', identityKind: 'platform' },
-        }),
+        authentication: {
+          kind: 'customer',
+          verifyToken: vi.fn().mockResolvedValue({
+            caller: { subject: 'owner', identityKind: 'platform' },
+          }),
+        },
         served: { deps: { broker: { getCredential: vi.fn(), probeDelegatedCredentials: probe } } },
       }),
     } as unknown as ServerRegistry;
@@ -331,7 +334,7 @@ describe('live auth doctor', () => {
     const registry = {
       getActiveByTenant: vi.fn().mockResolvedValue({
         accessMode: 'customers',
-        verifyToken,
+        authentication: { kind: 'customer', verifyToken },
         served: {
           artifact: {
             customerEndpoints: {

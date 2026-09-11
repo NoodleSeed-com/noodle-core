@@ -5,6 +5,38 @@ import type { ControlPlaneStore } from '../src/store.js';
 
 describe('bridgeAuthForResource routing', () => {
   it.each([
+    'https://service.example/o/acme/todoist/mcp',
+    'https://service.example/o/acme/todoist/v1/mcp',
+    'https://arez.cloud.noodleseed.dev/todoist/mcp',
+  ])('uses effective customer authority for bridge resource %s', async (resource) => {
+    const auth = { kind: 'bridge', provider: 'firebase', projectId: 'customer-project' };
+    let authority = 'platform';
+    const getTarget = async () => ({
+      authentication: { kind: authority },
+      served: { artifact: { server: { auth } } },
+    });
+    const registry = {
+      getActiveByTenant: getTarget,
+      getActiveByTenantVersion: getTarget,
+      configStore: { resolveConfigValues: async () => ({}) },
+    } as unknown as ServerRegistry;
+    const controlPlane = {
+      resolveActiveMcpSubdomain: async () => ({
+        mcpSubdomain: 'arez',
+        orgSlug: 'acme',
+        claimedAt: '2026-08-11T00:00:00.000Z',
+      }),
+    } as unknown as ControlPlaneStore;
+    await expect(
+      bridgeAuthForResource(registry, resource, ['cloud.noodleseed.dev'], controlPlane),
+    ).resolves.toBeUndefined();
+    authority = 'customer';
+    await expect(
+      bridgeAuthForResource(registry, resource, ['cloud.noodleseed.dev'], controlPlane),
+    ).resolves.toMatchObject(auth);
+  });
+
+  it.each([
     'https://AREZ.cloud.noodleseed.dev/todoist/mcp',
     'https://arez.cloud.noodleseed.dev:443/todoist/mcp',
     'https://arez.cloud.noodleseed.dev/%74odoist/mcp',

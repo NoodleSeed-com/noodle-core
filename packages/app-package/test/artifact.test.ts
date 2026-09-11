@@ -53,6 +53,39 @@ const artifact = {
 } as const;
 
 describe('App Package canonical data boundary', () => {
+  it('preserves public discovery in canonical package identity', () => {
+    const withAuthorization = (authorization: object) => ({
+      ...artifact,
+      surface: { ...artifact.surface, tools: [{ ...artifact.surface.tools[0], authorization }] },
+    });
+    const implicit = appPackageArtifactV1Schema.parse(
+      withAuthorization({ requiredScopes: ['tasks:read'] }),
+    );
+    const discovered = appPackageArtifactV1Schema.parse(
+      withAuthorization({ requiredScopes: ['tasks:read'], discovery: 'public' }),
+    );
+    expect(discovered.surface.tools[0]?.authorization).toEqual({
+      requiredScopes: ['tasks:read'],
+      discovery: 'public',
+    });
+    expect(sha256Canonical(discovered)).not.toBe(sha256Canonical(implicit));
+  });
+
+  it.each([
+    { discovery: 'public' },
+    { discovery: 'public', allowedRoles: [] },
+    { discovery: 'everyone', allowedRoles: ['support'] },
+    { discover: 'public', allowedRoles: ['support'] },
+    { securitySchemes: [{ type: 'noauth' }], allowedRoles: ['support'] },
+  ])('rejects invalid discovery authorization %j', (authorization) => {
+    expect(
+      appPackageArtifactV1Schema.safeParse({
+        ...artifact,
+        surface: { ...artifact.surface, tools: [{ ...artifact.surface.tools[0], authorization }] },
+      }).success,
+    ).toBe(false);
+  });
+
   it('canonicalizes object keys while preserving array order', () => {
     expect(canonicalJson({ z: 1, a: { y: 2, x: 3 } })).toBe('{"a":{"x":3,"y":2},"z":1}');
     expect(canonicalJson({ values: ['second', 'first'] })).toBe('{"values":["second","first"]}');

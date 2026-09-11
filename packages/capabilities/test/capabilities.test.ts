@@ -57,6 +57,14 @@ describe('capability contracts', () => {
     expect(serviceProfileNameSchema.safeParse('enterprise').success).toBe(false);
   });
 
+  it('keeps mixed customer authentication as a product feature pending live host proof', () => {
+    expect(PRODUCT_FEATURES.find((feature) => feature.id === 'mixed-customer-auth')).toMatchObject({
+      since: 'next',
+      hosts: { claude: 'preview', chatgpt: 'preview', embedded: 'preview' },
+    });
+    expect(CAPABILITY_NAMES).not.toContain('mixed-customer-auth');
+  });
+
   it('advertises dual-era serving and keeps modern host behavior at preview', () => {
     expect(PRODUCT_FEATURES.find((feature) => feature.id === 'mcp-2026-07-28')).toMatchObject({
       since: 'next',

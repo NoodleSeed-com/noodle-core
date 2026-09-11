@@ -40,6 +40,130 @@ describe.skipIf(!URL)('Postgres customer OIDC binding lifecycle', () => {
     }
   });
 
+  it('refuses stale access writes and accepts an explicit matching version', async () => {
+    const deployed = {
+      ...ownerRecord('mixed-cas-11111111', PROD),
+      schemaVersion: 2,
+      accessMode: 'mixed' as const,
+      serverAuth: AUTH,
+    };
+    await first.append(deployed);
+    for (const expectedSchemaVersion of [undefined, 1]) {
+      await expect(
+        second.updateActiveAccess(PROD, deployed.deploymentId, {
+          accessMode: 'public',
+          expectedAccessMode: 'mixed',
+          expectedOwnerSubject: 'owner',
+          expectedSchemaVersion,
+        }),
+      ).resolves.toBeUndefined();
+    }
+    await expect(first.get(deployed.deploymentId)).resolves.toMatchObject({
+      schemaVersion: 2,
+      accessMode: 'mixed',
+    });
+    await expect(
+      second.updateActiveAccess(PROD, deployed.deploymentId, {
+        accessMode: 'public',
+        expectedAccessMode: 'mixed',
+        expectedOwnerSubject: 'owner',
+        expectedSchemaVersion: 2,
+      }),
+    ).resolves.toMatchObject({ schemaVersion: 2, accessMode: 'public' });
+  });
+
+  it('prevents an old append from replacing or deactivating a newer policy', async () => {
+    const deployed = {
+      ...record('new-policy-11111111', PROD),
+      schemaVersion: 2,
+      accessMode: 'mixed' as const,
+    };
+    await first.append(deployed);
+    for (const deploymentId of [deployed.deploymentId, 'old-writer-22222222']) {
+      await expect(
+        second.append({ ...deployed, deploymentId, schemaVersion: 1 }),
+      ).rejects.toMatchObject({ code: 'unsupported_deployment_record_version' });
+    }
+    expect(await first.loadAll()).toHaveLength(1);
+    await expect(first.get(deployed.deploymentId)).resolves.toMatchObject({
+      schemaVersion: 2,
+      active: true,
+    });
+  });
+
+  it.each([
+    false,
+    true,
+  ])('requires explicit v2 activation intent for automation (explicit: %s)', async (explicit) => {
+    const target = {
+      ...record('future-target-11111111', PROD),
+      schemaVersion: 2,
+      accessMode: 'mixed' as const,
+      active: false,
+    };
+    // Pending automation can retain a v1 target ID while a newer writer upgrades its record.
+    await first.append({ ...target, schemaVersion: 1 });
+    await first.append(target);
+    const result = await second.activateDeployment(
+      PROD,
+      target.deploymentId,
+      explicit ? { expectedAccessMode: 'mixed', expectedSchemaVersion: 2 } : undefined,
+      { automationId: 'pending-v1-automation' },
+    );
+    if (explicit) expect(result).toMatchObject({ active: { schemaVersion: 2, active: true } });
+    else expect(result).toBeUndefined();
+    await expect(first.get(target.deploymentId)).resolves.toMatchObject({ active: explicit });
+  });
+
+  it('prevents stale activation while permitting explicit historical rollback', async () => {
+    const historical = { ...record('old-pending-11111111', PROD), active: false };
+    const current = {
+      ...record('new-policy-22222222', PROD),
+      schemaVersion: 2,
+      accessMode: 'mixed' as const,
+    };
+    await first.append(historical);
+    await first.append(current);
+    await expect(second.activateDeployment(PROD, historical.deploymentId)).rejects.toMatchObject({
+      code: 'unsupported_deployment_record_version',
+    });
+    await expect(first.get(current.deploymentId)).resolves.toMatchObject({ active: true });
+    await expect(
+      second.activateDeployment(PROD, current.deploymentId, {
+        expectedAccessMode: 'mixed',
+        expectedSchemaVersion: 1,
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      second.activateDeployment(PROD, historical.deploymentId, {
+        expectedAccessMode: 'customers',
+        expectedSchemaVersion: 1,
+      }),
+    ).resolves.toMatchObject({ active: { deploymentId: historical.deploymentId } });
+  });
+
+  it('updates the customer projection during same-mode v2 mixed access writes', async () => {
+    const deployed = {
+      ...ownerRecord('mixed-projection-11111111', PROD),
+      schemaVersion: 2,
+      accessMode: 'mixed' as const,
+      serverAuth: AUTH,
+    };
+    await first.append(deployed);
+    await expect(
+      second.updateActiveAccess(PROD, deployed.deploymentId, {
+        accessMode: 'mixed',
+        expectedAccessMode: 'mixed',
+        expectedOwnerSubject: 'owner',
+        expectedSchemaVersion: 2,
+        serverAuth: OTHER_AUTH,
+      }),
+    ).resolves.toMatchObject({ serverAuth: OTHER_AUTH });
+    await expect(first.get(deployed.deploymentId)).resolves.toMatchObject({
+      serverAuth: OTHER_AUTH,
+    });
+  });
+
   it('atomically grants one concurrent active deploy binding', async () => {
     const results = await Promise.allSettled([
       first.append(record('prod-deploy-11111111', PROD)),

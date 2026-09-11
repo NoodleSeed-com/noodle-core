@@ -2,7 +2,11 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { LocalDevtoolsDelegatedCredentialSink } from '@noodle-borg/service/local';
 import { handleDevtoolsAuthRoute } from './devtools-auth-routes.js';
-import { DevtoolsAuthSession, type DevtoolsCustomerAuth } from './devtools-auth-session.js';
+import {
+  DevtoolsAuthRequiredError,
+  DevtoolsAuthSession,
+  type DevtoolsCustomerAuth,
+} from './devtools-auth-session.js';
 import {
   type ChatMessage,
   type ChatProviderId,
@@ -38,6 +42,7 @@ export type { PreviewDevice, PreviewTheme };
 export { calculateRangeProgress, harnessHtml, openAiShimScript, wrapWidgetHtml };
 
 export interface PreviewOptions {
+  readonly accessMode?: 'mixed' | 'customers';
   readonly mcpUrl: string;
   readonly theme: PreviewTheme;
   readonly device: PreviewDevice;
@@ -218,6 +223,7 @@ export async function startPreview(options: PreviewOptions): Promise<PreviewHand
     mcpUrl: options.mcpUrl,
     ...(options.protocolVersion === undefined ? {} : { protocolVersion: options.protocolVersion }),
     authSession: () => authSession,
+    optionalAuth: options.accessMode === 'mixed',
     record,
   });
 
@@ -242,6 +248,7 @@ export async function startPreview(options: PreviewOptions): Promise<PreviewHand
       auth === undefined
         ? undefined
         : new DevtoolsAuthSession({
+            required: options.accessMode !== 'mixed',
             resource: options.mcpUrl,
             redirectUri: authRedirectUri(previewOrigin, authCallbackPath, auth),
             auth,
@@ -285,11 +292,13 @@ export async function startPreview(options: PreviewOptions): Promise<PreviewHand
     toolArguments: Record<string, unknown> = {},
   ): Promise<string> {
     const list = await forward({ method: 'tools/list', id: 'list', params: {} });
+    if (list.httpStatus === 401) throw new DevtoolsAuthRequiredError();
     const tools = (list.json?.result?.tools as Array<Record<string, unknown>> | undefined) ?? [];
     const tool = tools.find((t) => t.name === toolNameParam);
     const uri = (tool?._meta as { ui?: { resourceUri?: string } } | undefined)?.ui?.resourceUri;
     if (uri === undefined) return '<!doctype html><p>No widget resource for this tool.</p>';
     const read = await forward({ method: 'resources/read', id: 'read', params: { uri } });
+    if (read.httpStatus === 401) throw new DevtoolsAuthRequiredError();
     const contents =
       (read.json?.result?.contents as Array<Record<string, unknown>> | undefined) ?? [];
     const widgetHtml = typeof contents[0]?.text === 'string' ? (contents[0].text as string) : '';
@@ -298,6 +307,7 @@ export async function startPreview(options: PreviewOptions): Promise<PreviewHand
       id: 'call',
       params: { name: toolNameParam, arguments: toolArguments },
     });
+    if (call.httpStatus === 401) throw new DevtoolsAuthRequiredError();
     const toolResult = call.json?.result ?? null;
     const toolOutput = toolResult?.structuredContent ?? null;
     const toolResponseMetadata = (toolResult?._meta as Record<string, unknown> | undefined) ?? null;
@@ -363,11 +373,14 @@ export async function startPreview(options: PreviewOptions): Promise<PreviewHand
       model: model?.trim() || configuredModel(provider),
       ...(baseUrl ? { baseUrl } : {}),
       callTool: async (name, args) => {
-        const call = await forward({
+        const request = {
           method: 'tools/call',
           id: 'chat-call',
           params: { name, arguments: (args as Record<string, unknown>) ?? {} },
-        });
+        };
+        let call = await forward(request);
+        if (call.httpStatus === 401 && authSession && (await authSession.requestSignIn()))
+          call = await forward(request);
         const result = call.json?.result ?? call.json?.error ?? null;
         const isError =
           call.json?.error !== undefined ||
@@ -438,7 +451,8 @@ export async function startPreview(options: PreviewOptions): Promise<PreviewHand
           ...options,
           rpcCapability,
           secureWidgets,
-          authRequired: customerAuth !== undefined,
+          authRequired: customerAuth !== undefined && options.accessMode !== 'mixed',
+          authAvailable: customerAuth !== undefined,
           localDelegatedExchangeRequired: options.localDelegatedExchange?.() !== undefined,
         }),
       );
@@ -451,8 +465,10 @@ export async function startPreview(options: PreviewOptions): Promise<PreviewHand
           res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
           res.end(html);
         })
-        .catch(() => {
-          res.writeHead(502, { 'content-type': 'text/html; charset=utf-8' });
+        .catch((error: unknown) => {
+          res.writeHead(error instanceof DevtoolsAuthRequiredError ? 401 : 502, {
+            'content-type': 'text/html; charset=utf-8',
+          });
           res.end('<!doctype html><p>Failed to load widget.</p>');
         });
       return;
@@ -675,6 +691,7 @@ export async function startPreview(options: PreviewOptions): Promise<PreviewHand
   previewOrigin = `http://127.0.0.1:${port}`;
   if (customerAuth !== undefined) {
     authSession = new DevtoolsAuthSession({
+      required: options.accessMode !== 'mixed',
       resource: options.mcpUrl,
       redirectUri: authRedirectUri(previewOrigin, authCallbackPath, customerAuth),
       auth: customerAuth,

@@ -1,3 +1,8 @@
+import {
+  MIXED_CUSTOMER_AUTH_FEATURE_VERSION,
+  type ServiceInfoResponse,
+  serviceInfoResponseSchema,
+} from '@noodle-borg/wire-contracts';
 /**
  * Deployed-version visibility (ADR 0080). The image build injects the source commit + build timestamp as
  * env vars (`NOODLE_BUILD_*`); the service surfaces them at `GET /v1/service/info` and logs them on boot so
@@ -25,15 +30,16 @@ export interface BuildInfo {
 export function serviceInfoPayload(
   buildInfo: BuildInfo,
   developerMcp: boolean,
-): Record<string, unknown> {
-  return {
+): ServiceInfoResponse {
+  return serviceInfoResponseSchema.parse({
     ok: true,
     status: 'ok',
     ...buildInfo,
+    features: { mixedCustomerAuth: MIXED_CUSTOMER_AUTH_FEATURE_VERSION },
     ...(developerMcp
       ? { developerPlugin: { mcpCapabilityVersion: DEVELOPER_MCP_CAPABILITY_VERSION } }
       : {}),
-  };
+  });
 }
 
 export function cliCompatibilityError(

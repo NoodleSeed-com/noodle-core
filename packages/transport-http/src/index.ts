@@ -60,6 +60,7 @@ export {
   preflightServicePrincipalToolCall,
   sendServicePrincipalToolDenial,
 } from './service-principal-authorization.js';
+export type { TargetAuthentication } from './target-authentication.js';
 export type {
   HostedToolDispatchContext,
   HostedToolDispatchHook,

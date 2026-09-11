@@ -18,6 +18,7 @@ import {
   type AccessMode,
   type AssetUploadTarget,
   assetPreflightResponseSchema,
+  type DeploymentAuthentication,
   deployErrorResponseSchema,
   deploySuccessResponseSchema,
   type OrgMembershipSource,
@@ -34,6 +35,7 @@ import {
   rewriteManifestKnowledgeHashes,
 } from '@noodle-borg/deploy-client';
 import { parse as parseYaml } from 'yaml';
+import { requireMixedCustomerAuth, ServiceRequestError } from './control-plane-request.js';
 import { delegatedTokenExchangeDeployErrors } from './delegated-token-exchange-preflight.js';
 import { buildReactWidgetViews } from './react-widget-build.js';
 import { assertCliSdkCompatibility } from './sdk-version-skew.js';
@@ -93,6 +95,7 @@ export type DeployOutcome =
       readonly url: string;
       readonly defaultUrl: string;
       readonly accessMode: AccessMode;
+      readonly authentication?: DeploymentAuthentication;
       readonly ownerSubject?: string;
       readonly assets: AssetDeploySummary;
       /**
@@ -202,6 +205,9 @@ export async function deploy(options: DeployOptions): Promise<DeployOutcome> {
         errors: identityErrors,
       };
     }
+    if (accessMode === 'mixed' && manifestDeclaresServerAuth(manifest)) {
+      await requireMixedCustomerAuth(service, options.authToken, doFetch);
+    }
     const prepared = await prepareHostedAssetsForDeploy({
       manifest,
       rootDir: input.rootDir,
@@ -225,6 +231,14 @@ export async function deploy(options: DeployOptions): Promise<DeployOutcome> {
       fetchImpl: doFetch,
     });
   } catch (error) {
+    if (error instanceof ServiceRequestError) {
+      return {
+        ok: false,
+        status: error.status,
+        message: error.message,
+        ...(error.code === undefined ? {} : { code: error.code }),
+      };
+    }
     if (error instanceof AssetDeployError) {
       return {
         ok: false,
@@ -295,6 +309,9 @@ export async function deploy(options: DeployOptions): Promise<DeployOutcome> {
         url: success.data.url,
         defaultUrl: success.data.defaultUrl,
         accessMode: success.data.accessMode,
+        ...(success.data.authentication === undefined
+          ? {}
+          : { authentication: success.data.authentication }),
         ...(success.data.ownerSubject !== undefined
           ? { ownerSubject: success.data.ownerSubject }
           : {}),

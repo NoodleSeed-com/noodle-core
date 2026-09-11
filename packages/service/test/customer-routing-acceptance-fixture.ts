@@ -95,13 +95,17 @@ export function createCustomerRouteConnector(input: {
       input.calls.push(call);
       const route = call.route?.baseUrl;
       const backend = route === undefined ? undefined : input.routes[route];
-      if (backend === undefined) throw new Error('test connector received an unexpected route');
+      if (route === undefined || backend === undefined)
+        throw new Error('test connector received an unexpected route');
       const basePath = new URL(route).pathname.replace(/\/+$/, '');
       const action = call.operation === 'archive_records';
       return requestJson(
         `${backend}${basePath}/${action ? 'archive' : 'records'}`,
         input.certificate,
         action ? 'POST' : 'GET',
+        'token' in call.credential && call.credential.token
+          ? `Bearer ${call.credential.token}`
+          : undefined,
       );
     },
   };
@@ -177,20 +181,33 @@ function makeLocalCertificate(): LocalCertificate {
   }
 }
 
-function requestJson(url: string, certificate: Buffer, method: 'GET' | 'POST'): Promise<unknown> {
+function requestJson(
+  url: string,
+  certificate: Buffer,
+  method: 'GET' | 'POST',
+  authorization?: string,
+): Promise<unknown> {
   return new Promise((resolve, reject) => {
-    const req = request(url, { ca: certificate, method }, (res) => {
-      const chunks: Buffer[] = [];
-      res.on('data', (chunk: Buffer) => chunks.push(chunk));
-      res.once('error', reject);
-      res.once('end', () => {
-        try {
-          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
-        } catch (error) {
-          reject(error);
-        }
-      });
-    });
+    const req = request(
+      url,
+      {
+        ca: certificate,
+        method,
+        ...(authorization === undefined ? {} : { headers: { authorization } }),
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.once('error', reject);
+        res.once('end', () => {
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+          } catch (error) {
+            reject(error);
+          }
+        });
+      },
+    );
     req.once('error', reject);
     req.end();
   });

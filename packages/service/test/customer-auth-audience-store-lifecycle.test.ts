@@ -10,6 +10,8 @@ import {
   type TenantRef,
 } from '../src/index.js';
 
+import { activateInMemory } from '../src/registry-state.js';
+
 const PROD = { org: 'acme', app: 'support', env: 'prod' } as const;
 const DEV = { org: 'acme', app: 'support', env: 'dev' } as const;
 const OTHER = { org: 'acme', app: 'other', env: 'prod' } as const;
@@ -17,6 +19,145 @@ const AUTH = { issuer: 'https://idp.example', audience: 'acme-support' } as cons
 const OTHER_AUTH = { issuer: 'https://idp.example', audience: 'other-support' } as const;
 
 describe.each(['memory', 'json'] as const)('%s store customer OIDC binding lifecycle', (kind) => {
+  it('reserves one audience across mixed customer and customers deployments', () =>
+    withStore(kind, async (store) => {
+      const results = await Promise.allSettled([
+        store.append({ ...record('mixed-customer', PROD), schemaVersion: 2, accessMode: 'mixed' }),
+        store.append(record('customers-peer', OTHER)),
+      ]);
+      expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+      expectConflict(results);
+    }));
+
+  it('does not reserve dormant auth in legacy mixed deployments', () =>
+    withStore(kind, async (store) => {
+      await store.append({ ...record('legacy-mixed', PROD), accessMode: 'mixed' });
+      await expect(store.append(record('customer-owner', OTHER))).resolves.toBeUndefined();
+      expect(await store.loadAll()).toHaveLength(2);
+    }));
+
+  it('requires a valid non-null mixed customer projection', () =>
+    withStore(kind, async (store) => {
+      await expect(
+        store.append({
+          ...record('bad-mixed', PROD),
+          schemaVersion: 2,
+          accessMode: 'mixed',
+          serverAuth: { kind: 'federatedOidc', issuers: [] },
+        }),
+      ).rejects.toMatchObject({ code: 'customer_auth_audience_conflict' });
+      expect(await store.loadAll()).toHaveLength(0);
+    }));
+
+  it('refuses access writes validated against an older record version', () =>
+    withStore(kind, async (store) => {
+      await store.append({
+        ...record('mixed-record', PROD),
+        schemaVersion: 2,
+        accessMode: 'mixed',
+        createdBySubject: 'owner',
+      });
+      await expect(
+        store.updateActiveAccess(PROD, 'mixed-record', {
+          accessMode: 'public',
+          expectedAccessMode: 'mixed',
+          expectedOwnerSubject: 'owner',
+          expectedSchemaVersion: 1,
+        }),
+      ).resolves.toBeUndefined();
+      await expect(
+        store.updateActiveAccess(PROD, 'mixed-record', {
+          accessMode: 'public',
+          expectedAccessMode: 'mixed',
+          expectedOwnerSubject: 'owner',
+        }),
+      ).resolves.toBeUndefined();
+      await expect(store.get('mixed-record')).resolves.toMatchObject({
+        schemaVersion: 2,
+        accessMode: 'mixed',
+      });
+      await expect(
+        store.updateActiveAccess(PROD, 'mixed-record', {
+          accessMode: 'public',
+          expectedAccessMode: 'mixed',
+          expectedOwnerSubject: 'owner',
+          expectedSchemaVersion: 2,
+        }),
+      ).resolves.toMatchObject({ schemaVersion: 2, accessMode: 'public' });
+    }));
+
+  it('refuses activation validated against an older record version', () =>
+    withStore(kind, async (store) => {
+      await store.append({
+        ...record('future-history', PROD),
+        schemaVersion: 2,
+        accessMode: 'mixed',
+        active: false,
+      });
+      await expect(
+        store.activateDeployment(PROD, 'future-history', {
+          expectedAccessMode: 'mixed',
+          expectedSchemaVersion: 1,
+        }),
+      ).resolves.toBeUndefined();
+      await expect(store.get('future-history')).resolves.toMatchObject({ active: false });
+    }));
+
+  it.each([false, true])('requires explicit v2 activation intent (explicit: %s)', (explicit) =>
+    withStore(kind, async (store) => {
+      const target = {
+        ...record('future-target', PROD),
+        schemaVersion: 2,
+        accessMode: 'mixed' as const,
+        active: false,
+      };
+      await store.append(target);
+      const result = await store.activateDeployment(
+        PROD,
+        target.deploymentId,
+        explicit ? { expectedAccessMode: 'mixed', expectedSchemaVersion: 2 } : undefined,
+      );
+      if (explicit) expect(result).toMatchObject({ active: { schemaVersion: 2, active: true } });
+      else expect(result).toBeUndefined();
+      await expect(store.get(target.deploymentId)).resolves.toMatchObject({ active: explicit });
+    }));
+
+  it('refuses an older writer that would replace a newer active policy', () =>
+    withStore(kind, async (store) => {
+      await store.append({
+        ...record('mixed-record', PROD),
+        schemaVersion: 2,
+        accessMode: 'mixed',
+      });
+      for (const deploymentId of ['mixed-record', 'new-older-writer']) {
+        await expect(
+          store.append({ ...record(deploymentId, PROD), accessMode: 'mixed' }),
+        ).rejects.toMatchObject({ code: 'unsupported_deployment_record_version' });
+      }
+      await expect(store.get('mixed-record')).resolves.toMatchObject({
+        schemaVersion: 2,
+        active: true,
+      });
+      expect(await store.loadAll()).toHaveLength(1);
+    }));
+
+  it('refuses an unversioned activation that would replace a newer policy', () =>
+    withStore(kind, async (store) => {
+      await store.append({ ...record('old-pending', PROD), active: false });
+      await store.append({ ...record('new-active', PROD), schemaVersion: 2, accessMode: 'mixed' });
+      await expect(store.activateDeployment(PROD, 'old-pending')).rejects.toMatchObject({
+        code: 'unsupported_deployment_record_version',
+      });
+      await expect(store.get('new-active')).resolves.toMatchObject({ active: true });
+      // An explicit rollback validated against the historical record remains supported.
+      await expect(
+        store.activateDeployment(PROD, 'old-pending', {
+          expectedAccessMode: 'customers',
+          expectedSchemaVersion: 1,
+        }),
+      ).resolves.toMatchObject({ active: { deploymentId: 'old-pending' } });
+    }));
+
   it('rejects active customer records without a valid persisted auth projection', () =>
     withStore(kind, async (store) => {
       await expect(
@@ -142,6 +283,50 @@ describe.each(['memory', 'json'] as const)('%s store customer OIDC binding lifec
         }),
       ).resolves.toEqual({ restoredDeployments: 1 });
     }));
+});
+
+describe('no-store activation version guard', () => {
+  it.each([false, true])('requires explicit v2 activation intent (explicit: %s)', (explicit) => {
+    const target = {
+      ...record('future-target', PROD),
+      schemaVersion: 2,
+      accessMode: 'mixed' as const,
+      active: false,
+    };
+    const records = new Map([[target.deploymentId, target]]);
+    const result = activateInMemory(
+      records,
+      PROD,
+      target.deploymentId,
+      explicit ? { expectedAccessMode: 'mixed', expectedSchemaVersion: 2 } : undefined,
+    );
+    if (explicit) expect(result).toMatchObject({ active: { schemaVersion: 2, active: true } });
+    else expect(result).toBeUndefined();
+    expect(records.get(target.deploymentId)).toMatchObject({ active: explicit });
+  });
+
+  it('preserves the implicit downgrade guard and explicit historical rollback', () => {
+    const historical = { ...record('old-pending', PROD), active: false };
+    const current = {
+      ...record('new-active', PROD),
+      schemaVersion: 2,
+      accessMode: 'mixed' as const,
+    };
+    const records = new Map([
+      [historical.deploymentId, historical],
+      [current.deploymentId, current],
+    ]);
+    expect(() => activateInMemory(records, PROD, historical.deploymentId)).toThrow(
+      expect.objectContaining({ code: 'unsupported_deployment_record_version' }),
+    );
+    expect(records.get(current.deploymentId)).toMatchObject({ active: true });
+    expect(
+      activateInMemory(records, PROD, historical.deploymentId, {
+        expectedAccessMode: 'customers',
+        expectedSchemaVersion: 1,
+      }),
+    ).toMatchObject({ active: { deploymentId: historical.deploymentId } });
+  });
 });
 
 async function withStore(

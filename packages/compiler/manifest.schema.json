@@ -1348,6 +1348,10 @@
                   {
                     "type": "object",
                     "properties": {
+                      "discovery": {
+                        "type": "string",
+                        "enum": ["authorized", "public"]
+                      },
                       "requiredScopes": {
                         "minItems": 1,
                         "maxItems": 128,
@@ -1377,6 +1381,10 @@
                   {
                     "type": "object",
                     "properties": {
+                      "discovery": {
+                        "type": "string",
+                        "enum": ["authorized", "public"]
+                      },
                       "requiredScopes": {
                         "minItems": 1,
                         "maxItems": 128,
@@ -1404,6 +1412,9 @@
                     "additionalProperties": false
                   }
                 ]
+              },
+              "securitySchemes": {
+                "not": {}
               },
               "inputSchema": {
                 "type": "object",
@@ -3934,6 +3945,10 @@
                   {
                     "type": "object",
                     "properties": {
+                      "discovery": {
+                        "type": "string",
+                        "enum": ["authorized", "public"]
+                      },
                       "requiredScopes": {
                         "minItems": 1,
                         "maxItems": 128,
@@ -3963,6 +3978,10 @@
                   {
                     "type": "object",
                     "properties": {
+                      "discovery": {
+                        "type": "string",
+                        "enum": ["authorized", "public"]
+                      },
                       "requiredScopes": {
                         "minItems": 1,
                         "maxItems": 128,
@@ -3990,6 +4009,9 @@
                     "additionalProperties": false
                   }
                 ]
+              },
+              "securitySchemes": {
+                "not": {}
               },
               "inputSchema": {
                 "type": "object",

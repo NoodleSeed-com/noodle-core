@@ -9,7 +9,7 @@
  */
 import { z } from 'zod';
 import { accessModeSchema } from './access-mode.js';
-import { deploymentOwnerSubjectSchema } from './control-plane.js';
+import { deploymentAuthenticationSchema, deploymentOwnerSubjectSchema } from './control-plane.js';
 
 export * from './access-mode.js';
 export * from './app-purge-reconciliation.js';
@@ -109,6 +109,8 @@ export const deploySuccessResponseSchema = z.object({
   deploymentId: z.string().min(1),
   serverVersion: z.string().min(1),
   accessMode: accessModeSchema,
+  /** Effective authority reported by capable services; absence means unknown on older services. */
+  authentication: deploymentAuthenticationSchema.optional(),
   ownerSubject: deploymentOwnerSubjectSchema.optional(),
   url: z.string().min(1),
   defaultUrl: z.string().min(1),
@@ -275,3 +277,11 @@ export * from './application-connections.js';
 export * from './application-onboarding.js';
 export * from './billing-catalog.js';
 export * from './operation-coordination.js';
+
+export {
+  MIXED_CUSTOMER_AUTH_FEATURE_VERSION,
+  type ServiceInfoClientResponse,
+  type ServiceInfoResponse,
+  serviceInfoClientResponseSchema,
+  serviceInfoResponseSchema,
+} from './service-info.js';

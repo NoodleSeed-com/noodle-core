@@ -15,6 +15,99 @@ const withoutAuth = join(here, 'fixtures', 'embedded-assistant', 'server.ts');
 const withAuth = join(here, 'fixtures', 'embedded-assistant-auth', 'server.ts');
 
 describe('deploy --access customers preflight', () => {
+  it.each([
+    undefined,
+    {},
+    { mixedCustomerAuth: 0 },
+  ])('rejects mixed customer deploy without supported service features %j', async (features) => {
+    const fetchSpy = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        ok: true,
+        status: 'ok',
+        version: 'old',
+        gitSha: 'abc',
+        buildTime: 'now',
+        ...(features === undefined ? {} : { features }),
+      }),
+    );
+    const outcome = await deploy({
+      manifestPath: withAuth,
+      accessMode: 'mixed',
+      serviceUrl: 'http://127.0.0.1:1',
+      fetchImpl: fetchSpy,
+      serverVersion: '1',
+    });
+    expect(outcome).toMatchObject({ ok: false, code: 'mixed_customer_auth_unsupported' });
+    expect(fetchSpy.mock.calls.every(([url]) => String(url).endsWith('/v1/service/info'))).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    1, 2,
+  ])('accepts mixed customer service feature revision %s before deploy', async (revision) => {
+    const fetchSpy = vi.fn<typeof fetch>(async (url) =>
+      String(url).endsWith('/v1/service/info')
+        ? Response.json({
+            ok: true,
+            status: 'ok',
+            version: 'new',
+            gitSha: 'abc',
+            buildTime: 'now',
+            features: { mixedCustomerAuth: revision },
+          })
+        : Response.json({ error: 'stub' }, { status: 503 }),
+    );
+    const outcome = await deploy({
+      manifestPath: withAuth,
+      accessMode: 'mixed',
+      serviceUrl: 'http://127.0.0.1:1',
+      fetchImpl: fetchSpy,
+      serverVersion: '1',
+    });
+    expect(outcome).toMatchObject({ ok: false, status: 503 });
+    expect(String(fetchSpy.mock.calls[0]?.[0])).toContain('/v1/service/info');
+    expect(fetchSpy.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(true);
+  });
+
+  it.each([
+    undefined,
+    'none',
+    'platform',
+    'customer',
+  ] as const)('preserves declared deploy authority %s without guessing when absent', async (authentication) => {
+    const fetchSpy = vi.fn<typeof fetch>(async () =>
+      Response.json(
+        {
+          ok: true,
+          org: 'local',
+          app: 'app',
+          env: 'prod',
+          deploymentId: 'dep',
+          serverVersion: '1',
+          accessMode: 'mixed',
+          url: 'http://127.0.0.1/mcp',
+          defaultUrl: 'http://127.0.0.1/mcp',
+          ...(authentication === undefined ? {} : { authentication }),
+        },
+        { status: 201 },
+      ),
+    );
+    const outcome = await deploy({
+      manifestPath: withoutAuth,
+      accessMode: 'mixed',
+      serviceUrl: 'http://127.0.0.1:1',
+      fetchImpl: fetchSpy,
+      serverVersion: '1',
+    });
+    expect(outcome.ok).toBe(true);
+    if (authentication === undefined) expect(outcome).not.toHaveProperty('authentication');
+    else expect(outcome).toHaveProperty('authentication', authentication);
+    expect(fetchSpy.mock.calls.some(([url]) => String(url).endsWith('/v1/service/info'))).toBe(
+      false,
+    );
+  });
+
   it('fails locally with server_auth_required before any network call', async () => {
     const fetchSpy = vi.fn<typeof fetch>(() => {
       throw new Error('preflight must not reach the network');

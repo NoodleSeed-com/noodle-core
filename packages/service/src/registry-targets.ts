@@ -1,15 +1,26 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { RECORD_CONNECTOR_ID } from '@noodle-borg/compiler';
 import type { ServedArtifact } from '@noodle-borg/protocol';
-import type { OwnerTokenVerifier, ServedTarget, TenantRouteRef } from '@noodle-borg/transport-http';
+import type {
+  OwnerTokenVerifier,
+  ServedTarget,
+  TargetAuthentication,
+  TenantRouteRef,
+} from '@noodle-borg/transport-http';
 import { parseAppPackageSnapshot } from './app-package-snapshot.js';
-import { hasExactCustomerAuthProjection } from './customer-auth-audience-binding.js';
+import {
+  hasExactCustomerAuthProjection,
+  requiresCustomerAuthProjection,
+} from './customer-auth-audience-binding.js';
+import { deploymentRecordVersionError } from './deployment-record-version.js';
 import type { NativeRecordConnectorFactory } from './native-record-connector.js';
 import type { ServerRegistry } from './registry.js';
 import { deploymentOwnerSubject } from './registry-helpers.js';
 import type { RegistryStateView } from './registry-state.js';
 import type { DeployRecord, SecretEnvelope, TenantAuthConfig, TenantRef } from './store.js';
 import { validateTenantRef } from './store.js';
+
+const targetPolicyVersions = new WeakMap<ServedTarget, number>();
 
 /** Replace only the platform record port; unrelated compiled runtime ports retain their authority. */
 export function rebindNativeRecords(
@@ -23,7 +34,7 @@ export function rebindNativeRecords(
     deploymentId: record.deploymentId,
   });
   const previous = target.served.deps.connectors;
-  return {
+  return rememberTargetPolicy(record, {
     ...target,
     served: {
       ...target.served,
@@ -39,7 +50,7 @@ export function rebindNativeRecords(
         },
       },
     },
-  };
+  });
 }
 
 /**
@@ -51,12 +62,15 @@ export function servedTargetFor(
   served: ServedArtifact,
   customerVerifierFactory?: (auth: TenantAuthConfig) => OwnerTokenVerifier,
 ): ServedTarget {
+  const versionError = deploymentRecordVersionError(record);
+  if (versionError !== undefined) throw new Error(versionError.code);
   const accessMode = record.accessMode;
   if (accessMode === undefined) {
     throw new Error(`deployment ${record.deploymentId} has unsupported legacy access mode`);
   }
-  const customerAuth = accessMode === 'customers' ? served.artifact.server.auth : undefined;
-  if (accessMode === 'customers' && customerAuth === undefined) {
+  const customerOwned = requiresCustomerAuthProjection(record, served.artifact.server.auth);
+  const customerAuth = customerOwned ? served.artifact.server.auth : undefined;
+  if (customerOwned && customerAuth === undefined) {
     throw new MissingCustomerAuthError(record.deploymentId);
   }
   if (!hasExactCustomerAuthProjection(record, customerAuth)) {
@@ -64,7 +78,7 @@ export function servedTargetFor(
   }
   const boundServed = bindAppPackageSnapshot(served, record.appPackageSnapshot);
   const ownerSubject = deploymentOwnerSubject(record);
-  return {
+  return rememberTargetPolicy(record, {
     served: boundServed,
     deploymentId: record.deploymentId,
     accessMode,
@@ -75,10 +89,11 @@ export function servedTargetFor(
       ? { orgMembershipSources: record.orgMembershipSources }
       : {}),
     ...(accessMode === 'owner-only' && ownerSubject !== undefined ? { ownerSubject } : {}),
-    ...(customerAuth !== undefined
-      ? customerTargetFields(customerAuth, customerVerifierFactory)
-      : {}),
-  };
+    authentication:
+      customerAuth !== undefined
+        ? customerTargetFields(customerAuth, customerVerifierFactory)
+        : { kind: 'platform' },
+  });
 }
 
 class MissingCustomerAuthError extends Error {
@@ -109,6 +124,10 @@ function servedTargetMatchesRecord(target: ServedTarget, record: DeployRecord): 
   return (
     target.deploymentId === record.deploymentId &&
     target.accessMode === record.accessMode &&
+    target.authentication?.kind ===
+      (requiresCustomerAuthProjection(record, target.served.artifact.server.auth)
+        ? 'customer'
+        : 'platform') &&
     target.org === record.orgSlug &&
     target.app === record.appSlug &&
     target.environment === record.environment &&
@@ -139,7 +158,12 @@ export async function targetForPersistedRecord(
   },
 ): Promise<ServedTarget | undefined> {
   const cached = state.servers.get(record.deploymentId);
+  const cachedSchemaVersion = cached === undefined ? undefined : targetPolicyVersions.get(cached);
   state.records.set(record.deploymentId, record);
+  if (deploymentRecordVersionError(record) !== undefined) {
+    state.servers.delete(record.deploymentId);
+    return undefined;
+  }
   if (cached === undefined) return state.load?.();
   if (!hasExactCustomerAuthProjection(record, cached.served.artifact.server.auth)) {
     state.servers.delete(record.deploymentId);
@@ -151,7 +175,8 @@ export async function targetForPersistedRecord(
   ) {
     return undefined;
   }
-  if (servedTargetMatchesRecord(cached, record)) return cached;
+  if (cachedSchemaVersion === record.schemaVersion && servedTargetMatchesRecord(cached, record))
+    return cached;
   const reconciled = servedTargetFor(record, cached.served, state.customerVerifierFactory);
   state.servers.set(record.deploymentId, reconciled);
   return reconciled;
@@ -170,31 +195,22 @@ function sameStrings(left?: readonly string[], right?: readonly string[]): boole
 function customerTargetFields(
   auth: TenantAuthConfig,
   customerVerifierFactory?: (auth: TenantAuthConfig) => OwnerTokenVerifier,
-): {
-  readonly authServerIssuer?: string;
-  readonly authServerIssuers?: readonly string[];
-  readonly verifyToken?: OwnerTokenVerifier;
-} {
-  if (auth.kind === 'bridge') {
-    return {
-      verifyToken: customerVerifierFactory?.(auth) ?? denyAllCustomerToken,
-    };
-  }
-  if (auth.kind === 'federatedOidc') {
-    const issuers = auth.issuers.map((issuer) => issuer.issuer);
-    return {
-      ...(issuers[0] === undefined ? {} : { authServerIssuer: issuers[0] }),
-      authServerIssuers: issuers,
-      verifyToken: customerVerifierFactory?.(auth) ?? denyAllCustomerToken,
-    };
-  }
+): TargetAuthentication {
   return {
-    authServerIssuer: auth.issuer,
-    verifyToken: customerVerifierFactory?.(auth) ?? denyAllCustomerToken,
+    kind: 'customer',
+    ...(auth.kind === 'bridge'
+      ? {}
+      : {
+          authorizationServers:
+            auth.kind === 'federatedOidc'
+              ? auth.issuers.map((issuer) => issuer.issuer)
+              : [auth.issuer],
+        }),
+    ...(customerVerifierFactory === undefined
+      ? {}
+      : { verifyToken: customerVerifierFactory(auth) }),
   };
 }
-
-const denyAllCustomerToken: OwnerTokenVerifier = async () => null;
 
 export async function authorizationMetadataForTenant(
   registry: ServerRegistry,
@@ -212,8 +228,9 @@ export async function authorizationMetadataForTenant(
       : await registry.getActiveByTenantVersion(tenant, tenant.serverVersion);
   if (target === undefined) return undefined;
   const authorizationServers =
-    target.authServerIssuers ??
-    (target.authServerIssuer === undefined ? undefined : [target.authServerIssuer]);
+    target.authentication?.kind === 'customer'
+      ? target.authentication.authorizationServers
+      : undefined;
   const requiredScopes = [
     ...new Set(
       target.served.artifact.tools.flatMap((tool) => tool.authorization?.requiredScopes ?? []),
@@ -291,4 +308,9 @@ export async function deploymentSourceFor(
     ...(record.accessMode === undefined ? {} : { accessMode: record.accessMode }),
     ...(record.serverVersion === undefined ? {} : { serverVersion: record.serverVersion }),
   };
+}
+
+function rememberTargetPolicy(record: DeployRecord, target: ServedTarget): ServedTarget {
+  targetPolicyVersions.set(target, record.schemaVersion);
+  return target;
 }

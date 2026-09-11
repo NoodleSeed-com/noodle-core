@@ -85,12 +85,17 @@ describe('customer-auth example', () => {
     expect(catalog?.connectors[0]?.http).not.toHaveProperty('allowedOrigins');
     expect(JSON.stringify({ manifest, catalog })).not.toContain('tenant-a.api.noodleseed.dev');
     expect(manifest.tools.find((tool) => tool.name === 'list_org_apps')?.authorization).toEqual({
+      discovery: 'public',
       requiredScopes: ['org_apps:read'],
       allowedRoles: ['org_admin', 'org_member'],
     });
     expect(
       manifest.tools.find((tool) => tool.name === 'list_my_organizations')?.authorization,
-    ).toBeUndefined();
+    ).toEqual({ discovery: 'public', requiredScopes: ['organizations:read'] });
+    const help = manifest.tools.find((tool) => tool.name === 'help');
+    expect(help).toBeDefined();
+    expect(help?.authorization).toBeUndefined();
+    expect(help?.annotations?.readOnlyHint).toBe(true);
     expect(manifest.tools.find((tool) => tool.name === 'archive_org_app')).toMatchObject({
       authorization: {
         requiredScopes: ['org_apps:write'],

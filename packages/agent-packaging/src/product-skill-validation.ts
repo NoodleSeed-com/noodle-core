@@ -229,6 +229,11 @@ function isVisibility(value: unknown): boolean {
 
 function isValidAuthorization(value: unknown): boolean {
   if (!isRecord(value)) return false;
+  if (
+    Object.keys(value).some((key) => !['requiredScopes', 'allowedRoles', 'discovery'].includes(key))
+  )
+    return false;
+  if (value.discovery !== undefined && value.discovery !== 'public') return false;
   const scopesValid =
     value.requiredScopes === undefined ||
     boundedArray(value.requiredScopes, 1, MAX_AUTHORIZATION_VALUES, (scope) =>

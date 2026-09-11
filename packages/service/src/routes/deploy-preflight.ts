@@ -8,13 +8,13 @@ import {
   deployPreflightRequestSchema,
   formatWireError,
 } from '@noodle-borg/wire-contracts';
+import { isIdentityAccessMode } from '../deployment-access-mode.js';
 import type { ServiceOptions } from '../options.js';
 import type { ServerRegistry } from '../registry.js';
 import { manifestUsesUserRoot } from '../registry-access.js';
 import type { DeployError } from '../registry-types.js';
 import type { AuditSink } from '../store/audit.js';
 import type { ControlPlaneStore, TenantRef } from '../store.js';
-import { isIdentityAccessMode } from './access-mode.js';
 import {
   authorizeDeploymentOwnerSelection,
   authorizeTenantControl,
@@ -123,7 +123,7 @@ export async function handleDeployPreflight(
     }
 
     const accessMode = parsed.accessMode ?? 'owner-only';
-    if (isIdentityAccessMode(accessMode) && identity === undefined) {
+    if (isIdentityAccessMode(accessMode, parsed.manifest) && identity === undefined) {
       return sendJson(res, 401, {
         code: 'deployer_identity_required',
         error: `${accessMode} deployments require an authenticated deployer`,

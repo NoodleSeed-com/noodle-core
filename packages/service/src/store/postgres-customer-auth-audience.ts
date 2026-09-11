@@ -31,7 +31,8 @@ export async function findActiveCustomerAuthAudienceConflictRow(
      FROM deploy_records
      WHERE active = true
        AND archived_at IS NULL
-       AND access_mode = 'customers'
+       AND (access_mode = 'customers'
+         OR (access_mode = 'mixed' AND schema_version = 2 AND server_auth IS NOT NULL))
        AND NOT (org_slug = $1 AND app_slug = $2 AND environment = $3)`,
     [safe.org, safe.app, safe.env],
   );

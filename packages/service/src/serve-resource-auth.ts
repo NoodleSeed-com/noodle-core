@@ -78,7 +78,7 @@ export async function bridgeAuthForResource(
       ? await registry.getActiveByTenant(tenant)
       : await registry.getActiveByTenantVersion(tenant, tenant.serverVersion);
   const auth = target?.served.artifact.server.auth;
-  if (auth?.kind !== 'bridge') return undefined;
+  if (target?.authentication?.kind !== 'customer' || auth?.kind !== 'bridge') return undefined;
   const variables = await registry.configStore.resolveConfigValues(
     'variable',
     resolveConfigScope(tenant),

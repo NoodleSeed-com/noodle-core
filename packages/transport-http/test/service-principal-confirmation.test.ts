@@ -205,7 +205,7 @@ async function startToolServer(input: {
         org: 'acme',
         app: 'todoist',
         environment: 'prod',
-        verifyToken: async () => ({ caller: input.caller }),
+        authentication: { kind: 'platform', verifyToken: async () => ({ caller: input.caller }) },
       }),
       resolveInvocationContext: input.resolveInvocationContext,
       beforeToolDispatch: input.beforeToolDispatch,

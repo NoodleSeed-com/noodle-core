@@ -40,7 +40,10 @@ export async function handleLiveAuthDoctor(
       ? await registry.getActiveByTenant(tenant)
       : await registry.getActiveByTenantVersion(tenant, serverVersion);
   if (target === undefined) return sendJson(res, 404, { ok: false, error: 'deployment not found' });
-  if (target.accessMode !== 'customers' || target.verifyToken === undefined) {
+  if (
+    target.authentication?.kind !== 'customer' ||
+    target.authentication.verifyToken === undefined
+  ) {
     return sendJson(res, 409, {
       ok: false,
       error: 'live auth doctor requires a customers deployment with customer auth',
@@ -51,7 +54,7 @@ export async function handleLiveAuthDoctor(
     return sendJson(res, 401, { ok: false, error: 'missing customer bearer token' });
   const endpointOptions = await options.resolveEndpointOptions?.(tenant.org);
   const resource = tenantMcpUrl(options.serviceBase, tenant, serverVersion, endpointOptions);
-  const verification = await target.verifyToken(token, resource).catch(() => null);
+  const verification = await target.authentication.verifyToken(token, resource).catch(() => null);
   if (verification === null || verification.caller.identityKind !== 'customer') {
     return sendJson(res, 401, { ok: false, error: 'customer token verification failed' });
   }

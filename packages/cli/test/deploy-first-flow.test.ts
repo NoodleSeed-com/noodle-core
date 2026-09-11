@@ -497,7 +497,10 @@ export default server('local_asset', { title: 'Local asset', version: '1.0.0', b
     ).resolves.toMatchObject({ response: { ready: true } });
   });
 
-  it('preflights, deploys with a retry key, then verifies hosted readiness', async () => {
+  it.each([
+    true,
+    false,
+  ])('reports effective deploy authentication with JSON=%s after verifying readiness', async (json) => {
     const calls: string[] = [];
     let deployHeaders: Headers | undefined;
     vi.stubGlobal(
@@ -533,6 +536,7 @@ export default server('local_asset', { title: 'Local asset', version: '1.0.0', b
               url: 'https://service.example.test/o/acme/support/v1/mcp',
               defaultUrl: 'https://service.example.test/o/acme/support/mcp',
               accessMode: 'owner-only',
+              authentication: 'platform',
             },
             { status: 201 },
           );
@@ -549,13 +553,17 @@ export default server('local_asset', { title: 'Local asset', version: '1.0.0', b
       }),
     );
 
-    expect(await run(args(), {}, home)).toBe(0);
+    expect(await run(json ? args() : args().filter((arg) => arg !== '--json'), {}, home)).toBe(0);
     expect(calls).toEqual([
       'https://service.example.test/v1/orgs/acme/apps/support/envs/prod/deploy/preflight',
       'https://service.example.test/v1/orgs/acme/apps/support/envs/prod/deploy',
       'https://service.example.test/v1/orgs/acme/apps/support/envs/prod/smoke',
     ]);
     expect(deployHeaders?.get('idempotency-key')).toMatch(/^sha256:[a-f0-9]{64}$/);
+    if (!json) {
+      expect(stdout()).toContain('Auth:      platform');
+      return;
+    }
     const envelope = assertJsonEnvelope<{
       deploymentId: string;
       verification: { ok: boolean };
@@ -564,6 +572,7 @@ export default server('local_asset', { title: 'Local asset', version: '1.0.0', b
     if (!envelope.ok) return;
     expect(envelope.data).toMatchObject({
       deploymentId: 'deploy-1234567890abcdef',
+      authentication: 'platform',
       verification: { ok: true },
     });
   });

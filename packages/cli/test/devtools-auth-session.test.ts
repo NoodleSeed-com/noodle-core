@@ -33,6 +33,36 @@ const pending: McpOAuthPendingAuthorization = {
 };
 
 describe('DevtoolsAuthSession', () => {
+  it('settles a challenged tool promptly when its matching provider callback fails', async () => {
+    const driver = fakeDriver();
+    driver.exchangeCallback = vi.fn(async () => {
+      throw new Error('access_denied');
+    });
+    const session = createSession(driver);
+    let outcome: boolean | undefined;
+    const waiting = session.requestSignIn().then((value) => {
+      outcome = value;
+    });
+    await session.start();
+    await expect(
+      session.complete('http://127.0.0.1:7002/auth/callback?state=wrong&error=access_denied'),
+    ).rejects.toThrow('does not match');
+    expect(outcome).toBeUndefined();
+    await expect(
+      session.complete(
+        'http://127.0.0.1:7002/auth/callback?state=state-secret&error=access_denied',
+      ),
+    ).rejects.toThrow('access_denied');
+    await Promise.resolve();
+    try {
+      expect(outcome).toBe(false);
+      expect(session.status()).not.toHaveProperty('signInRequested');
+    } finally {
+      session.clear();
+      await waiting;
+    }
+  });
+
   it('keeps OAuth credentials in memory and returns only safe status fields', async () => {
     const driver = fakeDriver();
     const session = new DevtoolsAuthSession({

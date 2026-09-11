@@ -24,6 +24,7 @@ import { guard, logRequest, rpcError, sendJson } from './responses.js';
 import { type PublicTenantRouting, resolveRoute } from './routing.js';
 import { serveRequest } from './serve-request.js';
 import type { HostedToolAuthorizationObserver } from './service-principal-authorization.js';
+import { resolveTargetAuthentication, type TargetAuthentication } from './target-authentication.js';
 import type { HostedToolDispatchHook } from './tool-dispatch.js';
 
 export type {
@@ -145,7 +146,7 @@ export function createMcpHttpHandler(
           app: undefined,
           environment: undefined,
           orgMembershipSources: undefined,
-          verifyOwnerToken: options.verifyOwnerToken,
+          authentication: resolveTargetAuthentication({}, options.verifyOwnerToken),
           authorizeDataPlaneIdentity: options.authorizeDataPlaneIdentity,
           admissionGate: options.admissionGate,
           captureRequestEvent: options.captureRequestEvent,
@@ -179,9 +180,7 @@ export interface ServedTarget {
   readonly app?: string;
   readonly environment?: string;
   readonly orgMembershipSources?: readonly OrgMembershipSource[];
-  readonly verifyToken?: OwnerTokenVerifier;
-  readonly authServerIssuer?: string;
-  readonly authServerIssuers?: readonly string[];
+  readonly authentication?: TargetAuthentication;
   readonly intentCaptureMode?: IntentCaptureMode;
 }
 
@@ -265,10 +264,7 @@ export function createMcpRouter(
             ownerSubject: resolvedTarget.ownerSubject,
             org: resolvedTarget.org,
             orgMembershipSources: resolvedTarget.orgMembershipSources,
-            verifyOwnerToken:
-              resolvedTarget.accessMode === 'customers'
-                ? resolvedTarget.verifyToken
-                : (resolvedTarget.verifyToken ?? options.verifyOwnerToken),
+            authentication: resolveTargetAuthentication(resolvedTarget, options.verifyOwnerToken),
             authorizeDataPlaneIdentity: options.authorizeDataPlaneIdentity,
             admissionGate: options.admissionGate,
             captureRequestEvent: options.captureRequestEvent,

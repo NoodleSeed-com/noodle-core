@@ -51,6 +51,168 @@ const ROUTED_CATALOG = {
 } as const;
 
 describe('customer-auth recovery boundary', () => {
+  it.each([
+    undefined,
+    '1',
+  ])('rejects deploy and preflight over unsupported active version %s', async (serverVersion) => {
+    const store = new InMemoryArtifactStore();
+    await store.append(record({ schemaVersion: 3, accessMode: 'mixed', serverVersion }));
+    const registry = registryFor(store);
+    const options = {
+      accessMode: 'mixed' as const,
+      actor: { subject: 'owner-sub', email: 'owner@example.com', superAdmin: false },
+      serverVersion,
+    };
+    const expected = { ok: false, errors: [{ code: 'unsupported_deployment_record_version' }] };
+    await expect(
+      registry.preflightDeploy(TENANT, manifest(FEDERATED_AUTH), options),
+    ).resolves.toMatchObject(expected);
+    await expect(registry.deploy(TENANT, manifest(FEDERATED_AUTH), options)).resolves.toMatchObject(
+      expected,
+    );
+    expect(await store.loadAll()).toHaveLength(1);
+    await expect(store.get('deployment-1')).resolves.toMatchObject({
+      active: true,
+      schemaVersion: 3,
+    });
+  });
+
+  it('rejects an idempotent deploy replay after its policy version advances', async () => {
+    const store = new InMemoryArtifactStore();
+    const registry = registryFor(store);
+    const options = {
+      accessMode: 'mixed' as const,
+      actor: { subject: 'owner-sub', email: 'owner@example.com', superAdmin: false },
+      serverVersion: '1',
+      idempotencyKey: 'same-deploy',
+    };
+    const deployed = await registry.deploy(TENANT, manifest(FEDERATED_AUTH), options);
+    expect(deployed.ok).toBe(true);
+    if (!deployed.ok) throw new Error('fixture deploy failed');
+    const persisted = await store.get(deployed.deploymentId);
+    if (!persisted) throw new Error('fixture record missing');
+    await store.append({ ...persisted, schemaVersion: 3 });
+    await expect(registry.deploy(TENANT, manifest(FEDERATED_AUTH), options)).resolves.toMatchObject(
+      {
+        ok: false,
+        errors: [{ code: 'unsupported_deployment_record_version' }],
+      },
+    );
+  });
+
+  it('maps a concurrent newer policy write to a deploy diagnostic', async () => {
+    class DeployRaceStore extends InMemoryArtifactStore {
+      override async append(candidate: DeployRecord) {
+        await super.append({
+          ...record({ schemaVersion: 3, accessMode: 'mixed' }),
+          serverVersion: candidate.serverVersion,
+        });
+        return super.append(candidate);
+      }
+    }
+    const store = new DeployRaceStore();
+    await expect(
+      registryFor(store).deploy(TENANT, manifest(FEDERATED_AUTH), {
+        accessMode: 'mixed',
+        actor: { subject: 'owner-sub', email: 'owner@example.com', superAdmin: false },
+        serverVersion: '1',
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      errors: [{ code: 'unsupported_deployment_record_version' }],
+    });
+    expect(await store.loadAll()).toHaveLength(1);
+  });
+
+  it.each([0, 3, 4])('refuses to recover unsupported record version %s', async (schemaVersion) => {
+    const store = new InMemoryArtifactStore();
+    await store.append(record({ schemaVersion, accessMode: 'mixed' }));
+    const seenAuth: TenantAuthConfig[] = [];
+    const registry = registryFor(store, seenAuth);
+
+    await expect(registry.recover()).resolves.toMatchObject({
+      recovered: 0,
+      failed: [
+        { errors: [{ code: 'unsupported_deployment_record_version', path: 'schemaVersion' }] },
+      ],
+    });
+    await expect(registry.getActiveByTenant(TENANT)).resolves.toBeUndefined();
+    expect(seenAuth).toEqual([]);
+  });
+
+  it('keeps a legacy mixed declaration dormant after recovery', async () => {
+    const store = new InMemoryArtifactStore();
+    await store.append(record({ accessMode: 'mixed' }));
+    const seenAuth: TenantAuthConfig[] = [];
+    const registry = registryFor(store, seenAuth);
+
+    await expect(registry.recover()).resolves.toEqual({ recovered: 1, failed: [] });
+    const target = await registry.getActiveByTenant(TENANT);
+    expect(target?.accessMode).toBe('mixed');
+    expect(target?.authentication?.verifyToken).toBeUndefined();
+    expect(target?.authentication).toEqual({ kind: 'platform' });
+    expect(seenAuth).toEqual([]);
+  });
+
+  it.each([
+    { name: 'tenant', lookup: (registry: ServerRegistry) => registry.getActiveByTenant(TENANT) },
+    {
+      name: 'version',
+      lookup: (registry: ServerRegistry) => registry.getActiveByTenantVersion(TENANT, '1'),
+    },
+    {
+      name: 'deployment',
+      lookup: (registry: ServerRegistry) => registry.getServing('deployment-1'),
+    },
+    { name: 'internal', lookup: (registry: ServerRegistry) => registry.get('deployment-1') },
+  ])('evicts a stale $name target after its record version changes', async ({ lookup }) => {
+    const store = new InMemoryArtifactStore();
+    await store.append(record({ accessMode: 'mixed' }));
+    const registry = registryFor(store);
+    await expect(lookup(registry)).resolves.toBeDefined();
+    await store.append(record({ schemaVersion: 3, accessMode: 'mixed' }));
+
+    await expect(lookup(registry)).resolves.toBeUndefined();
+    await expect(registryFor(store).get('deployment-1')).resolves.toBeUndefined();
+  });
+
+  it.each([
+    'mixed',
+    'customers',
+  ] as const)('refuses an unsupported record access mutation to %s', async (accessMode) => {
+    const store = new InMemoryArtifactStore();
+    await store.append(record({ schemaVersion: 3, accessMode: 'mixed' }));
+    const registry = registryFor(store);
+
+    await expect(registry.updateAccess(TENANT, { accessMode })).resolves.toMatchObject({
+      ok: false,
+      status: 409,
+      code: 'unsupported_deployment_record_version',
+    });
+    await expect(store.get('deployment-1')).resolves.toMatchObject({
+      schemaVersion: 3,
+      accessMode: 'mixed',
+    });
+  });
+
+  it('refuses unsupported rollback targets but can roll back away from one', async () => {
+    const store = new InMemoryArtifactStore();
+    await store.append(record({ schemaVersion: 3, accessMode: 'mixed' }));
+    await store.append(record({ deploymentId: 'supported-history', active: false }));
+    const registry = registryFor(store);
+
+    await expect(registry.rollback(TENANT, 'deployment-1')).resolves.toMatchObject({
+      ok: false,
+      status: 409,
+      error: 'deployment cannot be activated: unsupported_deployment_record_version',
+    });
+    await expect(registry.rollback(TENANT, 'supported-history')).resolves.toMatchObject({
+      ok: true,
+      deploymentId: 'supported-history',
+      accessMode: 'customers',
+    });
+  });
+
   it('rebuilds federated issuer and verifier state from the compiled manifest after restart', async () => {
     const store = new InMemoryArtifactStore();
     await store.append(record({ manifest: manifest(FEDERATED_AUTH) }));
@@ -60,8 +222,10 @@ describe('customer-auth recovery boundary', () => {
     await expect(registry.recover()).resolves.toEqual({ recovered: 1, failed: [] });
     const target = await registry.getActiveByTenant(TENANT);
 
-    expect(target?.authServerIssuers).toEqual(['https://idp-a.example', 'https://idp-b.example']);
-    expect(target?.verifyToken).toBeDefined();
+    expect(target?.authentication).toMatchObject({
+      authorizationServers: ['https://idp-a.example', 'https://idp-b.example'],
+    });
+    expect(target?.authentication?.verifyToken).toBeDefined();
     expect(seenAuth).toEqual([FEDERATED_AUTH]);
   });
 
@@ -126,11 +290,16 @@ describe('customer-auth recovery boundary', () => {
     await expect(registry.recover()).resolves.toEqual({ recovered: 1, failed: [] });
     const target = await registry.getActiveByTenant(TENANT);
 
-    await expect(target?.verifyToken?.('customer-token', expectedResource)).resolves.toMatchObject({
+    await expect(
+      target?.authentication?.verifyToken?.('customer-token', expectedResource),
+    ).resolves.toMatchObject({
       caller: { audience: expectedResource },
     });
     await expect(
-      target?.verifyToken?.('customer-token', 'https://cloud.example/o/acme/other/prod/mcp'),
+      target?.authentication?.verifyToken?.(
+        'customer-token',
+        'https://cloud.example/o/acme/other/prod/mcp',
+      ),
     ).resolves.toBe(null);
   });
 
@@ -142,8 +311,10 @@ describe('customer-auth recovery boundary', () => {
 
     const target = await registry.getActiveByTenant(TENANT);
 
-    expect(target?.authServerIssuers).toEqual(['https://idp-a.example', 'https://idp-b.example']);
-    expect(target?.verifyToken).toBeDefined();
+    expect(target?.authentication).toMatchObject({
+      authorizationServers: ['https://idp-a.example', 'https://idp-b.example'],
+    });
+    expect(target?.authentication?.verifyToken).toBeDefined();
     expect(seenAuth).toEqual([FEDERATED_AUTH]);
   });
 
@@ -266,7 +437,9 @@ describe('customer-auth recovery boundary', () => {
       },
     );
     const target = await registry.getActiveByTenant(TENANT);
-    expect(target?.authServerIssuers).toEqual(['https://idp-a.example', 'https://idp-b.example']);
+    expect(target?.authentication).toMatchObject({
+      authorizationServers: ['https://idp-a.example', 'https://idp-b.example'],
+    });
     await expect(store.getActiveByTenant(TENANT)).resolves.toMatchObject({
       accessMode: 'customers',
       serverAuth: FEDERATED_AUTH,
@@ -433,8 +606,20 @@ describe('customer-auth recovery boundary', () => {
     const registry = registryFor(store);
 
     await expect(registry.getStatus(TENANT, 'https://cloud.example')).resolves.toMatchObject({
+      deployment: { authentication: 'customer' },
       health: { state: 'unhealthy' },
     });
+  });
+
+  it('does not report effective authentication for an unsupported active record', async () => {
+    const store = new InMemoryArtifactStore();
+    await store.append(record({ schemaVersion: 3, accessMode: 'mixed' }));
+    const registry = registryFor(store);
+
+    const status = await registry.getStatus(TENANT, 'https://cloud.example');
+
+    expect(status).toMatchObject({ health: { state: 'unhealthy' } });
+    expect(status?.deployment.authentication).toBeUndefined();
   });
 
   it.each([
@@ -464,7 +649,10 @@ describe('customer-auth recovery boundary', () => {
 
     await expect(lookup(staleReader)).resolves.toMatchObject({
       accessMode: 'customers',
-      authServerIssuers: ['https://idp-a.example', 'https://idp-b.example'],
+      authentication: {
+        kind: 'customer',
+        authorizationServers: ['https://idp-a.example', 'https://idp-b.example'],
+      },
     });
   });
 });

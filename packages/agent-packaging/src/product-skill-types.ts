@@ -87,6 +87,7 @@ export interface ProductSkillTool {
   readonly visibility: readonly ('model' | 'app')[];
   readonly authorization?:
     | {
+        readonly discovery?: 'public' | undefined;
         readonly requiredScopes?: readonly string[] | undefined;
         readonly allowedRoles?: readonly string[] | undefined;
       }

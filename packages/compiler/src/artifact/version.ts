@@ -62,7 +62,8 @@
  * `0.20.0` (Nested operation authority): resolved operation references carry exact declared calls,
  * including independently validated credential bindings for sandboxed compute dependencies.
  */
-export const ARTIFACT_SCHEMA_VERSION = '0.20.0';
+/** `0.21.0`: protected tools may opt into public descriptor discovery without execution permission. */
+export const ARTIFACT_SCHEMA_VERSION = '0.21.0';
 
 /** mimeType for an MCP Apps UI resource (SEP-1865). Widgets are served under this profile. */
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app';

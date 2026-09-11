@@ -21,7 +21,6 @@ import {
 } from '@noodle-borg/module';
 import type { Connector, SecretBox } from '@noodle-borg/runtime';
 import type { OwnerTokenVerifier, ServedTarget } from '@noodle-borg/transport-http';
-import { normalizePersistedConnectorsForCompile } from './connector-normalize.js';
 import {
   CustomerAuthAudienceConflictError,
   customerAuthAudienceConflictFailure,
@@ -32,21 +31,31 @@ import {
   deploymentLockedConflict,
   deploymentLockedPreflight,
 } from './deployment-lock.js';
+import {
+  DeploymentPolicyChangedError,
+  UnsupportedDeploymentRecordVersionError,
+  unsupportedDeploymentRecordFailure,
+} from './deployment-record-version.js';
 import { defaultActiveRecord } from './deployment-versioning.js';
 import type { NativeRecordConnectorFactory } from './native-record-connector.js';
 import type { OAuthStore } from './oauth/store.js';
 import { updateRegistryAccess } from './registry-access.js';
-import { compileRegistryTarget, type RegistryCompileResult } from './registry-compile.js';
 import {
+  compilePersistedRegistryRecord,
+  compileRegistryTarget,
+  loadPersistedRegistryTarget,
+  type RegistryCompileResult,
+} from './registry-compile.js';
+import {
+  createRegistryDeployRecord,
+  deployedRecordResult,
+  deploymentWriteVersionError,
   preflightRegistryDeploy,
+  replacementDeploymentPolicy,
   resolveDeployAttempt,
   withDeploymentConfiguration,
 } from './registry-deploy-transaction.js';
-import {
-  type ActiveDeployProvenance,
-  deploymentOwnerSubject,
-  missingCapabilityErrors,
-} from './registry-helpers.js';
+import { type ActiveDeployProvenance, deploymentOwnerSubject } from './registry-helpers.js';
 import { registryDeploymentPackage, renderDeploymentPackageSnapshot } from './registry-package.js';
 import { recoverRegistryRecords } from './registry-recover.js';
 import { rollbackDeployment, rollbackWithMappedErrors } from './registry-rollback.js';
@@ -72,9 +81,7 @@ import {
 import { deploymentStatusFor } from './registry-status.js';
 import {
   deploymentSourceFor,
-  emptySecretEnvelope,
   rebindNativeRecords,
-  recordTenant,
   servedTargetFor,
   targetForPersistedRecord,
   tenantDeploymentKey,
@@ -241,16 +248,7 @@ export class ServerRegistry {
     options: DeployOptions = {},
   ): Promise<RunDeployResult> {
     return withDeploymentConfiguration(this.#configStore, tenant.org, async () => {
-      const {
-        connectors,
-        actor,
-        accessMode,
-        hostedAssets,
-        serverVersion,
-        deploymentSource,
-        idempotencyKey,
-      } = options;
-      const { orgMembershipSources } = options;
+      const { connectors, accessMode, hostedAssets, serverVersion, idempotencyKey } = options;
       const { automationId } = options;
       const safeTenant = validateTenantRef(tenant);
       const safeServerVersion =
@@ -259,6 +257,12 @@ export class ServerRegistry {
         const active = await activeRecordVersion(this.#stateView(), safeTenant, safeServerVersion);
         if (active?.deploymentLock !== undefined) return deploymentLockedConflict();
       }
+      const versionError = await deploymentWriteVersionError(
+        this.#stateView(),
+        safeTenant,
+        safeServerVersion,
+      );
+      if (versionError !== undefined) return { ok: false, errors: [versionError] };
       const preflight = await preflightRegistryDeploy({
         options,
         serviceCapabilities: this.#serviceCapabilities,
@@ -288,31 +292,26 @@ export class ServerRegistry {
       const version = Date.now();
       const built = preflight.bindDeployment(deploymentId);
       const serverAuth = built.artifact.server.auth;
-      const ownerSubject =
-        accessMode === 'owner-only' ? (options.ownerSubject ?? actor?.subject) : undefined;
-      const record: DeployRecord = {
-        schemaVersion: 1,
+      const policy = await replacementDeploymentPolicy(
+        this.#stateView(),
+        safeTenant,
+        safeServerVersion,
+        accessMode,
+        serverAuth,
+        (previous) => this.#compilePersistedRecord(previous),
+      );
+      if (policy.error !== undefined) return { ok: false, errors: [policy.error] };
+      const record = createRegistryDeployRecord({
+        safeTenant,
+        safeServerVersion,
         deploymentId,
-        orgSlug: safeTenant.org,
-        appSlug: safeTenant.app,
-        environment: safeTenant.env,
-        ...(safeServerVersion !== undefined ? { serverVersion: safeServerVersion } : {}),
-        deploymentVersion: version,
-        active: automationId === undefined,
-        serverName: built.artifact.server.name,
-        createdAt: new Date().toISOString(),
-        ...(actor ? { createdBySubject: actor.subject, createdByEmail: actor.email } : {}),
-        ...(ownerSubject !== undefined ? { ownerSubject } : {}),
-        ...(deploymentSource !== undefined ? { deploymentSource } : {}),
-        ...(accessMode !== undefined ? { accessMode } : {}),
-        ...(orgMembershipSources !== undefined ? { orgMembershipSources } : {}),
-        ...(serverAuth !== undefined ? { serverAuth } : {}),
+        version,
+        built,
         manifest,
-        ...(connectors !== undefined ? { connectors } : {}),
-        ...(hostedAssets !== undefined && hostedAssets.length > 0 ? { hostedAssets } : {}),
-        ...(appPackageSnapshot !== undefined ? { appPackageSnapshot } : {}),
-        secrets: emptySecretEnvelope(),
-      };
+        options,
+        schemaVersion: policy.schemaVersion,
+        appPackageSnapshot,
+      });
 
       if (await this.#hasCustomerAuthAudienceConflict(record, serverAuth)) {
         return customerAuthAudienceConflictFailure();
@@ -325,15 +324,24 @@ export class ServerRegistry {
           deploymentId,
           built.artifact.server.knowledge,
           () =>
-            persistDeployRecord(this.#stateView(), record, safeTenant, automationId === undefined),
+            persistDeployRecord(this.#stateView(), record, safeTenant, automationId === undefined, {
+              active: policy.previous ?? null,
+            }),
         );
       } catch (error) {
+        if (error instanceof DeploymentPolicyChangedError)
+          return {
+            ok: false,
+            errors: [{ code: error.code, path: 'accessMode', message: error.message }],
+          };
         if (error instanceof KnowledgePublicationError) {
           return { ok: false, errors: error.errors };
         }
         if (error instanceof CustomerAuthAudienceConflictError) {
           return customerAuthAudienceConflictFailure();
         }
+        if (error instanceof UnsupportedDeploymentRecordVersionError)
+          return unsupportedDeploymentRecordFailure();
         if (error instanceof DeploymentLockedError) return deploymentLockedConflict();
         throw error;
       }
@@ -341,9 +349,19 @@ export class ServerRegistry {
       if (automationId !== undefined) {
         let activation: Awaited<ReturnType<ArtifactStore['activateDeployment']>>;
         try {
-          activation = await this.#store?.activateDeployment(safeTenant, deploymentId, undefined, {
-            automationId,
-          });
+          activation = await this.#store?.activateDeployment(
+            safeTenant,
+            deploymentId,
+            {
+              expectedSchemaVersion: record.schemaVersion,
+              expectedAccessMode: record.accessMode,
+              expectedRevision: record,
+              expectedActivePolicy: { active: policy.previous ?? null },
+            },
+            {
+              automationId,
+            },
+          );
         } catch (error) {
           if (
             error instanceof DeploymentActivationError &&
@@ -357,9 +375,16 @@ export class ServerRegistry {
               ...(safeServerVersion !== undefined ? { serverVersion: safeServerVersion } : {}),
             };
           }
+          if (error instanceof DeploymentPolicyChangedError)
+            return {
+              ok: false,
+              errors: [{ code: error.code, path: 'accessMode', message: error.message }],
+            };
           if (error instanceof CustomerAuthAudienceConflictError) {
             return customerAuthAudienceConflictFailure();
           }
+          if (error instanceof UnsupportedDeploymentRecordVersionError)
+            return unsupportedDeploymentRecordFailure();
           if (error instanceof DeploymentLockedError) return deploymentLockedConflict();
           throw error;
         }
@@ -391,15 +416,7 @@ export class ServerRegistry {
       );
       this.#activeTenants.set(tenantDeploymentKey(safeTenant, safeServerVersion), deploymentId);
       this.#activeTenants.delete(tenantKey(safeTenant));
-      const activeOwnerSubject = deploymentOwnerSubject(active);
-      return {
-        ok: true,
-        deploymentId,
-        deploymentVersion: version,
-        ...(safeServerVersion !== undefined ? { serverVersion: safeServerVersion } : {}),
-        ...(accessMode !== undefined ? { accessMode } : {}),
-        ...(activeOwnerSubject !== undefined ? { ownerSubject: activeOwnerSubject } : {}),
-      };
+      return deployedRecordResult(active);
     });
   }
   /** Read-only deploy validation used by the CLI before config writes, asset upload, or persistence. */
@@ -417,13 +434,28 @@ export class ServerRegistry {
       const active = await activeRecordVersion(this.#stateView(), safeTenant, safeServerVersion);
       if (active?.deploymentLock !== undefined) return deploymentLockedPreflight();
     }
+    const versionError = await deploymentWriteVersionError(
+      this.#stateView(),
+      safeTenant,
+      safeServerVersion,
+    );
+    if (versionError !== undefined) return { ok: false, errors: [versionError] };
     const result = await preflightRegistryDeploy({
       options,
       serviceCapabilities: this.#serviceCapabilities,
       compile: () =>
         this.#compileTarget(safeTenant, manifest, options.connectors, options.hostedAssets, true),
     });
-    return result.ok ? { ok: true } : result;
+    if (!result.ok) return result;
+    const policy = await replacementDeploymentPolicy(
+      this.#stateView(),
+      safeTenant,
+      safeServerVersion,
+      options.accessMode,
+      result.bindDeployment('preflight').artifact.server.auth,
+      (previous) => this.#compilePersistedRecord(previous),
+    );
+    return policy.error === undefined ? { ok: true } : { ok: false, errors: [policy.error] };
   }
 
   async recover(): Promise<RecoverResult> {
@@ -474,21 +506,19 @@ export class ServerRegistry {
   }
 
   #compilePersistedRecord(record: DeployRecord) {
-    return this.#compileTarget(
-      recordTenant(record),
-      record.manifest,
-      record.connectors === undefined
-        ? undefined
-        : normalizePersistedConnectorsForCompile(record.connectors),
-      record.hostedAssets,
-      false,
-      record.deploymentId,
-    );
+    return compilePersistedRegistryRecord(record, this.#compileTarget.bind(this));
   }
   async get(deploymentId: string): Promise<ServedTarget | undefined> {
     if (this.#records.get(deploymentId)?.archivedAt !== undefined) return undefined;
     const cached = this.#servers.get(deploymentId);
-    if (cached) return cached;
+    if (cached) {
+      const record = this.#store
+        ? await this.#store.get(deploymentId)
+        : this.#records.get(deploymentId);
+      return record === undefined || record.archivedAt !== undefined
+        ? undefined
+        : this.#targetForPersistedRecord(record);
+    }
     const inflight = this.#inflight.get(deploymentId);
     if (inflight) return inflight;
     const promise = this.#loadAndCompile(deploymentId).finally(() => {
@@ -740,40 +770,14 @@ export class ServerRegistry {
   }
 
   async #loadAndCompile(source: string | DeployRecord): Promise<ServedTarget | undefined> {
-    const record =
-      typeof source === 'string'
-        ? this.#store
-          ? await this.#store.get(source)
-          : this.#records.get(source)
-        : source;
-    if (!record) return undefined;
-    const deploymentId = record.deploymentId;
-    if (record.archivedAt !== undefined) return undefined;
-    const built = await this.#compilePersistedRecord(record);
-    if (!built.ok) {
-      throw new Error(
-        `deployment ${deploymentId} failed to recompile (${built.errors.map((e) => e.code).join(',')})`,
-      );
-    }
-    const missingCapabilities = missingCapabilityErrors(
-      built.served.artifact.requirements?.capabilities ?? [],
-      this.#serviceCapabilities,
-    );
-    if (missingCapabilities.length > 0) {
-      throw new Error(
-        `deployment ${deploymentId} failed capability requirements (${missingCapabilities.map((e) => e.path).join(',')})`,
-      );
-    }
-    if (
-      record.active &&
-      (await this.#hasCustomerAuthAudienceConflict(record, built.served.artifact.server.auth))
-    ) {
-      return undefined;
-    }
-    const target = servedTargetFor(record, built.served, this.#customerVerifierFactory);
-    this.#servers.set(deploymentId, target);
-    this.#records.set(deploymentId, record);
-    return target;
+    return loadPersistedRegistryTarget(source, {
+      state: this.#stateView(),
+      compile: (record) => this.#compilePersistedRecord(record),
+      capabilities: this.#serviceCapabilities,
+      customerVerifierFactory: this.#customerVerifierFactory,
+      hasCustomerAuthConflict: (record, auth) =>
+        this.#hasCustomerAuthAudienceConflict(record, auth),
+    });
   }
 
   async #hasCustomerAuthAudienceConflict(

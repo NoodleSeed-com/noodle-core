@@ -1,0 +1,67 @@
+{
+  "$comment": "Unmodified authorization schema extracted from packages/compiler/manifest.schema.json at ede579be2 (artifact 0.20.0), before ADR 0236 discovery.",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "requiredScopes": {
+          "minItems": 1,
+          "maxItems": 128,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"
+          }
+        },
+        "allowedRoles": {
+          "minItems": 1,
+          "maxItems": 128,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[^\\p{Cc}]+$"
+          }
+        }
+      },
+      "required": [
+        "requiredScopes"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "requiredScopes": {
+          "minItems": 1,
+          "maxItems": 128,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"
+          }
+        },
+        "allowedRoles": {
+          "minItems": 1,
+          "maxItems": 128,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "pattern": "^[^\\p{Cc}]+$"
+          }
+        }
+      },
+      "required": [
+        "allowedRoles"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

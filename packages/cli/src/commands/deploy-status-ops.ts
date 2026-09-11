@@ -1,5 +1,6 @@
 import {
   accessUpdateClientResponseSchema,
+  type DeploymentAuthentication,
   deploymentOwnerSubjectSchema,
 } from '@noodle-borg/wire-contracts';
 import type { ConfigLocation } from '../config.js';
@@ -11,6 +12,7 @@ import type { ConfigLocation } from '../config.js';
  * `deploy`/`open` flow that stays in `deploy-ops.ts`.
  */
 import { resolveControlPlaneToken, ServiceRequestError, serviceJson } from '../control-plane.js';
+import { requireMixedCustomerAuth } from '../control-plane-request.js';
 import type { AccessMode } from '../deploy.js';
 import { type DetailCardOptions, type DetailRow, renderDetailCard } from '../detail-card.js';
 import type { PluginMode } from '../plugin-mode/profile.js';
@@ -41,6 +43,7 @@ export interface StatusResponse {
     readonly createdAt: string;
     readonly createdByEmail?: string;
     readonly accessMode: AccessMode;
+    readonly authentication?: DeploymentAuthentication;
     readonly ownerSubject?: string;
     readonly deploymentLock?: {
       readonly lockedAt: string;
@@ -100,6 +103,15 @@ export function renderStatusCard(
       tone: 'attention',
       note: accessModeNote(deployment.accessMode),
     },
+    ...(deployment.authentication !== undefined
+      ? [
+          {
+            key: 'authentication',
+            value: deployment.authentication,
+            tone: 'dim',
+          } satisfies DetailRow,
+        ]
+      : []),
     ...(deployment.ownerSubject !== undefined
       ? [{ key: 'owner', value: deployment.ownerSubject, tone: 'dim' } satisfies DetailRow]
       : []),
@@ -357,6 +369,17 @@ export async function runRollback(
 }
 
 function accessServiceFailure(error: unknown): CliFailure {
+  if (error instanceof ServiceRequestError && error.code === 'mixed_customer_auth_unsupported') {
+    return {
+      code: error.code,
+      message: error.message,
+      cause: error.message,
+      fix: 'Upgrade the target service to a release with mixed customer authentication support.',
+      next: 'noodle access set mixed',
+      retryable: false,
+      exitCode: EXIT.FAILURE,
+    };
+  }
   if (
     error instanceof ServiceRequestError &&
     error.status === 409 &&
@@ -480,6 +503,7 @@ export async function runAccess(
     );
   }
   try {
+    if (mode === 'mixed') await requireMixedCustomerAuth(resolved.serviceUrl, resolved.token);
     const body = accessUpdateClientResponseSchema.parse(
       await serviceJson<unknown>(
         `${resolved.serviceUrl}/v1/orgs/${encodeURIComponent(target.org)}` +
@@ -506,6 +530,9 @@ export async function runAccess(
     if (body.deployment.serverVersion !== undefined)
       console.log(`version: ${body.deployment.serverVersion}`);
     console.log(`access:  ${body.deployment.accessMode}`);
+    if (body.policyChanged === true) console.log('policy:  updated');
+    if (body.deployment.authentication !== undefined)
+      console.log(`auth:    ${body.deployment.authentication}`);
     if (body.deployment.ownerSubject !== undefined)
       console.log(`owner:   ${body.deployment.ownerSubject}`);
     return 0;

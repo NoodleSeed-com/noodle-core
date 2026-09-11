@@ -38,6 +38,7 @@ export type { DevtoolsFirebaseCallback, DevtoolsFirebaseDriver } from './devtool
 export class DevtoolsAuthSession {
   readonly #resource: string;
   readonly #auth: DevtoolsCustomerAuth;
+  readonly #required: boolean;
   readonly #delegatedCredentialSink: LocalDevtoolsDelegatedCredentialSink | undefined;
   readonly #driverFactory?: (issuer: string) => DevtoolsOAuthDriver;
   readonly #firebaseDriver?: DevtoolsFirebaseDriver;
@@ -53,6 +54,7 @@ export class DevtoolsAuthSession {
   #message: string | undefined;
   #errorCode: string | undefined;
   #generation = 0;
+  readonly #signInWaiters = new Set<(signedIn: boolean) => void>();
   #refreshing:
     | {
         readonly generation: number;
@@ -61,6 +63,7 @@ export class DevtoolsAuthSession {
     | undefined;
 
   constructor(options: {
+    readonly required?: boolean;
     readonly resource: string;
     readonly redirectUri: string;
     readonly auth: DevtoolsCustomerAuth;
@@ -74,6 +77,7 @@ export class DevtoolsAuthSession {
     readonly delegatedCredentialSink?: LocalDevtoolsDelegatedCredentialSink;
     readonly fetchFn?: typeof fetch;
   }) {
+    this.#required = options.required ?? true;
     this.#resource = options.resource;
     this.#auth = options.auth;
     this.#delegatedCredentialSink = options.delegatedCredentialSink;
@@ -126,7 +130,7 @@ export class DevtoolsAuthSession {
   status(): DevtoolsAuthStatus {
     if (this.#auth.kind === 'unsupported') {
       return {
-        required: true,
+        required: this.#required,
         supported: false,
         state: 'unsupported',
         method: this.#auth.method,
@@ -140,7 +144,8 @@ export class DevtoolsAuthSession {
         ? (this.#auth.authDomain ?? `${this.#auth.projectId}.firebaseapp.com`)
         : undefined;
     return {
-      required: true,
+      required: this.#required,
+      ...(this.#signInWaiters.size > 0 ? { signInRequested: true } : {}),
       supported: true,
       state: this.#state,
       ...(this.#selectedIssuer !== undefined
@@ -197,6 +202,7 @@ export class DevtoolsAuthSession {
     } catch (error) {
       if (this.#generation === generation) {
         this.#state = 'error';
+        this.#finishSignIn(false);
         const failure = safeFailure(error, 'Could not start sign-in');
         this.#message = failure.message;
         this.#errorCode = failure.errorCode;
@@ -230,11 +236,13 @@ export class DevtoolsAuthSession {
       this.#tokens = tokens;
       this.#requestedScopes = canonicalScopes([...this.#requestedScopes, ...tokens.scope]);
       this.#state = 'signed_in';
+      this.#finishSignIn(true);
       this.#message = undefined;
       this.#errorCode = undefined;
     } catch (error) {
       if (this.#generation === generation) {
         this.#state = 'error';
+        this.#finishSignIn(false);
         const failure = safeFailure(error, 'Sign-in failed');
         this.#message = failure.message;
         this.#errorCode = failure.errorCode;
@@ -269,17 +277,50 @@ export class DevtoolsAuthSession {
       this.#assertGeneration(generation);
       this.#tokens = tokens;
       this.#state = 'signed_in';
+      this.#finishSignIn(true);
       this.#message = undefined;
       this.#errorCode = undefined;
     } catch (error) {
       if (this.#generation === generation) {
         this.#state = 'error';
+        this.#finishSignIn(false);
         const failure = safeFailure(error, 'Firebase sign-in failed');
         this.#message = failure.message;
         this.#errorCode = failure.errorCode;
       }
       throw error;
     }
+  }
+
+  /** Pause only a challenged tool in the server-side chat loop, never replay an entire model turn. */
+  requestSignIn(): Promise<boolean> {
+    if (this.#auth.kind === 'unsupported' || this.#signInWaiters.size >= 32)
+      return Promise.resolve(false);
+    return new Promise((resolve) => {
+      const finish = (signedIn: boolean) => {
+        clearTimeout(timeout);
+        this.#signInWaiters.delete(finish);
+        resolve(signedIn);
+      };
+      const timeout = setTimeout(() => finish(false), 300_000);
+      timeout.unref();
+      this.#signInWaiters.add(finish);
+    });
+  }
+
+  #finishSignIn(signedIn: boolean): void {
+    for (const finish of this.#signInWaiters) finish(signedIn);
+  }
+
+  /** Optional previews omit absent or expired, non-refreshable credentials before sending a request. */
+  canRequestAnonymously(): boolean {
+    if (
+      this.#tokens?.expiresAt !== undefined &&
+      this.#tokens.expiresAt <= Date.now() + 30_000 &&
+      !this.#tokens.refreshToken
+    )
+      this.clear();
+    return this.#tokens === undefined && this.#state !== 'reauthorization_required';
   }
 
   async accessToken(options: { readonly forceRefresh?: boolean } = {}): Promise<string> {
@@ -386,12 +427,14 @@ export class DevtoolsAuthSession {
     this.#tokens = undefined;
     this.#clearDelegatedCredential();
     this.#state = 'error';
+    this.#finishSignIn(false);
     this.#errorCode = 'oauth_token_rejected';
     this.#message =
       'The MCP server rejected the issued token. Verify its issuer, signing key, and configured audience, then sign in again.';
   }
 
   clear(): void {
+    this.#finishSignIn(false);
     this.#generation += 1;
     this.#refreshing = undefined;
     this.#discovery = undefined;
@@ -465,6 +508,7 @@ export class DevtoolsAuthSession {
     } catch (error) {
       if (this.#generation === generation) {
         this.#state = 'error';
+        this.#finishSignIn(false);
         const failure = safeFailure(error, 'Could not start Firebase sign-in');
         this.#message = failure.message;
         this.#errorCode = failure.errorCode;

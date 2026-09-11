@@ -30,6 +30,8 @@ export interface ServedArtifact {
 }
 
 export interface ProtocolRequestContext {
+  /** Resolved endpoint policy used only to derive MCP discovery metadata. */
+  readonly toolAuthentication?: import('./tool-discovery.js').ToolAuthenticationPolicy;
   readonly caller?: CallerIdentity;
   /** Internal hosting attribution, never MCP payload metadata or caller-visible context. */
   readonly publicAdmission?: NonNullable<ExecuteDeps['publicAdmission']>;

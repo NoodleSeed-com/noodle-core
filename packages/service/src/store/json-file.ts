@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { normalizeServerVersion } from '@noodle-borg/module';
-import type { AccessMode } from '@noodle-borg/transport-http';
 import {
   assertSameAppPackageSnapshot,
   sanitizeDeployRecordAppPackageSnapshot,
@@ -11,11 +10,17 @@ import {
   assertCustomerAuthRestorePrecondition,
   assertUniqueActiveCustomerAuthAudienceBindings,
   findActiveCustomerAuthAudienceConflict,
+  requiresCustomerAuthProjection,
 } from '../customer-auth-audience-binding.js';
+import { matchesDeploymentActivation } from '../deployment-activation-precondition.js';
 import {
   assertDeploymentActivationUnlocked,
   assertDeploymentAppendUnlocked,
 } from '../deployment-lock.js';
+import {
+  assertDeploymentAppendPolicy,
+  assertDeploymentAppendVersion,
+} from '../deployment-record-version.js';
 import {
   defaultActiveRecord,
   sameDeploymentScope,
@@ -28,10 +33,12 @@ import type {
   AppRestoreResult,
   AppSummary,
   ArtifactStore,
+  DeploymentActivationPrecondition,
   DeploymentActivationResult,
   DeploymentListFilter,
   DeploymentLock,
   DeploymentLockUpdateResult,
+  DeploymentPolicyPrecondition,
   DeploymentSummary,
   DeployRecord,
   EnvSummary,
@@ -73,11 +80,14 @@ export class JsonFileArtifactStore implements ArtifactStore {
     this.#environmentMetadataDir = join(dataDir, 'environment-metadata');
   }
 
-  append(record: DeployRecord): Promise<void> {
-    return this.#serializeLifecycle(() => this.#appendUnlocked(record));
+  append(record: DeployRecord, precondition?: DeploymentPolicyPrecondition): Promise<void> {
+    return this.#serializeLifecycle(() => this.#appendUnlocked(record, precondition));
   }
 
-  async #appendUnlocked(record: DeployRecord): Promise<void> {
+  async #appendUnlocked(
+    record: DeployRecord,
+    precondition?: DeploymentPolicyPrecondition,
+  ): Promise<void> {
     // Defence in depth: `deploymentId` becomes a filename, so reject anything outside the minted shape
     // (`mintDeploymentId` only ever produces `[a-z0-9-]`). Guards this public class against a caller that
     // passes an untrusted id (no path traversal, no escaping the data dir).
@@ -86,6 +96,8 @@ export class JsonFileArtifactStore implements ArtifactStore {
       throw new Error(`invalid deploymentId for persistence: "${record.deploymentId}"`);
     }
     const records = await this.loadAll();
+    assertDeploymentAppendVersion(records, record);
+    assertDeploymentAppendPolicy(records, record, precondition);
     const existing = records.find((candidate) => candidate.deploymentId === record.deploymentId);
     if (existing !== undefined) assertSameAppPackageSnapshot(existing, record);
     record = sanitizeDeployRecordAppPackageSnapshot(record);
@@ -202,17 +214,14 @@ export class JsonFileArtifactStore implements ArtifactStore {
   async activateDeployment(
     ref: TenantRef,
     deploymentId: string,
-    precondition?: {
-      readonly expectedAccessMode: AccessMode | undefined;
-      readonly serverAuth?: TenantAuthConfig;
-    },
+    precondition?: DeploymentActivationPrecondition,
   ): Promise<DeploymentActivationResult | undefined> {
     const safe = validateTenantRef(ref);
     if (!DEPLOYMENT_ID_PATTERN.test(deploymentId)) return undefined;
     return this.#serializeLifecycle(async () => {
       const target = await this.get(deploymentId);
       if (target === undefined || !sameTenantRecord(target, safe)) return undefined;
-      if (precondition !== undefined && target.accessMode !== precondition.expectedAccessMode) {
+      if (!matchesDeploymentActivation(target, precondition)) {
         return undefined;
       }
       const records = await this.loadAll();
@@ -220,11 +229,20 @@ export class JsonFileArtifactStore implements ArtifactStore {
       const previousActive = records
         .filter((record) => record.active && sameDeploymentScope(record, target))
         .sort((a, b) => b.deploymentVersion - a.deploymentVersion)[0];
+      if (precondition === undefined && previousActive !== undefined) {
+        assertDeploymentAppendVersion([previousActive], { ...target, active: true });
+      }
+      assertDeploymentAppendPolicy(
+        records,
+        { ...target, active: true },
+        precondition?.expectedActivePolicy,
+      );
       const alreadyActive = previousActive?.deploymentId === target.deploymentId;
       const activated = {
         ...target,
         active: true,
-        ...(target.accessMode === 'customers' && precondition?.serverAuth !== undefined
+        ...(requiresCustomerAuthProjection(target, precondition?.serverAuth) &&
+        precondition?.serverAuth !== undefined
           ? { serverAuth: precondition.serverAuth }
           : {}),
       };
