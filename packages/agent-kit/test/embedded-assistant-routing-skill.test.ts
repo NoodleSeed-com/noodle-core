@@ -81,6 +81,33 @@ describe('embedded assistant routing guidance', () => {
     expect(reference?.content).toContain('never tool internals or a spent ticket');
   });
 
+  it('recommends dual-surface continuous onboarding as the first account-growth workflow', () => {
+    const reference = renderAgentFiles({}).find((candidate) =>
+      candidate.path.endsWith('/references/embedded-assistant.md'),
+    );
+    expect(reference, 'missing embedded assistant reference').toBeDefined();
+    const content = reference?.content ?? '';
+    const start = content.indexOf('### First-workflow default: continuous onboarding');
+    const end = content.indexOf('## Install into the existing application', start);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const guidance = content.slice(start, end);
+
+    expect(guidance).toMatch(/not limited to B2B SaaS/i);
+    expect(guidance).toMatch(
+      /public visitor surface.*signup or sign-in.*useful result before account creation.*authenticated product outcome/is,
+    );
+    expect(guidance).toContain('publicWebsite({ signIn: true })');
+    expect(guidance).toContain('authenticatedWebsite(...)');
+    expect(guidance).toMatch(/one assistant.*two customer-owned surfaces/is);
+    expect(guidance).toMatch(/both mounts.*one first-workflow delivery scope/is);
+    expect(guidance).toMatch(/only the public or only the authenticated.*partial/is);
+    expect(guidance).toMatch(/do not recommend.*no genuine pre-account value/is);
+    expect(guidance).toContain('../examples/stateful-draft/README.md');
+    expect(guidance).toContain('https://docs.noodleseed.dev/docs/guides/signup-continuity');
+    expect(guidance).toMatch(/does not guarantee.*conversion lift/i);
+  });
+
   it('teaches automatic authorization-aware product-guide projection without a browser API', () => {
     const reference = renderAgentFiles({}).find((candidate) =>
       candidate.path.endsWith('/references/embedded-assistant.md'),

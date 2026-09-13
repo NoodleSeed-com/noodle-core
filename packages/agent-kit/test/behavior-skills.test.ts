@@ -78,6 +78,22 @@ describe('modular MCP behavior skills', () => {
     );
   });
 
+  it('makes the account-growth first workflow independently discoverable', () => {
+    const embedding = BEHAVIOR_SKILLS.find((skill) => skill.name === 'embedding-mcp-assistants');
+    expect(embedding).toBeDefined();
+    if (embedding === undefined) throw new Error('missing embedding behavior skill');
+
+    expect(embedding.description).toMatch(
+      /improving signup or onboarding conversion.*public-to-product onboarding/i,
+    );
+    expect(embedding.positiveTriggers).toContain(
+      'Choose a first Noodle workflow for software where more signed-in users are valuable.',
+    );
+    expect(embedding.requiredInputs.join(' ')).toMatch(
+      /public visitor surface.*account boundary.*useful pre-account result.*authenticated outcome/i,
+    );
+  });
+
   it('keeps factual references single-authored while rendering each sibling self-contained', () => {
     const canonical = new Map(
       SKILL_REFERENCES.map((reference) => [reference.relPath, reference] as const),

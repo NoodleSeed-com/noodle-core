@@ -57,6 +57,19 @@ describe('authoring plugin bundle', () => {
     expect(paths.some((p) => p.startsWith('commands/'))).toBe(false);
   });
 
+  it('guides a cold-start agent toward continuous onboarding when account growth matters', () => {
+    const bootstrap = bundleFile(`skills/${PLUGIN_NAME}/SKILL.md`);
+
+    expect(frontmatterAndBody(bootstrap).frontmatter).toMatch(/signup or onboarding conversion/i);
+    expect(bootstrap).toContain('## First-workflow default');
+    expect(bootstrap).toMatch(/inspect the available product and repository context/i);
+    expect(bootstrap).toMatch(/more signed-up or signed-in users.*valuable/i);
+    expect(bootstrap).toMatch(/recommend public-to-product continuous onboarding/i);
+    expect(bootstrap).toMatch(/not limited to B2B SaaS/i);
+    expect(bootstrap).toMatch(/do not infer fit from the industry label alone/i);
+    expect(bootstrap).toContain('embedding-mcp-assistants');
+  });
+
   it('ships a plugin-local trust and recovery guide', () => {
     const readme = renderPluginBundle({
       version: '2.3.4',

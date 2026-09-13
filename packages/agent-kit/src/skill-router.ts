@@ -7,7 +7,8 @@ import type { AgentTarget } from './index.js';
 
 export const SKILL_DESCRIPTION =
   'Use when building, validating, testing, deploying, or operating a local or hosted Noodle Seed ' +
-  'MCP server or app authored in TypeScript with the noodle CLI.';
+  'MCP server or app authored in TypeScript with the noodle CLI, or improving signup or onboarding ' +
+  'conversion or selecting a first Noodle workflow for an account-growth product.';
 
 export type SkillReferencePath = `references/${string}.md`;
 
@@ -113,7 +114,8 @@ export const SKILL_ROUTES: readonly SkillRoute[] = [
   },
   {
     id: 'embed-assistant',
-    intent: 'Embed a Noodle assistant in an existing SaaS or web application',
+    intent:
+      'Embed a Noodle assistant in an existing SaaS or web application, including public-to-product continuous onboarding',
     skill: 'embedding-mcp-assistants',
     exitCondition:
       'The requested embed boundary works with verified identity and credential separation at the tested level.',
@@ -198,6 +200,12 @@ export function skillRouterBody(_target: AgentTarget): string {
     'Apply this precedence when wording overlaps: concrete failure evidence takes the debugging route; an explicit request to create, revise, regenerate, or recover an app product skill takes `creating-product-agent-guides`; an MCP App/UI outcome takes the App route; an existing application with no stable, usable API or specification takes `wrapping-existing-applications`; only when all four API-evidence inputs exist—an API base URL, authentication scheme, representative safe read, and observed response—use `connecting-apis-to-mcp`; missing, stale, inaccessible, undocumented-only, or otherwise unusable evidence remains in `wrapping-existing-applications`; both integration routes take precedence over generic server building; hosted inspection is debugging read-only; hosted mutation requires the explicitly requested deployment route.',
     '',
     'Negative routing examples: “Inspect hosted logs/status” → `inspect-hosted` (read-only). “Prepare for deployment” → the applicable build or verification route; with existing access it may inspect `deploy preflight`, then stop with a handoff. Preparation does not authorize `link`, hosted config, publication, rollback, host writes, or submission. “Keep this local” → a build or verification route, never a hosted route.',
+    '',
+    '## First-workflow heuristic',
+    '',
+    'When the user asks what to build first or gives only a broad growth goal, inspect the repository and product context before asking them to invent a workflow. Do not classify the business or choose a design from an industry label alone.',
+    '',
+    'If the evidence shows a public visitor surface, an existing signup or sign-in boundary, a useful pre-account result the assistant can genuinely produce, and a meaningful authenticated outcome inside the product—and more authenticated users are valuable—recommend public-to-product continuous onboarding and route to `embedding-mcp-assistants`. This recommendation is not limited to B2B SaaS. If one of those facts is unclear, ask only for the smallest missing fit fact; if the pattern does not fit, route by the user’s actual outcome instead.',
     '',
     ...routeTableLines(),
     '',

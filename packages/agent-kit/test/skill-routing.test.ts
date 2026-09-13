@@ -4,6 +4,7 @@ import { renderAgentFiles, renderManagedBlock } from '../src/index.js';
 import { SKILL_REFERENCES } from '../src/skill-content.js';
 import {
   APP_DIRECTORY_COMPLIANCE_REFERENCE,
+  SKILL_DESCRIPTION,
   SKILL_ROUTES,
   type SkillRoute,
   skillRouterBody,
@@ -106,6 +107,22 @@ describe('project skill intent routing', () => {
       /missing, stale, inaccessible, undocumented-only, or otherwise unusable evidence.*wrapping-existing-applications/i,
     );
     expect(router).toMatch(/both integration routes take precedence over generic server building/i);
+  });
+
+  it('routes a vague account-growth start to the continuous-onboarding workflow', () => {
+    const router = skillRouterBody('codex');
+
+    expect(SKILL_DESCRIPTION).toMatch(/signup or onboarding conversion/i);
+    expect(router).toContain('## First-workflow heuristic');
+    expect(router).toMatch(/inspect the repository and product context/i);
+    expect(router).toMatch(/do not classify.*from an industry label alone/i);
+    expect(router).toMatch(
+      /public visitor surface.*signup or sign-in.*useful pre-account result.*authenticated outcome/is,
+    );
+    expect(router).toMatch(
+      /recommend public-to-product continuous onboarding.*embedding-mcp-assistants/is,
+    );
+    expect(router).toMatch(/ask only for the smallest missing fit fact/i);
   });
 
   it('keeps the rendered route table as strict as the precedence paragraph', () => {

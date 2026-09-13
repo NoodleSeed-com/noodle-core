@@ -192,12 +192,13 @@ export const BEHAVIOR_SKILLS: readonly BehaviorSkill[] = [
   {
     name: 'embedding-mcp-assistants',
     description:
-      'Use when embedding a Noodle assistant into an existing SaaS or web application with browser, identity, session, and credential boundaries.',
+      'Use when embedding a Noodle assistant into an existing SaaS or web application, or improving signup or onboarding conversion with public-to-product onboarding, with browser, identity, session, and credential boundaries.',
     outcome:
-      'Select one decision-complete assistant topology, then deliver the embed with identity and credential separation proven at the tested level.',
+      'Select one decision-complete assistant topology, including the dual-surface continuous-onboarding default when it fits, then deliver the embed with identity and credential separation proven at the tested level.',
     positiveTriggers: [
       'Embed the Noodle assistant in an existing web app.',
       'Wire browser mounting and session exchange.',
+      'Choose a first Noodle workflow for software where more signed-in users are valuable.',
     ],
     negativeTriggers: [
       'Do not use to build a standalone MCP App.',
@@ -209,6 +210,7 @@ export const BEHAVIOR_SKILLS: readonly BehaviorSkill[] = [
       'Access mode plus the identity, session, and server-owned routing boundary.',
       'Managed or custom renderer and its explicit product benefit.',
       'Model owner and requested local, hosted, or production evidence level.',
+      'For a first-workflow recommendation: evidence for a public visitor surface, account boundary, useful pre-account result, and authenticated outcome.',
     ],
     primaryReference: 'references/embedded-assistant.md',
     supportingReferences: ['references/authoring-workflow.md'],
