@@ -81,3 +81,6 @@ tmp/.wrangler/
 
 # Playwright CLI local artifacts
 .playwright-cli/
+
+# Disposable Nx graph and task state
+.nx/
