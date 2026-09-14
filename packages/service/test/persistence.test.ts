@@ -409,14 +409,14 @@ describe('ServerRegistry lazy recompile-on-cache-miss (ADR 0036)', () => {
     expect(first?.accessMode).toBe('owner-only');
     expect(first?.ownerSubject).toBe('oauth-explicit-owner');
     expect(registry.size).toBe(1); // cached after the lazy compile
-    expect(getSpy).toHaveBeenCalledTimes(1);
+    expect(getSpy).toHaveBeenCalledTimes(2);
 
     const second = await registry.get('hello-deadbeef');
     expect(second).toBe(first); // Policy revalidation does not require another compile.
-    expect(getSpy).toHaveBeenCalledTimes(2);
+    expect(getSpy).toHaveBeenCalledTimes(4); // Initial load + compile check, then policy + reconciliation checks.
   });
 
-  it('single-flights concurrent first-hits for one id (one store read, one shared compile)', async () => {
+  it('single-flights concurrent first-hits for one id (one load, one authority check, one compile)', async () => {
     const store = new InMemoryArtifactStore();
     await store.append(record);
     // A slow point-read forces genuine overlap: without single-flight all three would each read + compile.
@@ -431,7 +431,7 @@ describe('ServerRegistry lazy recompile-on-cache-miss (ADR 0036)', () => {
       registry.get('hello-deadbeef'),
       registry.get('hello-deadbeef'),
     ]);
-    expect(getSpy).toHaveBeenCalledTimes(1); // single-flight: one shared compile, not three
+    expect(getSpy).toHaveBeenCalledTimes(2); // All callers share both the initial load and post-compile deletion check.
     expect(a).toBeDefined();
     expect(b).toBe(a);
     expect(c).toBe(a);

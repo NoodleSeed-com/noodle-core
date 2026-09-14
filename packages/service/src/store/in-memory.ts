@@ -10,6 +10,7 @@ import {
   requiresCustomerAuthProjection,
 } from '../customer-auth-audience-binding.js';
 import { matchesDeploymentActivation } from '../deployment-activation-precondition.js';
+import { planDeploymentDeletion } from '../deployment-deletion.js';
 import {
   assertDeploymentActivationUnlocked,
   assertDeploymentAppendUnlocked,
@@ -32,6 +33,8 @@ import type {
   ArtifactStore,
   DeploymentActivationPrecondition,
   DeploymentActivationResult,
+  DeploymentDeleteResult,
+  DeploymentDeleteSelection,
   DeploymentListFilter,
   DeploymentLock,
   DeploymentLockUpdateResult,
@@ -65,6 +68,15 @@ import { validateSlug, validateTenantRef } from './validate.js';
 export class InMemoryArtifactStore implements ArtifactStore {
   readonly #records = new Map<string, DeployRecord>();
   readonly #productionEnvironments = new Map<string, string>();
+
+  deleteDeployments(
+    ref: TenantRef,
+    selection: DeploymentDeleteSelection,
+  ): Promise<DeploymentDeleteResult> {
+    const result = planDeploymentDeletion([...this.#records.values()], ref, selection);
+    if (result.ok) for (const record of result.deleted) this.#records.delete(record.deploymentId);
+    return Promise.resolve(result);
+  }
 
   async append(record: DeployRecord, precondition?: DeploymentPolicyPrecondition): Promise<void> {
     assertDeploymentAppendVersion([...this.#records.values()], record);

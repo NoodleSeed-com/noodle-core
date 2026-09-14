@@ -18,7 +18,6 @@ export async function lockDeploymentVersionScopeTx(
   ref: TenantRef,
   serverVersion: string | undefined,
 ): Promise<void> {
-  if (serverVersion === undefined) return;
   await client.query(
     `SELECT pg_advisory_xact_lock(hashtextextended(
        jsonb_build_array(
@@ -27,7 +26,7 @@ export async function lockDeploymentVersionScopeTx(
        )::text,
        0
      ))`,
-    [ref.org, ref.app, ref.env, serverVersion],
+    [ref.org, ref.app, ref.env, serverVersion ?? null],
   );
 }
 

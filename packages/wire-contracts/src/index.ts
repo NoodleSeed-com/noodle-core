@@ -276,6 +276,7 @@ export * from './application-activity.js';
 export * from './application-connections.js';
 export * from './application-onboarding.js';
 export * from './billing-catalog.js';
+export * from './deployment-deletion.js';
 export * from './operation-coordination.js';
 
 export {

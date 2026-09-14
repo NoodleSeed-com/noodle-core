@@ -1,5 +1,12 @@
 import type { ArtifactCustomerAuthRouting, HostedPackagedAsset } from '@noodle-borg/compiler';
-import type { OrganizationStore } from '@noodle-borg/control-plane/portable';
+import type {
+  DeploymentDeleteSelection,
+  OrganizationStore,
+  DeploymentDeleteResult as PortableDeploymentDeleteResult,
+} from '@noodle-borg/control-plane/portable';
+
+export type { DeploymentDeleteSelection } from '@noodle-borg/control-plane/portable';
+
 import type { OrgMembershipSource } from '@noodle-borg/module';
 import type { SealedSecret } from '@noodle-borg/runtime';
 import type { AccessMode } from '@noodle-borg/transport-http';
@@ -118,6 +125,8 @@ export interface DeployRecord {
   /** Immutable rendered package bytes bound to this exact deployment, when the manifest has a guide. */
   readonly appPackageSnapshot?: AppPackageSnapshotV1;
 }
+
+export type DeploymentDeleteResult = PortableDeploymentDeleteResult<DeployRecord>;
 
 export interface DeploymentLockMetadata {
   /** ISO-8601 time the version pointer was locked. */
@@ -379,6 +388,11 @@ export interface ControlPlaneStore extends OrganizationStore {}
  * an earlier deployment without changing the tenant-facing URL.
  */
 export interface ArtifactStore {
+  /** Atomically remove exact deployment history or an inventory-guarded whole version. */
+  deleteDeployments(
+    ref: TenantRef,
+    selection: DeploymentDeleteSelection,
+  ): Promise<DeploymentDeleteResult>;
   append(record: DeployRecord, precondition?: DeploymentPolicyPrecondition): Promise<void>;
   loadAll(): Promise<readonly DeployRecord[]>;
   /**

@@ -87,8 +87,8 @@
         "modules": [
           {
             "path": "src/routes",
-            "maxSourceLines": 14500,
-            "reason": "Public HTTP transport and portable operator API routes. Founder-approved MVP allowance under ADR 0233."
+            "maxSourceLines": 14600,
+            "reason": "Public HTTP transport and portable operator API routes. Founder-approved MVP allowance under ADR 0233. Requester-approved deployment and version deletion API adapter allowance (2026-09-14)."
           },
           {
             "path": "src/oauth",

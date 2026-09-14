@@ -349,6 +349,8 @@
       "deployments list",
       "deployments inspect",
       "deployments package",
+      "deployments delete",
+      "deployments delete-version",
       "deployments lock",
       "deployments unlock",
       "distributions",

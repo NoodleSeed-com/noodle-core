@@ -180,7 +180,7 @@ export const CATALOG_TENANT_RESOURCES: readonly CommandSpec[] = [
   {
     name: 'deployments',
     section: 'resources',
-    summary: 'List, inspect, or read packages for individual deployments.',
+    summary: 'List, inspect, read packages, or permanently delete deployment records.',
     arguments: [],
     flags: [],
     subcommands: [
@@ -207,6 +207,32 @@ export const CATALOG_TENANT_RESOURCES: readonly CommandSpec[] = [
           { ...REQUIRED_ARGUMENT, name: 'id', summary: 'Deployment identifier to read.' },
         ],
         flags: DEPLOYMENT_INSPECT_FLAGS,
+        jsonOutput: { mode: 'single' },
+      },
+      {
+        name: 'delete',
+        summary: 'Permanently delete one inactive deployment record.',
+        arguments: [
+          {
+            ...REQUIRED_ARGUMENT,
+            name: 'deployment-id',
+            summary: 'Inactive deployment identifier to delete permanently.',
+          },
+        ],
+        flags: [ORG, SERVICE, AUTH_TOKEN, YES, JSON_FLAG],
+        jsonOutput: { mode: 'single' },
+      },
+      {
+        name: 'delete-version',
+        summary: 'Permanently delete every deployment record for one exact version.',
+        arguments: [
+          {
+            ...REQUIRED_ARGUMENT,
+            name: 'version-or-legacy',
+            summary: 'Exact numeric server version, or legacy for unversioned deployments.',
+          },
+        ],
+        flags: [...DEPLOYMENT_BASE_FLAGS, YES, JSON_FLAG],
         jsonOutput: { mode: 'single' },
       },
       {

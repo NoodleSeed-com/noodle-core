@@ -264,7 +264,7 @@ describe('@noodleseed/one supported package contract', () => {
       ({ name, removed: diagnostic }) => ({ name, removed: diagnostic }),
     );
     expect(CATALOG).toHaveLength(63);
-    expect(paths).toHaveLength(328);
+    expect(paths).toHaveLength(330);
     expect(paths.filter((path) => path.startsWith('solutions operations'))).toEqual([
       'solutions operations',
       'solutions operations coordination',

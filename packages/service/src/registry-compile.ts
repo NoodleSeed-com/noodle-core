@@ -40,6 +40,7 @@ import { deploymentRecordVersionError } from './deployment-record-version.js';
 import { normalizePersistedManifestForCompile } from './manifest-normalize.js';
 import type { NativeRecordConnectorFactory } from './native-record-connector.js';
 import type { OAuthStore } from './oauth/store.js';
+import { registryRecordStillExists } from './registry-deletion.js';
 import {
   missingCapabilityErrors,
   missingSecretErrors,
@@ -431,6 +432,11 @@ export async function loadPersistedRegistryTarget(
     (await context.hasCustomerAuthConflict(record, built.served.artifact.server.auth))
   )
     return undefined;
+  const exists =
+    state.store === undefined
+      ? state.records.has(deploymentId)
+      : await registryRecordStillExists(state, deploymentId);
+  if (!exists) return undefined;
   const target = servedTargetFor(record, built.served, context.customerVerifierFactory);
   state.servers.set(deploymentId, target);
   state.records.set(deploymentId, record);

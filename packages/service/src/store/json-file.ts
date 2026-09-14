@@ -13,6 +13,7 @@ import {
   requiresCustomerAuthProjection,
 } from '../customer-auth-audience-binding.js';
 import { matchesDeploymentActivation } from '../deployment-activation-precondition.js';
+import { planDeploymentDeletion } from '../deployment-deletion.js';
 import {
   assertDeploymentActivationUnlocked,
   assertDeploymentAppendUnlocked,
@@ -35,6 +36,8 @@ import type {
   ArtifactStore,
   DeploymentActivationPrecondition,
   DeploymentActivationResult,
+  DeploymentDeleteResult,
+  DeploymentDeleteSelection,
   DeploymentListFilter,
   DeploymentLock,
   DeploymentLockUpdateResult,
@@ -46,6 +49,11 @@ import type {
   TenantAuthConfig,
   TenantRef,
 } from '../store.js';
+import {
+  commitDeletedDeploymentIds,
+  readDeletedDeploymentIds,
+  serializeFileLifecycle,
+} from './json-file-deletion.js';
 import {
   appArchivedAt,
   deploymentSummary,
@@ -73,11 +81,35 @@ import { DEPLOYMENT_ID_PATTERN, validateSlug, validateTenantRef } from './valida
 export class JsonFileArtifactStore implements ArtifactStore {
   readonly #dir: string;
   readonly #environmentMetadataDir: string;
-  #lifecycleTail: Promise<void> = Promise.resolve();
+  readonly #deletionMetadataDir: string;
 
   constructor(dataDir: string) {
     this.#dir = join(dataDir, 'deployments');
+    this.#deletionMetadataDir = join(dataDir, 'deployment-metadata');
     this.#environmentMetadataDir = join(dataDir, 'environment-metadata');
+  }
+
+  deleteDeployments(
+    ref: TenantRef,
+    selection: DeploymentDeleteSelection,
+  ): Promise<DeploymentDeleteResult> {
+    return this.#serializeLifecycle(async () => {
+      const result = planDeploymentDeletion(await this.loadAll(), ref, selection);
+      if (!result.ok) return result;
+      await commitDeletedDeploymentIds(
+        this.#deletionMetadataDir,
+        result.deleted.map((record) => record.deploymentId),
+      );
+      // Logical deletion has committed. Failed physical cleanup remains hidden by the journal on restart.
+      await Promise.all(
+        result.deleted.map((record) =>
+          rm(join(this.#dir, `${record.deploymentId}.json`), { force: true }).catch(
+            () => undefined,
+          ),
+        ),
+      );
+      return result;
+    });
   }
 
   append(record: DeployRecord, precondition?: DeploymentPolicyPrecondition): Promise<void> {
@@ -94,6 +126,9 @@ export class JsonFileArtifactStore implements ArtifactStore {
     validateTenantRef({ org: record.orgSlug, app: record.appSlug, env: record.environment });
     if (!DEPLOYMENT_ID_PATTERN.test(record.deploymentId)) {
       throw new Error(`invalid deploymentId for persistence: "${record.deploymentId}"`);
+    }
+    if ((await readDeletedDeploymentIds(this.#deletionMetadataDir)).has(record.deploymentId)) {
+      throw new Error('Deployment ID has been deleted');
     }
     const records = await this.loadAll();
     assertDeploymentAppendVersion(records, record);
@@ -121,6 +156,8 @@ export class JsonFileArtifactStore implements ArtifactStore {
   async get(deploymentId: string): Promise<DeployRecord | undefined> {
     // An invalid id can never be a file we wrote; treat as absent (also closes off any traversal).
     if (!DEPLOYMENT_ID_PATTERN.test(deploymentId)) return undefined;
+    if ((await readDeletedDeploymentIds(this.#deletionMetadataDir)).has(deploymentId))
+      return undefined;
     try {
       const text = await readFile(join(this.#dir, `${deploymentId}.json`), 'utf8');
       return sanitizeDeployRecordAppPackageSnapshot(JSON.parse(text) as DeployRecord);
@@ -268,15 +305,7 @@ export class JsonFileArtifactStore implements ArtifactStore {
   }
 
   #serializeLifecycle<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.#lifecycleTail.then(
-      () => operation(),
-      () => operation(),
-    );
-    this.#lifecycleTail = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
+    return serializeFileLifecycle(this.#dir, operation);
   }
 
   async loadAll(): Promise<readonly DeployRecord[]> {
@@ -298,7 +327,8 @@ export class JsonFileArtifactStore implements ArtifactStore {
         // other servers recover. (Visibility of skipped files lands with structured logging, Slice 27.)
       }
     }
-    return records;
+    const deleted = await readDeletedDeploymentIds(this.#deletionMetadataDir);
+    return records.filter((record) => !deleted.has(record.deploymentId));
   }
 
   async listDeployments(filter: DeploymentListFilter): Promise<readonly DeploymentSummary[]> {

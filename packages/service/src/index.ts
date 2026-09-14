@@ -427,6 +427,8 @@ export {
   type ConfigValueMetadata,
   type ControlPlaneStore,
   DEPLOYMENT_ID_PATTERN,
+  type DeploymentDeleteResult,
+  type DeploymentDeleteSelection,
   type DeploymentListFilter,
   type DeploymentLock,
   type DeploymentLockMetadata,

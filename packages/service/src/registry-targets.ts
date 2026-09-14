@@ -155,8 +155,10 @@ export async function targetForPersistedRecord(
       auth: TenantAuthConfig | undefined,
     ) => Promise<boolean>;
     readonly load?: () => Promise<ServedTarget | undefined>;
+    readonly recordStillPresent?: () => boolean;
   },
 ): Promise<ServedTarget | undefined> {
+  if (state.recordStillPresent?.() === false) return undefined;
   const cached = state.servers.get(record.deploymentId);
   const cachedSchemaVersion = cached === undefined ? undefined : targetPolicyVersions.get(cached);
   state.records.set(record.deploymentId, record);
@@ -175,6 +177,7 @@ export async function targetForPersistedRecord(
   ) {
     return undefined;
   }
+  if (state.recordStillPresent?.() === false) return undefined;
   if (cachedSchemaVersion === record.schemaVersion && servedTargetMatchesRecord(cached, record))
     return cached;
   const reconciled = servedTargetFor(record, cached.served, state.customerVerifierFactory);

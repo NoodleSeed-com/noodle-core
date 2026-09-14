@@ -26,6 +26,13 @@ export type {
 } from './contracts.js';
 export { PersonalWorkspaceOwnerMutationError } from './contracts.js';
 export {
+  type DeploymentDeleteOperationResult,
+  type DeploymentDeleteScope,
+  type DeploymentDeletionDependencies,
+  type DeploymentDeletionRegistry,
+  deleteDeploymentOperation,
+} from './delete-deployment.js';
+export {
   allowAllGate,
   bearerToken,
   type ControlPlaneAuthResult,
@@ -43,6 +50,10 @@ export {
   type NoodleOAuthControlPlaneGateOptions,
   type SignupAuthorizer,
 } from './deploy-gates.js';
+export type {
+  DeploymentDeleteResult,
+  DeploymentDeleteSelection,
+} from './deployment-deletion-contracts.js';
 export { InMemoryControlPlaneStore } from './in-memory-control-plane-store.js';
 export {
   bindInMemoryOrganizationStore,

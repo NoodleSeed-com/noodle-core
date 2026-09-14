@@ -142,6 +142,8 @@ const HANDLER_FAMILY_SURFACES = {
     'deployments list',
     'deployments inspect',
     'deployments package',
+    'deployments delete',
+    'deployments delete-version',
     'deployments lock',
     'deployments unlock',
   ],

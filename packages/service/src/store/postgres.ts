@@ -23,6 +23,8 @@ import type {
   CreateOrgWithOwnerInput,
   DeploymentActivationPrecondition,
   DeploymentActivationResult,
+  DeploymentDeleteResult,
+  DeploymentDeleteSelection,
   DeploymentListFilter,
   DeploymentLock,
   DeploymentLockUpdateResult,
@@ -65,6 +67,7 @@ import { findActiveCustomerAuthAudienceConflictRow } from './postgres-customer-a
 import type { CustomerAuthAudienceReconciliation } from './postgres-customer-auth-audience-schema.js';
 import { appendDeployRecordRows } from './postgres-deploy-records.js';
 import { updateActiveDeploymentAccessRow } from './postgres-deployment-access.js';
+import { deleteDeploymentRows } from './postgres-deployment-deletion.js';
 import { setDeploymentLockRow } from './postgres-deployment-lock.js';
 import {
   getEnvironmentRow,
@@ -116,6 +119,13 @@ export class PostgresArtifactStore
   readonly #now: () => Date;
   readonly #deploymentActivation: () => readonly NamedDeploymentActivationHook[];
   readonly #organizationProvisioning: () => OrganizationProvisioningHook | undefined;
+
+  deleteDeployments(
+    ref: TenantRef,
+    selection: DeploymentDeleteSelection,
+  ): Promise<DeploymentDeleteResult> {
+    return deleteDeploymentRows(this.#pool, ref, selection);
+  }
 
   constructor(pool: Pool, secretBoxOrOptions?: SecretBox | PostgresStoreOptions) {
     const options = isPostgresStoreOptions(secretBoxOrOptions) ? secretBoxOrOptions : undefined;

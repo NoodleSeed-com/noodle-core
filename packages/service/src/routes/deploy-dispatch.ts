@@ -14,8 +14,10 @@ import type { AuditSink } from '../store/audit.js';
 import type { ControlPlaneStore } from '../store.js';
 import { handleDeploy } from './control-plane.js';
 import { handleDeployPreflight } from './deploy-preflight.js';
+import { handleDeploymentDelete, parseVersionDeletePath } from './deployment-delete.js';
 import { handleDeploymentLockUpdate } from './deployment-lock.js';
 import {
+  parseDeploymentItemPath,
   parseTenantDeploymentLockPath,
   parseTenantDeployPath,
   parseTenantDeployPreflightPath,
@@ -37,6 +39,20 @@ export function dispatchDeployRoutes(
     readonly tls: TlsPosture;
   },
 ): boolean {
+  if (req.method === 'DELETE') {
+    const item = parseDeploymentItemPath(url.pathname);
+    const deletion = item
+      ? { kind: 'deployment' as const, ...item }
+      : parseVersionDeletePath(url.pathname);
+    if (deletion) {
+      applySecurityHeaders(res, deps.tls);
+      if (enforceHttps(req, res, deps.tls)) return true;
+      handleDeploymentDelete(req, res, deletion, { ...deps, maxBody: deps.maxBody.control }).catch(
+        (error: unknown) => respondRouteError(deps.logger, res, 'deployment-delete.error', error),
+      );
+      return true;
+    }
+  }
   const deploymentLock = parseTenantDeploymentLockPath(url.pathname);
   if (req.method === 'PATCH' && deploymentLock !== undefined) {
     applySecurityHeaders(res, deps.tls);

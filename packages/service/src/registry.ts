@@ -47,6 +47,11 @@ import {
   type RegistryCompileResult,
 } from './registry-compile.js';
 import {
+  deleteRegistryDeployments,
+  readRegistryTarget,
+  reconcileRegistryTarget,
+} from './registry-deletion.js';
+import {
   createRegistryDeployRecord,
   deployedRecordResult,
   deploymentWriteVersionError,
@@ -83,7 +88,6 @@ import {
   deploymentSourceFor,
   rebindNativeRecords,
   servedTargetFor,
-  targetForPersistedRecord,
   tenantDeploymentKey,
   tenantKey,
 } from './registry-targets.js';
@@ -103,6 +107,7 @@ import {
   matchesDeploymentFilter,
   validateDeploymentListFilter,
 } from './store/records.js';
+import type { DeploymentDeleteResult, DeploymentDeleteSelection } from './store.js';
 import {
   type AppArchiveResult,
   type AppRestoreResult,
@@ -508,24 +513,21 @@ export class ServerRegistry {
   #compilePersistedRecord(record: DeployRecord) {
     return compilePersistedRegistryRecord(record, this.#compileTarget.bind(this));
   }
+  deleteDeployments(
+    ref: TenantRef,
+    selection: DeploymentDeleteSelection,
+  ): Promise<DeploymentDeleteResult> {
+    return deleteRegistryDeployments(this.#stateView(), ref, selection);
+  }
+
   async get(deploymentId: string): Promise<ServedTarget | undefined> {
-    if (this.#records.get(deploymentId)?.archivedAt !== undefined) return undefined;
-    const cached = this.#servers.get(deploymentId);
-    if (cached) {
-      const record = this.#store
-        ? await this.#store.get(deploymentId)
-        : this.#records.get(deploymentId);
-      return record === undefined || record.archivedAt !== undefined
-        ? undefined
-        : this.#targetForPersistedRecord(record);
-    }
-    const inflight = this.#inflight.get(deploymentId);
-    if (inflight) return inflight;
-    const promise = this.#loadAndCompile(deploymentId).finally(() => {
-      this.#inflight.delete(deploymentId);
-    });
-    this.#inflight.set(deploymentId, promise);
-    return promise;
+    return readRegistryTarget(
+      this.#stateView(),
+      deploymentId,
+      this.#inflight,
+      (record) => this.#targetForPersistedRecord(record),
+      (id) => this.#loadAndCompile(id),
+    );
   }
 
   /** Resolve a deployment-id data-plane route only while that exact record is actively serving. */
@@ -757,9 +759,7 @@ export class ServerRegistry {
   }
 
   async #targetForPersistedRecord(record: DeployRecord): Promise<ServedTarget | undefined> {
-    return targetForPersistedRecord(record, {
-      records: this.#records,
-      servers: this.#servers,
+    return reconcileRegistryTarget(this.#stateView(), record, {
       ...(this.#customerVerifierFactory
         ? { customerVerifierFactory: this.#customerVerifierFactory }
         : {}),

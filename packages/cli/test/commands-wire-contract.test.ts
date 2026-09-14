@@ -67,7 +67,7 @@ describe('commands --json public wire contract', () => {
 
     expect(envelope.data.commands).toHaveLength(63);
     const paths = leafPaths(envelope.data.commands);
-    expect(paths).toHaveLength(258);
+    expect(paths).toHaveLength(260);
     expect(paths).toContain('deploy');
     expect(paths).toContain('deploy preflight');
     expect(paths).toContain('service app-purge preview');
@@ -94,6 +94,8 @@ describe('commands --json public wire contract', () => {
     expect(paths).toContain('design inspect');
     expect(paths).toContain('deployments lock');
     expect(paths).toContain('deployments package');
+    expect(paths).toContain('deployments delete');
+    expect(paths).toContain('deployments delete-version');
     expect(paths).toContain('deployments unlock');
     expect(paths).toContain('distributions publish');
     expect(paths).toContain('distributions download');

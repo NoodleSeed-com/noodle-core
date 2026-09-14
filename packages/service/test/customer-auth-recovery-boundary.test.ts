@@ -318,7 +318,7 @@ describe('customer-auth recovery boundary', () => {
     expect(seenAuth).toEqual([FEDERATED_AUTH]);
   });
 
-  it('does not refetch a freshly loaded deployment during a cold serving lookup', async () => {
+  it('reuses the initial source with one post-compile deletion check during a cold serving lookup', async () => {
     const store = new DeploymentGetCountingStore();
     await store.append(record());
     const registry = registryFor(store);
@@ -327,7 +327,7 @@ describe('customer-auth recovery boundary', () => {
       deploymentId: 'deployment-1',
       accessMode: 'customers',
     });
-    expect(store.deploymentGetCalls).toBe(1);
+    expect(store.deploymentGetCalls).toBe(2); // Source read plus authority check before cache publication.
   });
 
   it('does not recover a customers record whose compiled manifest has no customer auth', async () => {

@@ -273,8 +273,11 @@ export async function setRegistryDeploymentLock(
     return result;
   }
 
-  const active = await activeRecordVersion(state, safe, safeVersion);
-  if (active === undefined) return { ok: false, reason: 'no_active_deployment' };
+  const observed = await activeRecordVersion(state, safe, safeVersion);
+  // The lookup yields; a concurrent deletion or pointer move must win before any cache write.
+  const active = observed === undefined ? undefined : state.records.get(observed.deploymentId);
+  if (active === undefined || !active.active || active.archivedAt !== undefined)
+    return { ok: false, reason: 'no_active_deployment' };
   if (active.deploymentId !== expectedDeploymentId) return { ok: false, reason: 'conflict' };
   const changed = (active.deploymentLock === undefined) !== (deploymentLock === undefined);
   if (!changed) return { ok: true, record: active, changed: false };

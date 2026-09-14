@@ -14,6 +14,7 @@ import { resolveControlPlaneToken, ServiceRequestError, serviceJson } from '../c
 import { relativeTime } from '../relative-time.js';
 import { type Column, renderTable, type TableOptions } from '../table.js';
 import { parseWatchFlags, runWatch, type WatchFrame, watchJsonConflictFailure } from '../watch.js';
+import { runDeploymentDelete } from './deployment-delete-ops.js';
 import { runDeploymentLockUpdate } from './deployment-lock-ops.js';
 import { runDeploymentPackage } from './deployment-package.js';
 import { EXIT, printJsonOk } from './output.js';
@@ -43,11 +44,15 @@ export async function runDeployments(
   rest: readonly string[],
   env: NodeJS.ProcessEnv,
   home: ConfigLocation,
+  prompts?: Parameters<typeof runDeploymentDelete>[4],
 ): Promise<number> {
   const [subcommand, ...tail] = rest;
   if (subcommand === 'list') return runDeploymentsList(tail, env, home);
   if (subcommand === 'inspect') return runDeploymentsInspect(tail, env, home);
   if (subcommand === 'package') return runDeploymentPackage(tail, env, home);
+  if (subcommand === 'delete' || subcommand === 'delete-version') {
+    return runDeploymentDelete(subcommand, tail, env, home, prompts);
+  }
   if (subcommand === 'lock' || subcommand === 'unlock') {
     return runDeploymentLockUpdate(subcommand, tail, env, home);
   }
