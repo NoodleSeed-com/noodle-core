@@ -82,5 +82,7 @@ tmp/.wrangler/
 # Playwright CLI local artifacts
 .playwright-cli/
 
-# Disposable Nx graph and task state
-.nx/
+# Versioned Nx CI definitions; graph, reports and task state remain disposable.
+.nx/*
+!.nx/ci-config.yaml
+!.nx/workflows/
