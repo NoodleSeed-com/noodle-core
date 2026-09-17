@@ -12,18 +12,12 @@ import {
   site,
   tool,
   variable,
+  webExtract,
   z,
 } from '@noodleseed/one';
 
-// Acme Getaways is a fictional travel brand. This app is deliberately top-of-funnel: discovery and
-// configuration happen inside ChatGPT; the booking/transaction happens off-app on Acme's own site,
-// reached through a signed, attributable handoff deep link. Destinations are the partner's own
-// catalog (grounding) — the app never invents a place, price, or best-month.
-//
-// Authoring note: a tool `fulfil` is *recorded*, not run as live JS. Inputs flow through as
-// `${input.x}` substitutions when placed directly into an output string; do not transform them
-// (no URL-encoding, arithmetic, or filtering on an input value — those break substitution). The
-// curated catalog below is static data the runtime returns verbatim.
+// Fictional travel discovery; authoritative bookings happen on Acme's site through signed handoff.
+// Fulfilment is recorded, not live JavaScript. The catalog supplies facts; page evidence is supplementary.
 
 const catalog = [
   {
@@ -292,6 +286,14 @@ const myTrips = tool('my_trips', {
 // can instead bring its own via `crawler: firecrawl({ apiKey: secret('FIRECRAWL_API_KEY') })`
 // and `index: algolia({ appId: variable('ALGOLIA_APP_ID'), apiKey: secret('ALGOLIA_API_KEY') })`
 // — the code names the config, `noodle secrets|variables set` supplies the values.
+const publicPages = webExtract('public_pages', {
+  title: 'Read a visitor-supplied public page',
+  description:
+    'Read an explicit public page for trip context. This evidence does not establish live prices, inventory or bookings.',
+  provider: noodleManaged(),
+  policy: { maxUrls: 3, maxCalls: 2, timeoutMs: 15_000 },
+});
+
 const destinations = knowledge('destinations', {
   title: 'Acme Getaways destinations',
   description: 'Public destination, pricing, cancellation, and support information.',
@@ -357,6 +359,7 @@ export default server(
           continuity: { enabled: true, windowSeconds: 300, maxRestores: 3 },
           capabilities: [
             destinations,
+            publicPages,
             discoverGetaways,
             createHandoff,
             shortlistGetaway,
@@ -384,6 +387,7 @@ export default server(
       },
     }),
     knowledge: [destinations],
+    capabilities: [publicPages],
   },
   [discoverGetaways, createHandoff, shortlistGetaway, captureLead, myTrips],
 );

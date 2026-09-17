@@ -154,13 +154,13 @@ interface SessionClaimDeclaration {
  * module it is used from.
  */
 export interface CapabilityRef {
-  readonly kind: 'tool' | 'resource' | 'prompt' | 'knowledge';
+  readonly kind: 'tool' | 'resource' | 'prompt' | 'knowledge' | 'web-extract';
   readonly name: string;
 }
 
 /** One projected capability as it appears in compiled data. */
 export interface AssistantCapability {
-  readonly kind: CapabilityRef['kind'];
+  readonly kind: Exclude<CapabilityRef['kind'], 'web-extract'>;
   readonly name: string;
 }
 
@@ -474,7 +474,11 @@ function normalizeCapabilities(
     const key = `${capability.kind}:${capability.name}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    normalized.push({ kind: capability.kind, name: capability.name });
+    normalized.push(
+      capability.kind === 'web-extract'
+        ? { kind: 'tool', name: `extract_${capability.name}` }
+        : { kind: capability.kind, name: capability.name },
+    );
   }
   return normalized;
 }

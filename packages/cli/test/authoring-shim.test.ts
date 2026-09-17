@@ -66,6 +66,7 @@ describe('@noodleseed/one deploy-time shim (ADR 0150)', () => {
       'tavily',
       'tool',
       'variable',
+      'webExtract',
       'when',
       'z',
     ]);

@@ -10,6 +10,7 @@
  */
 import { guardedFetch } from '@noodle-borg/connector-http';
 import { pathMatches } from '@noodle-borg/knowledge/portable';
+import { readBoundedBody } from './bounded-body.js';
 import { extractPageContent } from './html-text.js';
 import { parseOrigin, safeUrl } from './origin.js';
 import type { CrawlPage, SiteCrawlRequest, SiteFetcher } from './ports.js';
@@ -108,8 +109,7 @@ export class FirstPartySiteFetcher implements SiteFetcher {
     try {
       const response = await this.#fetch(url, { redirect: 'manual' } as RequestInit);
       if (response.status !== 200) return undefined;
-      const bytes = await response.arrayBuffer();
-      if (bytes.byteLength > maxPageBytes) return undefined;
+      const bytes = await readBoundedBody(response, maxPageBytes);
       return extractPageContent(response.headers.get('content-type') ?? '', bytes);
     } catch {
       return undefined;

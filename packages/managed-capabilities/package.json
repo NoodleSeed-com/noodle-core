@@ -1,0 +1,51 @@
+{
+  "name": "@noodle-borg/managed-capabilities",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "main": "./dist/portable.js",
+  "types": "./dist/portable.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/portable.d.ts",
+      "import": "./dist/portable.js"
+    },
+    "./portable": {
+      "types": "./dist/portable.d.ts",
+      "import": "./dist/portable.js"
+    },
+    "./contracts": {
+      "types": "./dist/operator-contracts.d.ts",
+      "import": "./dist/operator-contracts.js"
+    },
+    "./testing": {
+      "types": "./dist/conformance.d.ts",
+      "import": "./dist/conformance.js"
+    },
+    "./postgres": {
+      "types": "./dist/postgres.d.ts",
+      "import": "./dist/postgres.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@noodle-borg/module": "workspace:*",
+    "@noodle-borg/admission-limits": "workspace:*",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.1",
+    "@types/pg": "^8.20.0",
+    "pg": "^8.21.0"
+  }
+}

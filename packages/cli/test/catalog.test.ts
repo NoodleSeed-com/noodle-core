@@ -325,8 +325,8 @@ describe('usage()', () => {
     }
     // A collapsed verb never gets its own row.
     expect(text).not.toMatch(/^[|+]\s*prompts\b/m);
-    // operate has 19 commands including intents; account & config has 18.
-    expect(text.match(/\+14 more/g)).toHaveLength(1);
+    // operate has 20 commands including capabilities; account & config has 18.
+    expect(text.match(/\+15 more/g)).toHaveLength(1);
     expect(text.match(/\+13 more/g)).toHaveLength(1);
   });
 

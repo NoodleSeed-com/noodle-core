@@ -29,6 +29,15 @@ export interface ModuleRouteContext {
   readonly tenantControl?: TenantControlAuthorizer;
   /** Narrow deployment/App Package projection for hosted package operations. */
   readonly deploymentPackages?: DeploymentPackageView;
+  /** Read-only exact active capability declarations, available after same-request tenant authorization. */
+  readonly capabilityDeployments?: {
+    get(
+      req: IncomingMessage,
+      scope: { readonly org: string; readonly app: string; readonly env: string },
+    ): Promise<
+      { readonly deploymentId: string; readonly declarations: readonly unknown[] } | undefined
+    >;
+  };
   /** Minimal live deployment/package identity used only after an opaque delivery lookup. */
   readonly distributionDelivery?: DistributionDeliveryView;
   /** Host audit sink for route-emitted audit events; absent means the host has no audit trail. */

@@ -1,4 +1,5 @@
 import type { ArtifactFulfilment, RuntimeArtifact } from '@noodle-borg/compiler';
+import { CapabilityBudget } from '@noodle-borg/managed-capabilities';
 import { resolveVariableEnvironment, validateVariableContinuation } from './business-variables.js';
 import {
   analyzeEligibleActions,
@@ -40,6 +41,22 @@ import { attachResultMeta, splitResultMeta } from './result-meta.js';
 import { admitToolDispatch, latchToolDispatchAdmission } from './tool-dispatch.js';
 
 type FlowFulfilment = Extract<ArtifactFulfilment, { kind: 'flow' }>;
+function carryBudget(
+  result: ConfirmationPreparationResult,
+  budget: CapabilityBudget,
+): ConfirmationPreparationResult {
+  if (result.status === 'input_required')
+    return {
+      ...result,
+      continuation: { ...result.continuation, capabilityBudget: budget.snapshot() },
+    };
+  if (result.status === 'confirmation_required')
+    return {
+      ...result,
+      continuation: { ...result.continuation, capabilityBudget: budget.snapshot() },
+    };
+  return result;
+}
 
 /**
  * Evaluate the pure prefix of a confirmable tool. Connector operations are an absolute suspension
@@ -47,6 +64,21 @@ type FlowFulfilment = Extract<ArtifactFulfilment, { kind: 'flow' }>;
  * invoking one.
  */
 export async function prepareToolForConfirmation(
+  artifact: RuntimeArtifact,
+  toolName: string,
+  input: unknown,
+  deps: ExecuteToolDeps,
+): Promise<ConfirmationPreparationResult> {
+  const capabilityBudget = deps.capabilityBudget ?? new CapabilityBudget();
+  return carryBudget(
+    await prepareToolForConfirmationInternal(artifact, toolName, input, {
+      ...deps,
+      capabilityBudget,
+    }),
+    capabilityBudget,
+  );
+}
+async function prepareToolForConfirmationInternal(
   artifact: RuntimeArtifact,
   toolName: string,
   input: unknown,
@@ -106,6 +138,21 @@ export async function prepareToolForConfirmation(
 
 /** Resume the pure preparation prefix with one accepted, declined, or cancelled input response. */
 export async function resumeToolPreparation(
+  artifact: RuntimeArtifact,
+  continuation: ToolPreparationContinuation,
+  response: ElicitationResponse,
+  deps: ExecuteToolDeps,
+): Promise<ConfirmationPreparationResult> {
+  const capabilityBudget = new CapabilityBudget(continuation.capabilityBudget);
+  return carryBudget(
+    await resumeToolPreparationInternal(artifact, continuation, response, {
+      ...deps,
+      capabilityBudget,
+    }),
+    capabilityBudget,
+  );
+}
+async function resumeToolPreparationInternal(
   artifact: RuntimeArtifact,
   continuation: ToolPreparationContinuation,
   response: ElicitationResponse,
@@ -175,6 +222,7 @@ export async function executePreparedTool(
   continuation: PreparedToolContinuation,
   deps: ExecuteToolDeps,
 ): Promise<InteractiveExecutionResult> {
+  deps = { ...deps, capabilityBudget: new CapabilityBudget(continuation.capabilityBudget) };
   if (artifact.resolution !== 'resolved') {
     return failInteractive('shape_only_artifact', 'runtime refuses to serve a shape-only artifact');
   }

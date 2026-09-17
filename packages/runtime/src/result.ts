@@ -1,4 +1,5 @@
 import type { CredentialProfile } from '@noodle-borg/compiler';
+import type { CapabilityBudgetSnapshot } from '@noodle-borg/managed-capabilities';
 import type { ConnectorFailureCategory } from './connector/types.js';
 import type { CustomerRouteBinding } from './customer-routing.js';
 
@@ -87,6 +88,7 @@ export type ElicitationResponse =
  * never be serialized into MCP or embedded-assistant client payloads.
  */
 export interface ToolContinuation {
+  readonly capabilityBudget?: CapabilityBudgetSnapshot;
   readonly version: 1;
   readonly artifact: {
     readonly manifestName: string;
@@ -115,6 +117,7 @@ interface ContinuationArtifactIdentity {
  * can evaluate pure maps and request more input, but cannot execute a connector operation.
  */
 export interface ToolPreparationContinuation {
+  readonly capabilityBudget?: CapabilityBudgetSnapshot;
   readonly kind: 'confirmation_preparation';
   readonly version: 1;
   readonly artifact: ContinuationArtifactIdentity;
@@ -132,6 +135,7 @@ export interface ToolPreparationContinuation {
  * behind an opaque interaction id and release it to {@code executePreparedTool} only after approval.
  */
 export interface PreparedToolContinuation {
+  readonly capabilityBudget?: CapabilityBudgetSnapshot;
   readonly kind: 'prepared_confirmation';
   /** Private hosting snapshot; never projected into a model-visible confirmation. */
   readonly executionRevision?: string;

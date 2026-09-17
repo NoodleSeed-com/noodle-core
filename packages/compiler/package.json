@@ -24,6 +24,7 @@
     "schema": "node dist/schema-export.js"
   },
   "dependencies": {
+    "@noodle-borg/managed-capabilities": "workspace:*",
     "@noodle-borg/app-package": "workspace:*",
     "@noodle-borg/brand-kit": "workspace:*",
     "@noodle-borg/uri-template": "workspace:*",

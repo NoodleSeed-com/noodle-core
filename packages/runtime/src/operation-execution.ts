@@ -334,6 +334,9 @@ async function invokeOperation(
                 'Execution deadline elapsed before connector dispatch.',
               );
             output = await connector.invoke({
+              ...(deps.capabilityBudget === undefined
+                ? {}
+                : { capabilityBudget: deps.capabilityBudget }),
               operation: ref.operation,
               execution,
               reportOutcome: (value) => {

@@ -136,6 +136,10 @@ export async function guardedFetch(
       throw cause;
     }
     throw error;
+  } finally {
+    // Closing drains the current response without accepting another request. Consumers must read
+    // or cancel the body; do not await close here, which would deadlock before body consumption.
+    void dispatcher?.close().catch(() => {});
   }
 }
 

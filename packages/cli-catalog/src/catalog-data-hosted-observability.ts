@@ -76,6 +76,109 @@ const TENANT_TARGET_FLAGS: readonly FlagSpec[] = [
 
 export const CATALOG_HOSTED_OBSERVABILITY: readonly CommandSpec[] = [
   {
+    name: 'capabilities',
+    section: 'operate',
+    helpRank: 16,
+    summary:
+      'Inspect, configure and test bounded managed capabilities for an exact app/environment.',
+    arguments: [],
+    flags: [],
+    subcommands: [
+      {
+        ...SUBCOMMAND_FIELDS,
+        name: 'inspect',
+        summary: 'List capabilities or inspect one with effective policy.',
+        arguments: [
+          {
+            ...ARGUMENT_FIELDS,
+            name: 'name',
+            type: 'string',
+            summary: 'Capability name.',
+            required: false,
+          },
+        ],
+        flags: TENANT_TARGET_FLAGS,
+        jsonOutput: { mode: 'single' },
+      },
+      {
+        ...SUBCOMMAND_FIELDS,
+        name: 'configure',
+        summary: 'Replace policy with a revision and retry-safe mutation ID.',
+        arguments: [
+          {
+            ...ARGUMENT_FIELDS,
+            name: 'name',
+            type: 'string',
+            summary: 'Capability name.',
+            required: true,
+          },
+        ],
+        flags: [
+          ...TENANT_TARGET_FLAGS,
+          {
+            ...FLAG_FIELDS,
+            name: 'policy-file',
+            type: 'string',
+            value: '<path>',
+            required: true,
+            summary: 'Bounded JSON policy file.',
+          },
+          {
+            ...FLAG_FIELDS,
+            name: 'expected-revision',
+            type: 'string',
+            value: '<revision>',
+            required: true,
+            summary: 'Current policy revision; zero creates it.',
+          },
+          {
+            ...FLAG_FIELDS,
+            name: 'mutation-id',
+            type: 'string',
+            value: '<id>',
+            required: true,
+            summary: 'Stable ID reused for identical retries.',
+          },
+        ],
+        jsonOutput: { mode: 'single' },
+      },
+      {
+        ...SUBCOMMAND_FIELDS,
+        name: 'test',
+        summary: 'Run a governed diagnostic without returning page bodies.',
+        arguments: [
+          {
+            ...ARGUMENT_FIELDS,
+            name: 'name',
+            type: 'string',
+            summary: 'Capability name.',
+            required: true,
+          },
+        ],
+        flags: [
+          ...TENANT_TARGET_FLAGS,
+          {
+            ...FLAG_FIELDS,
+            name: 'request-file',
+            type: 'string',
+            value: '<path>',
+            required: true,
+            summary: 'JSON request containing explicit public URLs.',
+          },
+          {
+            ...FLAG_FIELDS,
+            name: 'mode',
+            type: 'string',
+            value: '<fixture|live>',
+            required: true,
+            summary: 'Fixture performs no website I/O; live fetches the specified pages.',
+          },
+        ],
+        jsonOutput: { mode: 'single' },
+      },
+    ],
+  },
+  {
     name: 'knowledge',
     section: 'operate',
     helpRank: 15,

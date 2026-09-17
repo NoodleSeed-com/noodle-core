@@ -160,6 +160,7 @@ export class ServerRegistry {
   #platformCatalog: readonly CatalogConnector[];
   #platformConnectors: readonly Connector[];
   #nativeRecords: NativeRecordConnectorFactory | undefined;
+  readonly #capabilities: ServerRegistryOptions['capabilities'];
   readonly #stateHandleStoreFactory: StateHandleStoreFactory | undefined;
   readonly #delegatedCredentialStore:
     | Pick<OAuthStore, 'getDelegatedCredential' | 'putDelegatedCredential'>
@@ -199,6 +200,7 @@ export class ServerRegistry {
     this.#platformCatalog = withBuiltinStateCatalog(options.platformCatalog ?? []);
     this.#platformConnectors = options.platformConnectors ?? [];
     this.#nativeRecords = options.nativeRecords;
+    this.#capabilities = options.capabilities;
     this.#stateHandleStoreFactory = options.stateHandleStoreFactory;
     this.#delegatedCredentialStore = options.delegatedCredentialStore;
     this.#sealCustomerCredential = options.sealCustomerCredential;
@@ -502,6 +504,7 @@ export class ServerRegistry {
         stateHandleStoreFactory: this.#stateHandleStoreFactory,
         platformConnectors: this.#platformConnectors,
         nativeRecords: this.#nativeRecords,
+        capabilities: this.#capabilities,
         policyGate: this.#policyGate,
         appPackageRenderer: this.#appPackageRenderer,
         knowledgeSearch: this.#knowledgeSearch,

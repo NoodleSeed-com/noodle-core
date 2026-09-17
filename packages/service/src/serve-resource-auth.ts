@@ -6,6 +6,7 @@ import {
 } from '@noodle-borg/module';
 import type { SecretBox } from '@noodle-borg/runtime';
 import { resolveTenantBridgeAuthVariables } from './managed-config-expressions.js';
+import { createHostedMcpRequestStateManager } from './mcp-protocol-runtime.js';
 import type { ServerRegistry } from './registry.js';
 import type { ServeServiceOptions } from './serve-options.js';
 import {
@@ -22,6 +23,18 @@ interface TenantResourceRef extends TenantRef {
 
 export function isLoopbackHost(host: string): boolean {
   return host === '127.0.0.1' || host === '::1' || host === 'localhost';
+}
+
+export function resolveMcpRequestState(options: ServeServiceOptions, secretBox?: SecretBox) {
+  return (
+    options.mcpRequestState ??
+    createHostedMcpRequestStateManager({
+      ...(options.wrappingMasterKey === undefined && options.secretMasterKey !== undefined
+        ? { secretMasterKey: options.secretMasterKey }
+        : {}),
+      ...(secretBox === undefined ? {} : { secretBox }),
+    })
+  );
 }
 
 export function assertLocalDevtoolsServiceBoundary(

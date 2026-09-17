@@ -38,6 +38,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@noodle-borg/managed-capabilities": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@noodle-borg/admission-limits": "workspace:*",
     "@noodle-borg/agent-kit": "workspace:*",
@@ -52,6 +53,7 @@
     "@noodle-borg/developer-mcp": "workspace:*",
     "@noodle-borg/external-credential-provider": "workspace:*",
     "@noodle-borg/knowledge": "workspace:*",
+    "@noodle-borg/knowledge-crawl": "workspace:*",
     "@noodle-borg/knowledge-operations": "workspace:*",
     "@noodle-borg/module": "workspace:*",
     "@noodle-borg/module-audit": "workspace:*",

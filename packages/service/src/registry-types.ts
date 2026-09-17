@@ -113,6 +113,7 @@ export interface AccessUpdateOptions {
 }
 
 export interface ServerRegistryOptions {
+  readonly capabilities?: import('@noodle-borg/managed-capabilities').CapabilityService;
   readonly nativeRecords?: NativeRecordConnectorFactory;
   /** Pure renderer injection used for deployment-bound package construction and failure testing. */
   readonly renderAppPackage?: AppPackageRenderer;

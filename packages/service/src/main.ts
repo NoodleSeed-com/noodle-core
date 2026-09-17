@@ -31,6 +31,11 @@ export { resolveRecoveryMode } from './recovery-quarantine.js';
 import { type BusinessOnboardingOptions, parseBusinessOnboarding } from './business-onboarding.js';
 
 export interface ServiceMainOverrides {
+  readonly webExtractTargets?: readonly {
+    readonly org: string;
+    readonly app: string;
+    readonly env: string;
+  }[];
   readonly businessOnboarding?: BusinessOnboardingOptions;
   readonly recoveryMode?: import('./recovery-quarantine.js').RecoveryMode;
   readonly postgresPool?: PostgresPool;
@@ -280,6 +285,9 @@ export async function runServiceMain(overrides: ServiceMainOverrides = {}): Prom
       ? {}
       : { businessInformationPublicIntakeEnabled }),
     ...(overrides.modules === undefined ? {} : { modules: overrides.modules }),
+    ...(overrides.webExtractTargets === undefined
+      ? {}
+      : { webExtractTargets: overrides.webExtractTargets }),
     ...(overrides.managedAssistantModelResolver === undefined
       ? {}
       : { managedAssistantModelResolver: overrides.managedAssistantModelResolver }),

@@ -1,4 +1,9 @@
 import { createHash } from 'node:crypto';
+import {
+  WEB_CATALOG_CONNECTOR,
+  WEB_CONNECTOR_ID,
+  WEB_CONNECTOR_VERSION,
+} from '@noodle-borg/managed-capabilities';
 import type {
   ArtifactConnectionSource,
   ArtifactFulfilment,
@@ -92,7 +97,8 @@ function resolveOp(
     operation: op.operation,
     resolved: false,
   };
-  if (!catalog) return unresolved;
+  const isWeb = declared[op.connectorAlias]?.id === WEB_CONNECTOR_ID;
+  if (!catalog && !isWeb) return unresolved;
   usedAliases.add(op.connectorAlias);
 
   const connectorRef = declared[op.connectorAlias];
@@ -107,7 +113,22 @@ function resolveOp(
     return unresolved;
   }
 
-  const connector = catalog.get(connectorRef.id, connectorRef.version);
+  const effectiveCatalog: ConnectorCatalog = {
+    get: (id, version) =>
+      id === WEB_CONNECTOR_ID && version === WEB_CONNECTOR_VERSION
+        ? WEB_CATALOG_CONNECTOR
+        : catalog?.get(id, version),
+  };
+  const connector = effectiveCatalog.get(connectorRef.id, connectorRef.version);
+  if (isWeb && (options.surface !== 'tool' || options.readOnly === true)) {
+    errors.push({
+      code: 'invalid_fulfilment',
+      path: `${op.path}.use`,
+      message:
+        'web extraction is available only in ordinary tools, never ambient context, resources or prompts',
+    });
+    return unresolved;
+  }
   if (!connector) {
     errors.push({
       code: 'connector_not_in_catalog',
@@ -165,7 +186,7 @@ function resolveOp(
     connector,
     operation: op.operation,
     path: op.path,
-    catalog,
+    catalog: effectiveCatalog,
     declared,
     errors,
     ...(traversal === undefined ? {} : { traversal }),

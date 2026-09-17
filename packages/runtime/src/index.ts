@@ -127,7 +127,7 @@ export {
   type ToolContinuation,
   type ToolPreparationContinuation,
 } from './result.js';
-export { splitResultMeta } from './result-meta.js';
+export { hasEphemeralEvidence, splitResultMeta } from './result-meta.js';
 export {
   type CallerStateAdoptionInput,
   type CallerStateAdoptionResult,
@@ -162,3 +162,4 @@ export type {
   ToolDispatchDecision,
   ToolDispatchHook,
 } from './tool-dispatch.js';
+export { WebCapabilityConnector, type WebCapabilityExecutionPort } from './web-capabilities.js';

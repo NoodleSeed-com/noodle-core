@@ -1,4 +1,5 @@
 import type { ArtifactFulfilment, RuntimeArtifact } from '@noodle-borg/compiler';
+import { CapabilityBudget } from '@noodle-borg/managed-capabilities';
 import type { CredentialBroker } from './broker/types.js';
 import { resolveVariableEnvironment } from './business-variables.js';
 import type {
@@ -47,6 +48,8 @@ type FlowFulfilment = Extract<ArtifactFulfilment, { kind: 'flow' }>;
  * [ADR 0005](../../../docs/decisions/0005-runtime-execution-boundary.md)).
  */
 export interface ExecuteDeps {
+  /** Trusted shared assistant-turn / MCP-invocation budget; never part of the expression scope. */
+  readonly capabilityBudget?: CapabilityBudget;
   readonly connectors: ConnectorRegistry;
   readonly broker: CredentialBroker;
   readonly policy?: PolicyGate;
@@ -146,7 +149,11 @@ export async function executeTool(
     tool.fulfilment,
     input,
     toolName,
-    { ...deps, env: variables.env },
+    {
+      ...deps,
+      env: variables.env,
+      capabilityBudget: deps.capabilityBudget ?? new CapabilityBudget(),
+    },
     deps.beforeDispatch,
   );
 }

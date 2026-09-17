@@ -29,6 +29,7 @@ export interface ModuleRouteContextDeps {
   readonly registry: Pick<
     ServerRegistry,
     | 'getDeployment'
+    | 'getActiveByTenant'
     | 'getDeploymentPackage'
     | 'reconcilePlatformAccountReset'
     | 'customerAuthRestoreProjections'
@@ -52,6 +53,17 @@ export function createModuleRouteContext(
     logger: deps.logger ?? noopModuleLogger,
     controlPlane: deps.gate,
     audit: deps.audit,
+    capabilityDeployments: {
+      get: async (request, scope) => {
+        if (request !== hostRequest || !authorizedOrgs.has(scope.org)) return undefined;
+        const target = await deps.registry.getActiveByTenant(scope);
+        if (target?.deploymentId === undefined) return undefined;
+        return {
+          deploymentId: target.deploymentId,
+          declarations: target.served.artifact.server.capabilities ?? [],
+        };
+      },
+    },
     platformIdentityRecovery: {
       reconcile: (plan) => deps.registry.reconcilePlatformAccountReset(plan),
       customerAuthRestoreProjections: async (deploymentIds) =>

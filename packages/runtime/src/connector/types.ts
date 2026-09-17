@@ -3,6 +3,7 @@ import type {
   OperationSignature,
   ResolvedOperationRef,
 } from '@noodle-borg/compiler';
+import type { CapabilityBudget } from '@noodle-borg/managed-capabilities';
 import type { DownstreamCredential } from '../broker/types.js';
 import type { CustomerConnectorRoute } from '../customer-routing.js';
 import type {
@@ -137,6 +138,7 @@ export interface ConnectorCallHost {
 
 /** A single connector-operation invocation, fully resolved and credentialed by the runtime. */
 export interface ConnectorCall {
+  readonly capabilityBudget?: CapabilityBudget;
   readonly operation: string;
   /** Runtime-generated, deployment/step-bound identity. Not a business input or recovery authority. */
   readonly execution?: Readonly<{ readonly id: string }>;

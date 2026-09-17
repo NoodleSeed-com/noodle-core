@@ -76,6 +76,9 @@ describe('shipped product agent-guide lifecycle guidance', () => {
     expect(reference).toMatch(/actually exported.*use its one documented declaration/i);
     expect(reference).toMatch(/embedded assistant and external MCP agents/i);
     expect(reference).toContain('provider: noodleManaged()');
+    expect(reference).toContain('webExtract("public_pages"');
+    expect(reference).toMatch(/Business tools may compose its documented operation/);
+    expect(reference).toMatch(/General search and BYO capability binding are not shipped/);
     expect(reference).toMatch(/fares, inventory, bookings.*remain connectors/i);
     expect(reference).toMatch(/roadmap is not an SDK/i);
     expect(reference).toMatch(/do not invent an import/i);

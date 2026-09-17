@@ -34,6 +34,7 @@ import {
   recordTool,
   type SymbolicScope,
 } from './recording.js';
+import { manifestWebCapability, type WebExtractDeclaration } from './web-capabilities.js';
 export type StateHandleKind = 'session' | 'draft' | 'selection' | 'search' | 'cart' | 'workflow';
 export type StateHandleScope = 'deployment' | 'caller';
 
@@ -77,6 +78,7 @@ export interface ServerOptions {
   readonly assistant?: EmbeddedAssistantConfig;
   /** Customer-owned knowledge components (ADR 0202): compile to generated `search_<name>` capabilities. */
   readonly knowledge?: readonly KnowledgeDeclaration[];
+  readonly capabilities?: readonly WebExtractDeclaration[];
   /** Typed managed records; operator-owned lifecycle and policy are bound outside reusable source. */
   readonly collections?: readonly collections.ManagedCollectionDeclaration[];
   readonly branding?: {
@@ -208,6 +210,7 @@ export interface ToolContext {
   readonly user: SymbolicScope;
   readonly context: SymbolicScope;
   readonly connectors: Record<string, ConnectorClient>;
+  readonly capabilities: Record<string, ConnectorClient>;
   /** Request one bounded, non-sensitive form input and continue with its symbolic response. */
   readonly elicit: (options: ElicitationOptions) => SymbolicScope;
 }
@@ -533,7 +536,11 @@ class ServerBuilder implements ServerDefinition {
         : await manifestContext(this.options.context, this.connectors);
     const tools: Manifest['tools'] = [];
     for (const tool of this.tools) {
-      const recorded = await recordTool(tool.options.fulfil, this.connectors);
+      const recorded = await recordTool(
+        tool.options.fulfil,
+        this.connectors,
+        this.options.capabilities,
+      );
       const { discovery, requiredScopes, allowedRoles, ...authorization } =
         tool.options.authorization ?? {};
       tools.push({
@@ -619,6 +626,9 @@ class ServerBuilder implements ServerDefinition {
         ...(this.options.assistant ? { assistant: manifestAssistant(this.options.assistant) } : {}),
         ...(this.options.knowledge && this.options.knowledge.length > 0
           ? { knowledge: this.options.knowledge.map(manifestKnowledge) }
+          : {}),
+        ...(this.options.capabilities?.length
+          ? { capabilities: this.options.capabilities.map(manifestWebCapability) }
           : {}),
         ...collections.manifestCollections(this.options.collections, this.connectors),
         ...manifestVariables(this.options.variables),

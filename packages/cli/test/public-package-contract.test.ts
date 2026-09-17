@@ -90,6 +90,7 @@ const rootRuntimeKeys = [
   'transitionBuildRun',
   'validate',
   'variable',
+  'webExtract',
   'when',
   'writeConfig',
   'writeNoodleProjectConfig',
@@ -218,12 +219,13 @@ describe('@noodleseed/one supported package contract', () => {
     writeFileSync(
       consumer,
       [
-        "import { server, type DevOptions, type NoodleConfig, type ServerDefinition } from '@noodleseed/one';",
+        "import { server, webExtract, noodleManaged, type DevOptions, type NoodleConfig, type ServerDefinition } from '@noodleseed/one';",
         "import { noodlePlatform } from '@noodleseed/one/platform';",
         "import { generateHelpers, type AppShellProps } from '@noodleseed/one/react';",
         'type PublicTypes = [DevOptions, NoodleConfig, ServerDefinition, typeof noodlePlatform, AppShellProps];',
         'void (null as unknown as PublicTypes);',
         'void server;',
+        "void server('pages', { title: 'Pages', version: '1.0.0', capabilities: [webExtract('pages', { title: 'Read pages', description: 'Read selected public pages.', provider: noodleManaged() })] }, []);",
         'void noodlePlatform;',
         'void generateHelpers;',
       ].join('\n'),
@@ -263,8 +265,8 @@ describe('@noodleseed/one supported package contract', () => {
     const removed = CATALOG.filter((command) => command.removed !== undefined).map(
       ({ name, removed: diagnostic }) => ({ name, removed: diagnostic }),
     );
-    expect(CATALOG).toHaveLength(63);
-    expect(paths).toHaveLength(330);
+    expect(CATALOG).toHaveLength(64);
+    expect(paths).toHaveLength(334);
     expect(paths.filter((path) => path.startsWith('solutions operations'))).toEqual([
       'solutions operations',
       'solutions operations coordination',

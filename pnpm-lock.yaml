@@ -257,6 +257,9 @@ importers:
       '@noodle-borg/connector-defs':
         specifier: workspace:*
         version: link:../connector-defs
+      '@noodle-borg/managed-capabilities':
+        specifier: workspace:*
+        version: link:../managed-capabilities
       '@radix-ui/react-dialog':
         specifier: ^1.1.17
         version: 1.1.17(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
@@ -505,6 +508,9 @@ importers:
       '@noodle-borg/knowledge':
         specifier: workspace:*
         version: link:../knowledge
+      '@noodle-borg/managed-capabilities':
+        specifier: workspace:*
+        version: link:../managed-capabilities
       '@noodle-borg/uri-template':
         specifier: workspace:*
         version: link:../uri-template
@@ -726,6 +732,9 @@ importers:
       '@noodle-borg/knowledge':
         specifier: workspace:*
         version: link:../knowledge
+      '@noodle-borg/managed-capabilities':
+        specifier: workspace:*
+        version: link:../managed-capabilities
     devDependencies:
       '@types/node':
         specifier: ^24.13.1
@@ -753,6 +762,28 @@ importers:
         specifier: ^8.20.0
         version: 8.20.0
 
+
+  packages/managed-capabilities:
+    dependencies:
+      '@noodle-borg/admission-limits':
+        specifier: workspace:*
+        version: link:../admission-limits
+      '@noodle-borg/module':
+        specifier: workspace:*
+        version: link:../module
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.1
+        version: 24.13.1
+      '@types/pg':
+        specifier: ^8.20.0
+        version: 8.20.0
+      pg:
+        specifier: ^8.21.0
+        version: 8.21.0
 
   packages/module:
     devDependencies:
@@ -908,6 +939,9 @@ importers:
       '@noodle-borg/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@noodle-borg/managed-capabilities':
+        specifier: workspace:*
+        version: link:../managed-capabilities
       '@noodle-borg/module':
         specifier: workspace:*
         version: link:../module
@@ -966,9 +1000,15 @@ importers:
       '@noodle-borg/knowledge':
         specifier: workspace:*
         version: link:../knowledge
+      '@noodle-borg/knowledge-crawl':
+        specifier: workspace:*
+        version: link:../knowledge-crawl
       '@noodle-borg/knowledge-operations':
         specifier: workspace:*
         version: link:../knowledge-operations
+      '@noodle-borg/managed-capabilities':
+        specifier: workspace:*
+        version: link:../managed-capabilities
       '@noodle-borg/module':
         specifier: workspace:*
         version: link:../module
@@ -1092,6 +1132,9 @@ importers:
       '@noodle-borg/knowledge':
         specifier: workspace:*
         version: link:../knowledge
+      '@noodle-borg/managed-capabilities':
+        specifier: workspace:*
+        version: link:../managed-capabilities
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -4187,7 +4230,7 @@ snapshots:
       '@babel/code-frame': 7.29.7
       '@babel/generator': 7.29.8
       '@babel/helper-compilation-targets': 7.29.7
-      '@babel/helper-module-transforms': 7.29.7(@babel/core@7.29.7)
+      '@babel/helper-module-transforms': 7.29.7(@babel/core@7.29.7(supports-color@7.2.0))
       '@babel/helpers': 7.29.7
       '@babel/parser': 7.29.8
       '@babel/template': 7.29.7
@@ -4227,7 +4270,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@babel/helper-module-transforms@7.29.7(@babel/core@7.29.7)':
+  '@babel/helper-module-transforms@7.29.7(@babel/core@7.29.7(supports-color@7.2.0))':
     dependencies:
       '@babel/core': 7.29.7(supports-color@7.2.0)
       '@babel/helper-module-imports': 7.29.7

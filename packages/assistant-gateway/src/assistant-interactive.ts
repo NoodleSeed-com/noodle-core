@@ -12,7 +12,11 @@ import type {
   ToolContinuation,
   ToolPreparationContinuation,
 } from '@noodle-borg/runtime';
-import { executeToolInteractive, prepareToolForConfirmation } from '@noodle-borg/runtime';
+import {
+  executeToolInteractive,
+  hasEphemeralEvidence,
+  prepareToolForConfirmation,
+} from '@noodle-borg/runtime';
 import { withAssistantSessionExecutionAuthority } from './assistant-customer-routing.js';
 import { assistantModelToolOncePerSession } from './assistant-guide.js';
 import {
@@ -47,7 +51,7 @@ export type AssistantToolDispatch =
       readonly event: 'tool_proposed' | 'input_requested' | 'error';
       readonly data: Readonly<Record<string, unknown>>;
     }
-  | { readonly kind: 'tool_result'; readonly output: unknown };
+  | { readonly kind: 'tool_result'; readonly output: unknown; readonly ephemeral?: boolean };
 
 /** Apply the same confirmation and suspend/resume policy to one model-proposed tool call. */
 export async function dispatchAssistantTool(input: {
@@ -199,6 +203,9 @@ async function dispatchClaimedAssistantTool(
   }
   return {
     kind: 'tool_result',
+    ...(result.status === 'completed' && hasEphemeralEvidence(result.output)
+      ? { ephemeral: true }
+      : {}),
     output:
       result.status === 'completed'
         ? assistantSafeOutput(input.tool.outputSchema, result.output)

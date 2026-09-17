@@ -23,6 +23,7 @@ import {
   type ExecuteDeps,
   executePreparedTool,
   executeToolInteractive,
+  hasEphemeralEvidence,
   type InteractiveExecutionResult,
   type InvocationContext,
   resumeTool,
@@ -509,6 +510,8 @@ async function finishExecution(
 
   const completedTool = target.served.artifact.tools.find((tool) => tool.name === toolName);
   const safeOutput = assistantSafeOutput(completedTool?.outputSchema, result.output);
+  const ephemeral = hasEphemeralEvidence(result.output);
+  const retainedOutput = ephemeral ? { evidenceRetained: false } : safeOutput;
   const completed = await completeAssistantInteractionExecution(
     deps,
     session,
@@ -516,7 +519,7 @@ async function finishExecution(
     'succeeded',
     'tool_completed',
     toolName,
-    { result: safeOutput },
+    { result: retainedOutput },
   );
   if (!completed) return writeUnknownOutcome(res, deps, session, interaction, 'accept');
   await auditAssistantInteraction({
@@ -533,7 +536,7 @@ async function finishExecution(
     // Model-facing scaffolding: the panel saw the tool_completed card, never this row's tool JSON.
     {
       role: 'assistant',
-      content: `Completed ${toolName}: ${JSON.stringify(safeOutput)}`,
+      content: `Completed ${toolName}: ${JSON.stringify(retainedOutput)}`,
       kind: 'narration',
     },
   ]);
@@ -550,7 +553,7 @@ async function finishExecution(
     (failure) => deps.logger?.warn('assistant.view.unresolved', { ...failure }),
   );
   if (view) {
-    await deps.store.replaceLatestView(session.id, recoverableAssistantView(view));
+    if (!ephemeral) await deps.store.replaceLatestView(session.id, recoverableAssistantView(view));
     writeViewAvailable(res, view);
   }
   await narrateResolvedInteraction(

@@ -25,6 +25,14 @@ export interface ProductFeature {
 /** Single public compatibility registry used by CLI output, docs, and release notes. */
 export const PRODUCT_FEATURES: readonly ProductFeature[] = [
   {
+    id: 'bounded-public-page-extraction',
+    title: 'Bounded public-page extraction',
+    since: 'next',
+    description:
+      'Managed-only learning cohort: explicit public HTTPS pages through ordinary tools, with revisioned operator policy, shared budgets and evidence references. General search and BYO are not included.',
+    hosts: { claude: 'preview', chatgpt: 'preview', embedded: 'preview' },
+  },
+  {
     id: 'mcp-core',
     title: 'MCP tools, resources, and prompts',
     since: '0.1.0',

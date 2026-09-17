@@ -7,6 +7,7 @@ import type { ServerRegistry } from './registry.js';
 import type { ConfigStore, TenantBridgeAuthConfig } from './store.js';
 
 type LocalRuntimeOptions = {
+  readonly capabilities?: import('@noodle-borg/managed-capabilities').CapabilityService;
   readonly assistantStore?: import('@noodle-borg/assistant-gateway/portable').AssistantStore;
   readonly assistantAppearance?: import('@noodle-borg/assistant-gateway/portable').AssistantAppearanceSettingsStore;
   readonly publicEmbeds?: import('@noodle-borg/assistant-gateway/portable').PublicEmbedStore;

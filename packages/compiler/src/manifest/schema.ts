@@ -1,4 +1,5 @@
 import { knowledgeComponentManifestSchema } from '@noodle-borg/knowledge/portable';
+import { webCapabilityBaseSchema } from '@noodle-borg/managed-capabilities';
 import { z } from 'zod';
 import {
   MAX_VARIABLE_DECLARATIONS,
@@ -485,6 +486,10 @@ const serverV2Schema = serverSchema.extend({
   agentGuide: agentGuideSchema.optional(),
   /** Customer-owned knowledge components (ADR 0202): Core v2 only. */
   knowledge: z.array(knowledgeComponentManifestSchema).optional(),
+  capabilities: z
+    .array(webCapabilityBaseSchema.extend({ authorization: toolAuthorizationSchema.optional() }))
+    .max(8)
+    .optional(),
   /** Managed business records: reusable schema intent only, never operator lifecycle state. */
   collections: z.array(managedCollectionManifestSchema).max(MAX_MANAGED_COLLECTIONS).optional(),
 });
@@ -729,11 +734,16 @@ export const manifestV2Schema = z
   // (ADR 0217): a knowledge-only server is valid, an empty server is not. v1 keeps its
   // authored-tool minimum — it has no server.knowledge to count.
   .superRefine((manifest, ctx) => {
-    if (manifest.tools.length === 0 && (manifest.server.knowledge?.length ?? 0) === 0) {
+    if (
+      manifest.tools.length === 0 &&
+      (manifest.server.knowledge?.length ?? 0) === 0 &&
+      (manifest.server.capabilities?.length ?? 0) === 0
+    ) {
       ctx.addIssue({
         code: 'custom',
         path: ['tools'],
-        message: 'declare at least one tool or one server.knowledge component',
+        message:
+          'declare at least one tool, server.knowledge component or server.capabilities declaration',
       });
     }
   });

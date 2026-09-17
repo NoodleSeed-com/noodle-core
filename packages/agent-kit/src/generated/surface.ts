@@ -31,6 +31,7 @@ export const CLI_COMMANDS: readonly string[] = [
   'design',
   'audit',
   'knowledge',
+  'capabilities',
   'billing',
   'logs',
   'metrics',
@@ -104,6 +105,7 @@ export const SDK_EXPORTS: readonly string[] = [
   'tavily',
   'tool',
   'variable',
+  'webExtract',
   'when',
   'z',
 ];

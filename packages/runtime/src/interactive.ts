@@ -1,4 +1,5 @@
 import type { ArtifactFulfilment, RuntimeArtifact } from '@noodle-borg/compiler';
+import { CapabilityBudget } from '@noodle-borg/managed-capabilities';
 import { resolveVariableEnvironment, validateVariableContinuation } from './business-variables.js';
 import { preflightFulfilmentCustomerRoutes } from './customer-routing.js';
 import { validateElicitationContent } from './elicitation-response.js';
@@ -43,7 +44,11 @@ export async function executeToolInteractive(
     toolName,
   );
   if (!variables.ok) return { status: 'failed', error: variables.error };
-  deps = { ...deps, env: variables.env };
+  deps = {
+    ...deps,
+    env: variables.env,
+    capabilityBudget: deps.capabilityBudget ?? new CapabilityBudget(),
+  };
   if (tool.fulfilment.kind !== 'flow' || !tool.fulfilment.steps.some((s) => s.kind === 'elicit')) {
     return toInteractive(
       await runFulfilment(tool.fulfilment, input, toolName, deps, deps.beforeDispatch),
@@ -64,6 +69,7 @@ export async function resumeTool(
   response: ElicitationResponse,
   deps: ExecuteToolDeps,
 ): Promise<InteractiveExecutionResult> {
+  deps = { ...deps, capabilityBudget: new CapabilityBudget(continuation.capabilityBudget) };
   if (!sameArtifact(artifact, continuation) || continuation.version !== 1) {
     return interactiveFail('invalid_continuation', 'tool continuation does not match the artifact');
   }
@@ -138,6 +144,9 @@ async function runInteractiveFlow(
           status: 'input_required',
           request,
           continuation: {
+            ...(deps.capabilityBudget === undefined
+              ? {}
+              : { capabilityBudget: deps.capabilityBudget.snapshot() }),
             version: 1,
             artifact: artifactIdentity(artifact),
             toolName,

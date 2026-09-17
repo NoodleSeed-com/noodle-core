@@ -6,6 +6,7 @@ import {
 } from '@noodle-borg/assistant-gateway/portable';
 import { allowAllGate, InMemoryControlPlaneStore } from '@noodle-borg/control-plane/portable';
 import { dispatchKnowledgeRequest } from '@noodle-borg/knowledge-operations/portable';
+import { capabilityOperatorRoute } from '@noodle-borg/managed-capabilities';
 import { OPENAI_APPS_CHALLENGE_PATH } from '@noodle-borg/module';
 import {
   applySecurityHeaders,
@@ -243,7 +244,12 @@ export function createServiceHandler(
   });
   archiveSweeper.maybeSweep();
   const moduleRouteDeps = {
-    routes: moduleHost.routes,
+    routes: [
+      ...moduleHost.routes,
+      ...(options.capabilities === undefined
+        ? []
+        : [capabilityOperatorRoute(options.capabilities)]),
+    ],
     logger,
     gate,
     controlPlane,

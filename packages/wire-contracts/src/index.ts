@@ -272,13 +272,13 @@ export function formatWireError(error: z.ZodError): string {
   return path === '' ? issue.message : `"${path}": ${issue.message}`;
 }
 
+export * from '@noodle-borg/managed-capabilities/contracts';
 export * from './application-activity.js';
 export * from './application-connections.js';
 export * from './application-onboarding.js';
 export * from './billing-catalog.js';
 export * from './deployment-deletion.js';
 export * from './operation-coordination.js';
-
 export {
   MIXED_CUSTOMER_AUTH_FEATURE_VERSION,
   type ServiceInfoClientResponse,

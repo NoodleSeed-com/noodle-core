@@ -31,6 +31,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.type-tests.json --noEmit"
   },
   "dependencies": {
+    "@noodle-borg/managed-capabilities": "workspace:*",
     "typescript": "^6.0.3",
     "@noodle-borg/compiler": "workspace:*",
     "@noodle-borg/connector-defs": "workspace:*",

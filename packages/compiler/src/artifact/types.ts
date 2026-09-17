@@ -1,5 +1,6 @@
 import type { CapabilityRequirementName } from '@noodle-borg/capabilities';
 import type { CompiledKnowledgeComponent } from '@noodle-borg/knowledge/portable';
+import type { WebCapability } from '@noodle-borg/managed-capabilities';
 import type { ArtifactVariableDeclaration } from '../business-variables.js';
 import type { CustomerEndpointPolicy } from '../customer-endpoint.js';
 import type { ManagedCollectionControls } from '../managed-collection-controls.js';
@@ -288,6 +289,7 @@ export interface ArtifactServer {
   readonly auth?: ArtifactAuth;
   /** Compiled knowledge components (ADR 0202, Core v2): descriptors + generated tool metadata, never bytes. */
   readonly knowledge?: readonly CompiledKnowledgeComponent[];
+  readonly capabilities?: readonly WebCapability[];
   /** Compiled managed-record schema intent; lifecycle and operator state remain outside artifacts. */
   readonly managedCollections?: readonly ArtifactManagedCollection[];
   /** Typed reusable managed-variable declarations, never live operator values. */

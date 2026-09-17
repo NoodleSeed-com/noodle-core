@@ -17,6 +17,12 @@ import type { PostgresPool } from './store/cloudsql-pool.js';
 import type { ArtifactStore, TenantBridgeAuthConfig } from './store.js';
 
 export type ServeServiceOptions = ServiceOptions & {
+  /** Exact opt-in targets for the bounded managed extraction learning cohort; absent is disabled. */
+  readonly webExtractTargets?: readonly {
+    readonly org: string;
+    readonly app: string;
+    readonly env: string;
+  }[];
   /** Stable HMAC identity key; falls back to the existing business-source key or local master key. */
   readonly operationEvidenceIdentityKey?: string;
   /** Shared restore fence. Rotate before reopening a restored database to invalidate old confirmations. */

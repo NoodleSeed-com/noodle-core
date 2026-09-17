@@ -3759,6 +3759,154 @@
                 "additionalProperties": false
               }
             },
+            "capabilities": {
+              "maxItems": 8,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 64,
+                    "pattern": "^[a-z][a-z0-9_]*$"
+                  },
+                  "class": {
+                    "type": "string",
+                    "const": "web.extract.v1"
+                  },
+                  "title": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  },
+                  "provider": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "noodle-managed"
+                      }
+                    },
+                    "required": ["kind"],
+                    "additionalProperties": false
+                  },
+                  "policy": {
+                    "type": "object",
+                    "properties": {
+                      "maxUrls": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 5
+                      },
+                      "maxCalls": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3
+                      },
+                      "timeoutMs": {
+                        "type": "integer",
+                        "minimum": 100,
+                        "maximum": 30000
+                      },
+                      "maxTextBytes": {
+                        "type": "integer",
+                        "minimum": 256,
+                        "maximum": 32768
+                      },
+                      "domains": {
+                        "minItems": 1,
+                        "maxItems": 32,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "maxLength": 253,
+                          "pattern": "^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\\.)+[a-z][a-z0-9-]*$"
+                        }
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "authorization": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "discovery": {
+                            "type": "string",
+                            "enum": ["authorized", "public"]
+                          },
+                          "requiredScopes": {
+                            "minItems": 1,
+                            "maxItems": 128,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"
+                            }
+                          },
+                          "allowedRoles": {
+                            "minItems": 1,
+                            "maxItems": 128,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200,
+                              "pattern": "^[^\\p{Cc}]+$"
+                            }
+                          }
+                        },
+                        "required": ["requiredScopes"],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "discovery": {
+                            "type": "string",
+                            "enum": ["authorized", "public"]
+                          },
+                          "requiredScopes": {
+                            "minItems": 1,
+                            "maxItems": 128,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 512,
+                              "pattern": "^[\\x21\\x23-\\x5B\\x5D-\\x7E]+$"
+                            }
+                          },
+                          "allowedRoles": {
+                            "minItems": 1,
+                            "maxItems": 128,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 200,
+                              "pattern": "^[^\\p{Cc}]+$"
+                            }
+                          }
+                        },
+                        "required": ["allowedRoles"],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                },
+                "required": ["name", "class", "title", "description", "provider"],
+                "additionalProperties": false
+              }
+            },
             "collections": {
               "maxItems": 16,
               "type": "array",

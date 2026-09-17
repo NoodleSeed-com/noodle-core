@@ -54,6 +54,7 @@ import { resolveSchemaUses } from './manifest/schema-refs.js';
 import { validateWebsiteProjection } from './manifest/website-projection.js';
 import { compileState } from './state-handles.js';
 import { suggestionFields } from './suggest.js';
+import { expandWebCapabilities } from './web-capabilities.js';
 import { openAiWidgetCsp, withAssetResourceDomain } from './widget-compile-helpers.js';
 import { resourceUiMeta, widgetHtml, widgetUri } from './widget-emit.js';
 import { widgetHtmlSizeErrors } from './widget-size-validation.js';
@@ -214,6 +215,7 @@ export function compileManifest(raw: unknown, options: CompileOptions = {}): Com
   // 2. Structural passes (catalog-independent): duplicate names, `$use` resolution, external refs,
   // fulfilment parsing. `$use` is resolved first so external-ref detection also scans bundled defs.
   const errors: CompileError[] = widgetHtmlSizeErrors(manifest, runtimeBranding);
+  expandWebCapabilities(manifest, errors);
   const variables = compileVariableDeclarations(
     manifest.manifestVersion === '2' ? (manifest.server.variables ?? []) : [],
     manifest.tools.map((tool) => tool.name),

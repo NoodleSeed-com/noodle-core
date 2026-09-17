@@ -7,6 +7,39 @@ import { createModuleRouteContext } from '../src/modules/route-dispatch.js';
 const request = { headers: { host: 'service.test' } } as IncomingMessage;
 
 describe('module route host capabilities', () => {
+  it('binds capability declaration access to the authorized request and exact tenant', async () => {
+    const registry = fakeRegistry();
+    registry.getActiveByTenant.mockResolvedValue({
+      deploymentId: 'dep_123',
+      served: { artifact: { server: { capabilities: [{ name: 'pages' }] } } },
+    });
+    const context = createModuleRouteContext(request, {
+      gate: gate(),
+      controlPlane: await memberStore(),
+      registry,
+      audit: new InMemoryAuditStore(),
+      options: {},
+    });
+    const tenant = { org: 'acme', app: 'web', env: 'staging' };
+    expect(await context.capabilityDeployments?.get(request, tenant)).toBeUndefined();
+    expect(registry.getActiveByTenant).not.toHaveBeenCalled();
+    await context.tenantControl?.authorize(request, { org: 'acme', permission: 'org:member' });
+    expect(
+      await context.capabilityDeployments?.get({ ...request } as IncomingMessage, tenant),
+    ).toBeUndefined();
+    expect(
+      await context.capabilityDeployments?.get(request, { ...tenant, org: 'other' }),
+    ).toBeUndefined();
+    expect(registry.getActiveByTenant).not.toHaveBeenCalled();
+    expect(await context.capabilityDeployments?.get(request, tenant)).toEqual({
+      deploymentId: 'dep_123',
+      declarations: [{ name: 'pages' }],
+    });
+    expect(registry.getActiveByTenant).toHaveBeenCalledWith(tenant);
+    expect(
+      await context.tenantControl?.authorize(request, { org: 'acme', permission: 'org:manage' }),
+    ).toMatchObject({ ok: false, status: 403 });
+  });
   it('exposes only live delivery eligibility before tenant auth and binds it to the exact request', async () => {
     const registry = fakeRegistry();
     const context = createModuleRouteContext(request, {
@@ -196,6 +229,7 @@ describe('module route host capabilities', () => {
 
 function fakeRegistry() {
   return {
+    getActiveByTenant: vi.fn().mockResolvedValue(undefined),
     getDeployment: vi.fn().mockResolvedValue({
       deploymentId: 'dep_123',
       orgSlug: 'acme',

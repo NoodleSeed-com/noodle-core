@@ -209,6 +209,11 @@ export const COMMAND_GROUPS: Record<string, CommandGroupEntry> = {
     group: 'Governance & observability',
     summary: 'Operator-only knowledge components: list, status, and refresh (ADR 0202).',
   },
+  capabilities: {
+    group: 'Governance & observability',
+    summary:
+      'Inspect, revision-configure and explicitly fixture/live-test managed capability policy.',
+  },
   audit: {
     group: 'Governance & observability',
     summary: 'Operator governance audit status and event queries.',

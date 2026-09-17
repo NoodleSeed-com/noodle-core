@@ -43,6 +43,7 @@ const BARREL_EXPORTS = [
   'tavily',
   'tool',
   'variable',
+  'webExtract',
   'when',
   'widgetResult',
   'z',

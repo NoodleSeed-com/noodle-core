@@ -60,8 +60,10 @@ import {
   type SecretEnvelope,
   type TenantRef,
 } from './store.js';
+import { deploymentWebConnector } from './web-capabilities.js';
 
 interface RegistryCompileContext {
+  readonly capabilities: ServerRegistryOptions['capabilities'];
   readonly activeArtifact: () => Promise<RuntimeArtifact | undefined>;
   readonly configStore: ConfigStore;
   readonly platformCatalog: readonly CatalogConnector[];
@@ -348,11 +350,18 @@ export async function compileRegistryTarget(
       artifact,
       ...(boundDeploymentId === undefined ? {} : { deploymentId: boundDeploymentId }),
     });
+    const webConnector = deploymentWebConnector(
+      artifact,
+      tenant,
+      boundDeploymentId,
+      context.capabilities,
+    );
     return {
       artifact,
       deps: {
         connectors: new InMemoryConnectorRegistry([
           ...context.platformConnectors,
+          ...(webConnector === undefined ? [] : [webConnector]),
           ...(nativeRecords === undefined ? [] : [nativeRecords]),
           ...(stateConnector !== undefined ? [stateConnector] : []),
           ...httpConnectors,

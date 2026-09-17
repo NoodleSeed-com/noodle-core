@@ -29,6 +29,7 @@ import {
 } from '@noodle-borg/assistant-gateway/portable';
 import { type ArtifactTool, validateJsonSchemaWithDefaults } from '@noodle-borg/compiler';
 import { guardedFetch } from '@noodle-borg/connector-http';
+import { CapabilityBudget } from '@noodle-borg/managed-capabilities';
 import { evaluateToolAuthorization } from '@noodle-borg/protocol';
 import type { ExecuteDeps, InvocationContext } from '@noodle-borg/runtime';
 import type { ServedTarget } from '@noodle-borg/transport-http';
@@ -183,6 +184,7 @@ export async function runAgentTurn(
   // Across every step of this turn, not per step: eight tool calls is eight, however the model splits
   // them, or a model that loops one call per step would spend the budget a step at a time.
   let toolCallsThisTurn = 0;
+  const capabilityBudget = new CapabilityBudget();
   let omittedToolRecoveries = 0;
   let remainingTokens = binding.requestPolicy?.maxTokensPerTurn;
   const turnSignal =
@@ -359,7 +361,7 @@ export async function runAgentTurn(
         tool,
         arguments: args,
         executeDeps: withAssistantSessionExecutionAuthority(
-          target.served.deps as ExecuteDeps,
+          { ...(target.served.deps as ExecuteDeps), capabilityBudget },
           target.served.artifact,
           session,
         ),
@@ -394,7 +396,8 @@ export async function runAgentTurn(
         (failure) => deps.logger?.warn('assistant.view.unresolved', { ...failure }),
       );
       if (view) {
-        await deps.store.replaceLatestView(session.id, recoverableAssistantView(view));
+        if (!dispatch.ephemeral)
+          await deps.store.replaceLatestView(session.id, recoverableAssistantView(view));
         emit({ event: 'view_available', data: { ...view } });
       }
       messages.push({

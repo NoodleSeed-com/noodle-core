@@ -110,6 +110,7 @@ const HANDLER_FAMILY_SURFACES = {
   ],
   audit: ['audit status', 'audit events'],
   knowledge: ['knowledge list', 'knowledge status', 'knowledge refresh'],
+  capabilities: ['capabilities inspect', 'capabilities configure', 'capabilities test'],
   logs: ['logs'],
   analytics: ['metrics', 'events'],
   alerts: ['alerts add', 'alerts list', 'alerts remove', 'alerts test'],

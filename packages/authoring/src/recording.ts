@@ -4,6 +4,7 @@ import type { ConnectorRef } from './connectors.js';
 import type { AmbientContextOptions } from './context.js';
 import { toJsonSchema } from './json-schema.js';
 import type { ResourceContext, ToolContext, ToolOptions } from './server.js';
+import type { WebExtractDeclaration } from './web-capabilities.js';
 
 export type SymbolicScope = Ref & Record<string, Ref>;
 export type ConnectorClient = Record<
@@ -52,6 +53,7 @@ export function when<T>(condition: Cond, record: () => T): T {
 export async function recordTool(
   fulfil: ToolOptions['fulfil'],
   connectors: Readonly<Record<string, ConnectorRef>>,
+  capabilities: readonly WebExtractDeclaration[] = [],
 ): Promise<{ steps: RecordedStep[]; output: Record<string, unknown> }> {
   const ctx = newRecordingContext();
   activeRecording = ctx;
@@ -61,6 +63,7 @@ export async function recordTool(
       user: makeScope('user') as SymbolicScope,
       context: makeScope('context') as SymbolicScope,
       connectors: makeConnectors(connectors, ctx),
+      capabilities: makeCapabilities(capabilities, ctx),
       elicit: makeElicitor(ctx),
     });
     return { steps: ctx.steps, output: serializeMap(result) };
@@ -136,6 +139,41 @@ export async function recordAmbientContext(
 
 function newRecordingContext(): RecordingContext {
   return { steps: [], counts: new Map(), stepIds: new Set() };
+}
+
+function makeCapabilities(
+  declarations: readonly WebExtractDeclaration[],
+  ctx: RecordingContext,
+): Record<string, ConnectorClient> {
+  const names = new Set(declarations.map((value) => value.name));
+  return new Proxy(
+    {},
+    {
+      get(_target, name) {
+        if (typeof name !== 'string') return undefined;
+        if (!names.has(name)) throw new Error(`unknown capability "${name}"`);
+        return new Proxy(
+          {},
+          {
+            get(_client, method) {
+              if (method !== 'extract')
+                throw new Error(`unknown capability method "${String(method)}"`);
+              return (request: Readonly<Record<string, unknown>>) => {
+                const id = nextStepId(ctx, 'extract');
+                ctx.steps.push({
+                  id,
+                  use: 'noodle_web.extract',
+                  args: serializeConnectorArgs({ name, request }),
+                  ...(ctx.pendingCondition ? { if: ctx.pendingCondition } : {}),
+                });
+                return makeScope(`steps.${id}`);
+              };
+            },
+          },
+        );
+      },
+    },
+  ) as Record<string, ConnectorClient>;
 }
 
 function makeElicitor(ctx: RecordingContext): ToolContext['elicit'] {

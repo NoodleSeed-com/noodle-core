@@ -144,6 +144,7 @@ export interface ServiceOptions {
   readonly configStore?: ConfigStore;
   /** Knowledge stores + sealing codec (ADR 0202). Default: in-memory, identity codec. */
   readonly knowledge?: KnowledgeServiceStores;
+  readonly capabilities?: import('@noodle-borg/managed-capabilities').CapabilityService;
   /**
    * Audit/event sink (Phase 0 governance spine). Without PostgreSQL it is the primary system of record and
    * defaults to an in-memory store. With PostgreSQL, {@link serveService} always keeps the transaction-capable

@@ -60,7 +60,6 @@ import {
   ensureMcpConfirmationNonceSchema,
   PostgresMcpConfirmationNonceLedger,
 } from './mcp-confirmation-nonce-postgres.js';
-import { createHostedMcpRequestStateManager } from './mcp-protocol-runtime.js';
 import { bootstrapServiceModules } from './modules/bootstrap.js';
 import type { ModuleHost } from './modules/host.js';
 import { resolveServiceOAuthBootstrap } from './oauth/service-bootstrap.js';
@@ -78,8 +77,10 @@ import {
   assertLocalDevtoolsServiceBoundary,
   isLoopbackHost,
   openCustomerCredential,
+  resolveMcpRequestState,
   sealCustomerCredential,
 } from './serve-resource-auth.js';
+import { hostedWebCapabilities } from './serve-web-capabilities.js';
 import { createServiceHandler } from './service.js';
 import { resolveServiceConfigSource } from './service-config.js';
 import {
@@ -138,6 +139,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
   // A host-injected wrapping custodian takes precedence over a static local key.
   let secretBox: SecretBox | undefined;
   let knowledge: ServiceOptions['knowledge'];
+  let capabilities = options.capabilities;
   if (durableStoreRequested) {
     if (options.wrappingMasterKey !== undefined) {
       secretBox = new SecretBox(options.wrappingMasterKey);
@@ -149,14 +151,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       );
     }
   }
-  const mcpRequestState =
-    options.mcpRequestState ??
-    createHostedMcpRequestStateManager({
-      ...(options.wrappingMasterKey === undefined && options.secretMasterKey !== undefined
-        ? { secretMasterKey: options.secretMasterKey }
-        : {}),
-      ...(secretBox === undefined ? {} : { secretBox }),
-    });
+  const mcpRequestState = resolveMcpRequestState(options, secretBox);
   let mcpConfirmationNonceLedger = options.mcpConfirmationNonceLedger;
 
   // Select exactly one durable backend: Postgres (cloud, ADR 0035) > file (local) > in-memory. The
@@ -258,6 +253,11 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       const { PostgresAppPurgeReconciliationOperator } = await import('@noodle-borg/control-plane');
       appPurgeReconciliationOperator = new PostgresAppPurgeReconciliationOperator(postgresPool);
       knowledge = await createPostgresKnowledgeStores(postgresPool, secretBox);
+      capabilities ??= await hostedWebCapabilities(
+        postgresPool,
+        options.webExtractTargets,
+        () => moduleHost?.audit,
+      );
       warnCustomerAuthAudienceQuarantine(options.logger ?? noopLogger, customerAuthAudience);
       if (googleWorkloadIdentity === undefined && options.oauth !== undefined) {
         const identities = new PostgresGoogleWorkloadIdentityStore(postgresPool);
@@ -581,6 +581,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       options.externalCredentialExchange ??
       (connectionRuntime ? { localProvider: connectionRuntime.localProvider } : undefined);
     registry = new ServerRegistry(store, secretBox, configStore, {
+      ...(capabilities === undefined ? {} : { capabilities }),
       customerVerifierFactory:
         options.localDevtoolsDirectFirebaseAuth === true ||
         options.localDevtoolsDirectMicrosoftAuth === true
@@ -705,6 +706,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       ...(operationEvidence === undefined ? {} : { operationEvidence }),
       ...(connectionRuntime === undefined ? {} : { connectionRuntime }),
       ...(knowledge === undefined ? {} : { knowledge }),
+      ...(capabilities === undefined ? {} : { capabilities }),
       ...(businessInformationStore === undefined ? {} : { businessInformationStore }),
       ...(businessInformationSourceStore === undefined ? {} : { businessInformationSourceStore }),
       businessInformationEnabled,

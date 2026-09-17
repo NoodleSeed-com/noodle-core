@@ -163,5 +163,10 @@ export {
   type WidgetPermissions,
   widgetResult,
 } from './server.js';
+export {
+  type WebExtractDeclaration,
+  type WebExtractOptions,
+  webExtract,
+} from './web-capabilities.js';
 export type { ConnectorFile, HttpConnectorDef };
 export { z };

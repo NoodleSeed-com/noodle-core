@@ -28,6 +28,7 @@ import {
   runValidate,
 } from './commands/author-loop.js';
 import { runBilling } from './commands/billing-ops.js';
+import { runCapabilities } from './commands/capabilities.js';
 import { handleUnknownCommand, interceptCatalogHelp } from './commands/catalog-dispatch.js';
 import { runCommands } from './commands/commands-ops.js';
 import { runConfigValues } from './commands/config-values.js';
@@ -291,6 +292,8 @@ async function runCommand(
       return runAudit(rest, env, home);
     case 'knowledge':
       return runKnowledge(rest, env, home);
+    case 'capabilities':
+      return runCapabilities(rest, env, home);
     case 'billing':
       return runBilling(rest, env, home);
     case 'logs':

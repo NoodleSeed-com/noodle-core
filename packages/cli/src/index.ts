@@ -64,6 +64,9 @@ export {
   tavily,
   tool,
   variable,
+  type WebExtractDeclaration,
+  type WebExtractOptions,
+  webExtract,
   when,
   z,
 } from '@noodle-borg/authoring';

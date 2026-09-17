@@ -9,6 +9,7 @@ import {
 } from './customer-verifier.js';
 import { createLocalDevtoolsDelegatedCredentialSource } from './local-devtools-delegated-credentials.js';
 import type { LocalRunningService, LocalServeServiceOptions } from './local-options.js';
+import { localWebCapabilities } from './local-web-capabilities.js';
 import { ServerRegistry } from './registry.js';
 import { isLoopbackHost } from './serve-resource-auth.js';
 import { createServiceHandler } from './service.js';
@@ -57,7 +58,9 @@ export async function serveLocalService(
   const delegatedCredentials = directCustomerAuth
     ? createLocalDevtoolsDelegatedCredentialSource()
     : undefined;
+  const capabilities = options.runtime?.capabilities ?? localWebCapabilities();
   const registry = new ServerRegistry(undefined, undefined, configStore, {
+    capabilities,
     customerVerifierFactory,
     ...(delegatedCredentials === undefined
       ? {}
@@ -72,6 +75,17 @@ export async function serveLocalService(
       : { localDevtoolsDelegatedExchange: options.localDevtoolsDelegatedExchange }),
   });
   const handler = createServiceHandler(registry, {
+    capabilities,
+    deployGate: {
+      authorize: () => ({
+        ok: true,
+        identity: {
+          subject: 'local-operator',
+          email: 'local-operator@localhost',
+          superAdmin: true,
+        },
+      }),
+    },
     controlPlaneStore,
     configStore,
     assetStore: new InMemoryAssetStore(),

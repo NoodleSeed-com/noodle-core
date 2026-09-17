@@ -1,4 +1,8 @@
 const RESULT_META_KEY = '__noodleResultMeta';
+/** Ephemeral extraction evidence is usable in the current turn but never replay/persistence data. */
+export function hasEphemeralEvidence(output: unknown): boolean {
+  return splitResultMeta(output).meta?.['noodle/ephemeralEvidence'] === true;
+}
 
 /** @internal Shared with suspension-aware execution and surface adapters. */
 export function splitResultMeta(output: unknown): {
@@ -35,6 +39,7 @@ export function attachResultMeta(
 
 function mergeRecords(target: Record<string, unknown>, source: Record<string, unknown>): void {
   for (const [key, value] of Object.entries(source)) {
+    if (key === 'noodle/ephemeralEvidence' && target[key] === true) continue;
     const existing = target[key];
     if (isPlainRecord(existing) && isPlainRecord(value)) {
       mergeRecords(existing, value);

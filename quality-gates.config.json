@@ -14,6 +14,12 @@
     "warningRatio": 0.9,
     "envelopes": [
       {
+        "path": "packages/managed-capabilities",
+        "role": "library",
+        "maxSourceLines": 3500,
+        "reason": "Founder-approved extraction-first port, policy and conformance boundary (ADR 0224 amendment 2026-09-16); acquisition adapters remain outside."
+      },
+      {
         "path": "packages/capabilities",
         "role": "foundation",
         "maxSourceLines": 400,

@@ -27,6 +27,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@noodle-borg/managed-capabilities": "workspace:*",
     "@noodle-borg/compiler": "workspace:*",
     "@noodle-borg/module": "workspace:*",
     "pg": "^8.21.0"

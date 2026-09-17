@@ -23,6 +23,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@noodle-borg/managed-capabilities": "workspace:*",
     "@noodle-borg/connector-http": "workspace:*",
     "@noodle-borg/knowledge": "workspace:*"
   },

@@ -106,6 +106,9 @@ export function assembleRuntimeArtifact({
         : {}),
       ...(manifest.server.auth !== undefined ? { auth: manifest.server.auth } : {}),
       ...(knowledge !== undefined && knowledge.length > 0 ? { knowledge } : {}),
+      ...(manifest.manifestVersion === '2' && manifest.server.capabilities?.length
+        ? { capabilities: manifest.server.capabilities }
+        : {}),
       ...(variables !== undefined && variables.length > 0 ? { variables } : {}),
       ...(managedCollections !== undefined && managedCollections.length > 0
         ? { managedCollections }

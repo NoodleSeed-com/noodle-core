@@ -11,11 +11,17 @@ import { BILLING_COMMAND, POLICY_COMMAND } from '../src/commands/catalog-data-ho
 import { CATALOG_HOSTED_OBSERVABILITY } from '../src/commands/catalog-data-hosted-observability.js';
 import { CATALOG_PLATFORM_AUTH } from '../src/commands/catalog-data-platform-auth.js';
 import { renderCommandHelp } from '../src/commands/catalog-render.js';
-import type { CommandSpec, FlagSpec, SubcommandSpec } from '../src/commands/catalog-types.js';
+import type { CommandSpec } from '../src/commands/catalog-types.js';
 import { runCommands } from '../src/commands/commands-ops.js';
 import { EXIT } from '../src/commands/output.js';
 import { parsePlatformAuthMigrationArgs } from '../src/commands/platform-auth-migration-args.js';
 import { run } from '../src/index.js';
+import {
+  flagMap,
+  nestedSubcommands,
+  type RecursiveSubcommand,
+  walkSubcommands,
+} from './helpers/hosted-catalog-tree.js';
 import { chdirIsolated, restoreCwd } from './helpers/isolated-cwd.js';
 
 const BATCH = [
@@ -61,28 +67,10 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-function flagMap(flags: readonly FlagSpec[] | undefined): ReadonlyMap<string, FlagSpec> {
-  return new Map((flags ?? []).map((flag) => [flag.name, flag]));
-}
-
 function command(name: string): CommandSpec {
   const found = BATCH.find((entry) => entry.name === name);
   if (found === undefined) throw new Error(`missing command ${name}`);
   return found;
-}
-
-type RecursiveSubcommand = SubcommandSpec & {
-  readonly subcommands?: readonly RecursiveSubcommand[];
-};
-
-function nestedSubcommands(value: CommandSpec | SubcommandSpec): readonly RecursiveSubcommand[] {
-  return (
-    (
-      value as CommandSpec & {
-        readonly subcommands?: readonly RecursiveSubcommand[];
-      }
-    ).subcommands ?? []
-  );
 }
 
 function subcommand(parent: string, ...path: readonly string[]): RecursiveSubcommand {
@@ -93,16 +81,6 @@ function subcommand(parent: string, ...path: readonly string[]): RecursiveSubcom
     current = found;
   }
   return current as RecursiveSubcommand;
-}
-
-function walkSubcommands(
-  value: CommandSpec | RecursiveSubcommand,
-  path: readonly string[] = [],
-): readonly { readonly path: readonly string[]; readonly value: RecursiveSubcommand }[] {
-  return nestedSubcommands(value).flatMap((child) => [
-    { path: [...path, child.name], value: child },
-    ...walkSubcommands(child, [...path, child.name]),
-  ]);
 }
 
 function mutationEvidence(): string[] {
@@ -536,6 +514,7 @@ describe('non-umbrella parser-backed metadata parity', () => {
       'platform-auth',
       'billing',
       'assistant',
+      'capabilities',
       'knowledge',
       'audit',
       'logs',
@@ -647,6 +626,13 @@ describe('non-umbrella parser-backed metadata parity', () => {
         acceptedExit: EXIT.AUTH,
         rejected: ['assistant', 'clients', 'rotate'],
         rejectedCode: 'usage_error',
+      },
+      {
+        name: 'capabilities',
+        accepted: ['capabilities', 'inspect', '--org', 'acme', '--app', 'web', '--env', 'staging'],
+        acceptedExit: EXIT.AUTH,
+        rejected: ['capabilities', 'configure', 'pages'],
+        rejectedCode: 'usage',
       },
       {
         name: 'knowledge',
