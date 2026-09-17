@@ -68,6 +68,15 @@
       }
     },
     {
+      "includes": ["sales-enablement/product-hunt/launch/scenes/**"],
+      "linter": {
+        "rules": {
+          "a11y": { "noSvgWithoutTitle": "off", "useMediaCaption": "off" },
+          "suspicious": { "useIterableCallbackReturn": "off" }
+        }
+      }
+    },
+    {
       "includes": ["apps/portal/**/*.css"],
       "css": { "parser": { "tailwindDirectives": true } }
     }

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
-import { afterAll, describe } from 'vitest';
+import { describe } from 'vitest';
 import type { AssistantStore, TenantRef } from '../src/index.js';
 import { InMemoryAssistantStore, PostgresAssistantStore } from '../src/index.js';
+import { isolatedPostgres } from './isolated-postgres.js';
 import { describeSessionTurns, PARITY_TENANT } from './session-turn-parity.js';
 
 const now = new Date('2030-01-01T00:00:00Z');
@@ -37,8 +37,7 @@ describe('assistant session turn budget', () => {
 
   const databaseUrl = process.env.DATABASE_URL_TEST ?? process.env.DATABASE_URL;
   if (databaseUrl) {
-    const pool = new Pool({ connectionString: databaseUrl });
-    afterAll(async () => pool.end());
+    const pool = isolatedPostgres(databaseUrl);
     describeSessionTurns('postgres', async () => {
       const store = new PostgresAssistantStore(pool);
       await store.ensureSchema();

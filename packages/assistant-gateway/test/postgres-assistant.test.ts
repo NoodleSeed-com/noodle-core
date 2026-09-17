@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Pool } from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
   ASSISTANT_INTERACTION_EXECUTION_LIMIT_MS,
   ASSISTANT_INTERACTION_OUTCOME_RETENTION_MS,
@@ -9,12 +8,13 @@ import {
   DEFAULT_MAX_PENDING_INTERACTIONS_PER_SESSION,
 } from '../src/assistant-store.js';
 import { PostgresAssistantStore } from '../src/postgres-assistant.js';
+import { isolatedPostgres } from './isolated-postgres.js';
 
 const databaseUrl = process.env.DATABASE_URL_TEST ?? process.env.DATABASE_URL;
 const describePostgres = describe.skipIf(databaseUrl === undefined);
 
 describePostgres('Postgres assistant store', () => {
-  const pool = new Pool({ connectionString: databaseUrl });
+  const pool = isolatedPostgres(databaseUrl);
   const store = new PostgresAssistantStore(pool);
   const tenant = { org: `assistant-${randomUUID()}`, app: 'smoke', env: 'prod' };
   const now = new Date('2030-01-01T00:00:00Z');
@@ -23,7 +23,6 @@ describePostgres('Postgres assistant store', () => {
     await store.ensureSchema();
     await store.ensureSchema();
   });
-  afterAll(async () => pool.end());
 
   async function createSession(): Promise<{
     readonly token: string;

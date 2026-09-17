@@ -7,8 +7,8 @@ import {
 import type { ArtifactState } from '@noodle-borg/compiler';
 import { ensureAuditSchema } from '@noodle-borg/module-audit';
 import { ensureStateHandleSchema, PostgresStateHandleStore } from '@noodle-borg/runtime/postgres';
-import { Pool } from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
+import { isolatedPostgres } from './isolated-postgres.js';
 
 const databaseUrl = process.env.DATABASE_URL_TEST ?? process.env.DATABASE_URL;
 const describePostgres = describe.skipIf(databaseUrl === undefined);
@@ -27,7 +27,7 @@ const STATE: ArtifactState = {
 };
 
 describePostgres('PostgreSQL atomic assistant elevation', () => {
-  const pool = new Pool({ connectionString: databaseUrl });
+  const pool = isolatedPostgres(databaseUrl);
   const sessions = new PostgresAssistantStore(pool);
   const elevations = new PostgresAssistantElevationStore(pool);
   const coordinator = new PostgresAssistantElevationCoordinator(pool, { now: () => NOW });
@@ -38,8 +38,6 @@ describePostgres('PostgreSQL atomic assistant elevation', () => {
     await ensureStateHandleSchema(pool);
     await ensureAuditSchema(pool);
   });
-
-  afterAll(async () => pool.end());
 
   it('commits ticket spend, state rekey, session token replacement, and audit together', async () => {
     const fixture = await openFixture();
