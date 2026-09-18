@@ -18,14 +18,22 @@ const buildInfoShape = {
 export const serviceInfoResponseSchema = z.strictObject({
   ...buildInfoShape,
   developerPlugin: z.strictObject({ mcpCapabilityVersion: z.string().min(1) }).optional(),
-  features: z.strictObject({ mixedCustomerAuth: z.literal(MIXED_CUSTOMER_AUTH_FEATURE_VERSION) }),
+  features: z.strictObject({
+    mixedCustomerAuth: z.literal(MIXED_CUSTOMER_AUTH_FEATURE_VERSION),
+    whatsapp: z.literal(1).optional(),
+  }),
 });
 
 /** Older services may omit features; future fields are stripped at each structured metadata layer. */
 export const serviceInfoClientResponseSchema = z.object({
   ...buildInfoShape,
   developerPlugin: z.object({ mcpCapabilityVersion: z.string().min(1) }).optional(),
-  features: z.object({ mixedCustomerAuth: z.number().int().positive().optional() }).optional(),
+  features: z
+    .object({
+      mixedCustomerAuth: z.number().int().positive().optional(),
+      whatsapp: z.number().int().positive().optional(),
+    })
+    .optional(),
 });
 
 export type ServiceInfoResponse = z.infer<typeof serviceInfoResponseSchema>;

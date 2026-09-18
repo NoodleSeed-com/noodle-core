@@ -56,6 +56,8 @@ import type { ConfigStore, ControlPlaneStore } from './store.js';
 import type { InvitationEmailSender, WelcomeEmailSender } from './welcome-email.js';
 
 export interface ServiceOptions {
+  /** Logged messaging custody and explicitly managed background worker, absent disables channel routes. */
+  readonly whatsapp?: import('./channels/runtime.js').WhatsAppServiceOptions;
   /** Deployment-owned agreement authority. Hosted composition supplies an empty policy until documents are approved. */
   readonly businessOnboarding?: BusinessOnboardingOptions;
   /** Internal durable execution evidence composition; allowance comes from an operator-selected module. */

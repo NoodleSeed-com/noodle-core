@@ -47,7 +47,9 @@ import {
 } from './business-information/postgres.js';
 import { retentionSweepTrigger } from './business-information/retention-sweeper.js';
 import { fenceSourceStore } from './business-information/source-credential-fence.js';
+import { drainSourceIngestion } from './business-information/source-ingestion-coordinator.js';
 import { SecretBoxPayloadCipher } from './business-information-cipher.js';
+import { createPostgresWhatsApp } from './channels/composition.js';
 import { InMemoryConnectionStore, PostgresConnectionStore } from './connections/store.js';
 import type { ConnectionStore } from './connections/types.js';
 import { createDefaultControlPlaneGate } from './control-plane-auth-bootstrap.js';
@@ -137,6 +139,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
   // Fail closed: any durable store must have a master-key custodian. Existing deploy records may still
   // contain encrypted legacy secret envelopes, and managed config secrets are encrypted independently.
   // A host-injected wrapping custodian takes precedence over a static local key.
+  let whatsapp = options.whatsapp;
   let secretBox: SecretBox | undefined;
   let knowledge: ServiceOptions['knowledge'];
   let capabilities = options.capabilities;
@@ -250,6 +253,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
         organizationProvisioning: () => moduleHost?.organizationProvisioning,
       });
       const customerAuthAudience = await postgres.ensureSchemaWithCustomerAuthAudienceReport();
+      whatsapp ??= await createPostgresWhatsApp(postgresPool, secretBox, options);
       const { PostgresAppPurgeReconciliationOperator } = await import('@noodle-borg/control-plane');
       appPurgeReconciliationOperator = new PostgresAppPurgeReconciliationOperator(postgresPool);
       knowledge = await createPostgresKnowledgeStores(postgresPool, secretBox);
@@ -685,8 +689,9 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
           }
         }
       : async () => true;
-    const closeResources = (): Promise<void> =>
-      closeServiceResources({
+    const closeResources = async (): Promise<void> => {
+      await whatsapp?.worker.stop();
+      await closeServiceResources({
         telemetry,
         ...(welcomeEmailTimer === undefined ? {} : { welcomeEmailTimer }),
         ...(businessInformationTimer === undefined ? {} : { businessInformationTimer }),
@@ -696,6 +701,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
         ...(moduleHost === undefined ? {} : { moduleHost }),
         ...(pgPool === undefined ? {} : { postgresPool: pgPool }),
       });
+    };
     const {
       appPurgeReconciliationOperator: ignoredDirectReconciliationOperator,
       ...handlerBaseOptions
@@ -703,6 +709,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
     void ignoredDirectReconciliationOperator;
     const handlerOptions: ServiceOptions = {
       ...handlerBaseOptions,
+      ...(whatsapp ? { whatsapp } : {}),
       ...(operationEvidence === undefined ? {} : { operationEvidence }),
       ...(connectionRuntime === undefined ? {} : { connectionRuntime }),
       ...(knowledge === undefined ? {} : { knowledge }),
@@ -755,6 +762,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
     let http: Server | undefined;
     try {
       const listeningHttp = createServer(createServiceHandler(registry, handlerOptions));
+      whatsapp?.worker.start();
       http = listeningHttp;
       await listenHttpServer(listeningHttp, options.port ?? 8787, host);
       const { port } = listeningHttp.address() as AddressInfo;
@@ -784,12 +792,5 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
   } catch (error) {
     await moduleHost.dispose();
     throw error;
-  }
-}
-
-async function drainSourceIngestion(coordinator: SourceIngestionCoordinator): Promise<void> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    const result = await coordinator.runOne();
-    if (result.disposition !== 'completed') return;
   }
 }

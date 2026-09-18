@@ -621,6 +621,7 @@ function devtoolsAssistantInstructions(assistant: unknown): string | undefined {
   const surfaces = (assistant as { surfaces?: unknown } | undefined)?.surfaces;
   if (!Array.isArray(surfaces)) return undefined;
   for (const surface of surfaces) {
+    if (surface?.kind === 'messaging') continue;
     const instructions = (surface as { instructions?: unknown }).instructions;
     if (typeof instructions === 'string' && instructions.trim() !== '') return instructions.trim();
   }

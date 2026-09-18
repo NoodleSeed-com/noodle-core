@@ -27,6 +27,7 @@ function publicSurfaceSummary(assistant: unknown): PublicSurfaceSummary | undefi
   const surfaces = (assistant as { surfaces?: unknown } | undefined)?.surfaces;
   if (!Array.isArray(surfaces)) return undefined;
   for (const entry of surfaces) {
+    if (entry?.kind === 'messaging') continue;
     const { mode, origins, capabilities } = entry as {
       mode?: unknown;
       origins?: unknown;

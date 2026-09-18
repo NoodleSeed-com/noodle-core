@@ -13,12 +13,15 @@ import {
 } from '@noodle-borg/assistant-gateway/model-runtime';
 import {
   type AssistantSessionRecord,
+  type AssistantTurnContext,
   assistantGuideModelContext,
   assistantModelToolOncePerSession,
   assistantModelToolRequiredWhenVisible,
   assistantOmittedToolResult,
   assistantViewAvailableData,
   dispatchAssistantTool,
+  dispatchMessagingReadTool,
+  isMessagingTurn,
   projectAssistantGuide,
   publicSurfaceOf,
   recoverableAssistantView,
@@ -104,7 +107,7 @@ export function createAssistantTurnStats(): AssistantTurnStats {
 /** Run one model/tool loop against the immutable invocation-context snapshot for this turn. */
 export async function runAgentTurn(
   target: ServedTarget,
-  session: AssistantSessionRecord,
+  session: AssistantTurnContext,
   message: string,
   context: InvocationContext,
   deps: AssistantRouteDeps,
@@ -113,18 +116,21 @@ export async function runAgentTurn(
   pageContext?: AssistantPageContext,
   stats: AssistantTurnStats = createAssistantTurnStats(),
   suggestions = false,
+  transport?: {
+    readonly binding: ResolvedAssistantModel;
+    readonly beforeStep: () => Promise<void>;
+    readonly claimTool: (name: string) => Promise<boolean>;
+    readonly signal: AbortSignal;
+  },
 ): Promise<void> {
   // Every terminal failure in this loop is one shape: a code, and the turn ends. Naming it keeps the
   // dozen sites readable and stops a new one inventing a different envelope.
   const fail = (code: string) => emit({ event: 'error', data: { code } });
   const assistant = target.served.artifact.server.assistant;
   if (!assistant) return fail('assistant_unavailable');
-  const binding = await resolveAssistantModelBinding(
-    target,
-    session.tenant,
-    session.deploymentId,
-    deps,
-  );
+  const binding =
+    transport?.binding ??
+    (await resolveAssistantModelBinding(target, session.tenant, session.deploymentId, deps));
   if (!binding) {
     return emit({
       event: 'error',
@@ -192,6 +198,8 @@ export async function runAgentTurn(
       ? undefined
       : AbortSignal.timeout(binding.requestPolicy.maxTurnMs);
   for (let step = 0; step < bounds.steps; step += 1) {
+    await transport?.beforeStep();
+    transport?.signal.throwIfAborted();
     if (remainingTokens !== undefined && remainingTokens <= 0)
       return fail('model_token_budget_exhausted');
     const requestTokenLimit = Math.min(
@@ -217,7 +225,11 @@ export async function runAgentTurn(
       requiredToolForStep === undefined ? assistantKnowledgeModelTools(knowledge) : [],
       stepModelTools,
       requestTokenLimit === Number.MAX_SAFE_INTEGER ? undefined : requestTokenLimit,
-      turnSignal,
+      transport
+        ? turnSignal
+          ? AbortSignal.any([transport.signal, turnSignal])
+          : transport.signal
+        : turnSignal,
       requiredToolForStep === undefined ? undefined : 'required',
     );
     stats.promptTokens += completion.usage?.promptTokens ?? 0;
@@ -238,7 +250,12 @@ export async function runAgentTurn(
     if (!response.tool_calls?.length) {
       const assistantContent = response.content || streamedContent;
       if (assistantContent) messages.push({ role: 'assistant', content: assistantContent });
-      if (suggestions && step + 1 < bounds.steps && (remainingTokens ?? 1) > 0) {
+      if (
+        !isMessagingTurn(session) &&
+        suggestions &&
+        step + 1 < bounds.steps &&
+        (remainingTokens ?? 1) > 0
+      ) {
         try {
           const prompts = await requestAssistantSuggestedPrompts(
             binding,
@@ -270,6 +287,7 @@ export async function runAgentTurn(
       toolCallsThisTurn += 1;
       stats.toolCalls += 1;
       if (toolCallsThisTurn > bounds.toolCalls) return fail('tool_call_budget_exhausted');
+      await transport?.beforeStep();
       const knowledgeComponent = findAssistantKnowledgeComponent(knowledge, call.function.name);
       if (knowledge !== undefined && knowledgeComponent !== undefined) {
         let knowledgeArgs: unknown;
@@ -317,22 +335,24 @@ export async function runAgentTurn(
           readonly assistantDelegatedAuthKeys?: () => ReadonlySet<string>;
         }
       ).assistantDelegatedAuthKeys?.();
-      const elevation = await interceptForElevation({
-        tool,
-        session,
-        assistant,
-        ...(target.served.artifact.server.state === undefined
-          ? {}
-          : { state: target.served.artifact.server.state }),
-        elevations: deps.elevations,
-        ...(delegatedKeys !== undefined && delegatedKeys.size > 0
-          ? {
-              requiresDelegatedIdentity: (candidate: typeof tool) =>
-                toolTouchesDelegatedAuth(candidate, delegatedKeys),
-            }
-          : {}),
-        now: deps.clock?.() ?? new Date(),
-      });
+      const elevation = isMessagingTurn(session)
+        ? undefined
+        : await interceptForElevation({
+            tool,
+            session,
+            assistant,
+            ...(target.served.artifact.server.state === undefined
+              ? {}
+              : { state: target.served.artifact.server.state }),
+            elevations: deps.elevations,
+            ...(delegatedKeys !== undefined && delegatedKeys.size > 0
+              ? {
+                  requiresDelegatedIdentity: (candidate: typeof tool) =>
+                    toolTouchesDelegatedAuth(candidate, delegatedKeys),
+                }
+              : {}),
+            now: deps.clock?.() ?? new Date(),
+          });
       if (elevation) {
         stats.interactionCount += 1;
         emit(elevation.event);
@@ -356,24 +376,39 @@ export async function runAgentTurn(
       const coerced = validateJsonSchemaWithDefaults(tool.inputSchema, args);
       if (coerced.issues.length > 0) return fail('invalid_tool_arguments');
       args = coerced.value;
-      const dispatch = await dispatchAssistantTool({
-        artifact: target.served.artifact,
-        tool,
-        arguments: args,
-        executeDeps: withAssistantSessionExecutionAuthority(
-          { ...(target.served.deps as ExecuteDeps), capabilityBudget },
-          target.served.artifact,
-          session,
-        ),
-        caller: session.caller,
-        context,
-        session,
-        store: deps.store,
-        audit: deps.audit,
-        now: () => deps.clock?.() ?? new Date(),
-        onToolStarted: () =>
-          emit({ event: 'tool_started', data: { id: call.id, tool: tool.name } }),
-      });
+      await transport?.beforeStep();
+      const dispatch = isMessagingTurn(session)
+        ? await dispatchMessagingReadTool({
+            artifact: target.served.artifact,
+            tool,
+            arguments: args,
+            executeDeps: {
+              ...(target.served.deps as ExecuteDeps),
+              capabilityBudget,
+              ...(transport?.signal ? { signal: transport.signal } : {}),
+            },
+            context,
+            session,
+            claimTool: transport?.claimTool ?? (async () => false),
+          })
+        : await dispatchAssistantTool({
+            artifact: target.served.artifact,
+            tool,
+            arguments: args,
+            executeDeps: withAssistantSessionExecutionAuthority(
+              { ...(target.served.deps as ExecuteDeps), capabilityBudget },
+              target.served.artifact,
+              session,
+            ),
+            caller: session.caller,
+            context,
+            session,
+            store: deps.store,
+            audit: deps.audit,
+            now: () => deps.clock?.() ?? new Date(),
+            onToolStarted: () =>
+              emit({ event: 'tool_started', data: { id: call.id, tool: tool.name } }),
+          });
       if (
         assistantModelToolOncePerSession(tool) &&
         (dispatch.kind !== 'event' || dispatch.event !== 'error')
@@ -395,7 +430,7 @@ export async function runAgentTurn(
         },
         (failure) => deps.logger?.warn('assistant.view.unresolved', { ...failure }),
       );
-      if (view) {
+      if (view && !isMessagingTurn(session)) {
         if (!dispatch.ephemeral)
           await deps.store.replaceLatestView(session.id, recoverableAssistantView(view));
         emit({ event: 'view_available', data: { ...view } });

@@ -189,3 +189,10 @@ function boundedToken(label: string, value: string, maximum: number): string {
   }
   return normalized;
 }
+
+export async function drainSourceIngestion(coordinator: SourceIngestionCoordinator): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const result = await coordinator.runOne();
+    if (result.disposition !== 'completed') return;
+  }
+}

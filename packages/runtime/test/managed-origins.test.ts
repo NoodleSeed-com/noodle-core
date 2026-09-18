@@ -41,6 +41,29 @@ describe('managed exact origins', () => {
     return result.artifact;
   }
 
+  it('preserves origin-free messaging while resolving managed website origins', () => {
+    const artifact = declared();
+    const assistant = artifact.server.assistant!;
+    const messaging = {
+      kind: 'messaging' as const,
+      channel: 'whatsapp' as const,
+      mode: 'public' as const,
+      capabilities: [],
+    };
+    const result = resolveManagedOrigins(
+      {
+        ...artifact,
+        server: {
+          ...artifact.server,
+          assistant: { ...assistant, surfaces: [messaging, ...assistant.surfaces!] },
+        },
+      },
+      { STORE_ORIGIN: '"https://noodleseed.dev"' },
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.artifact.server.assistant?.surfaces?.[0]).toEqual(messaging);
+  });
+
   it('decodes typed operator values and re-resolves the unchanged declaration', () => {
     const artifact = declared();
     const first = resolveManagedOrigins(artifact, { STORE_ORIGIN: '"https://first.example"' });

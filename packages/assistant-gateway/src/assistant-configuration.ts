@@ -75,8 +75,16 @@ function surfaceOfMode(
 ): { readonly webmcp?: unknown } | undefined {
   if (mode === undefined || !Array.isArray(assistant?.surfaces)) return undefined;
   // A `mixed` surface mints `public` sessions (ADR 0220): it is the public binding's surface.
-  return (assistant.surfaces as { readonly mode?: unknown; readonly webmcp?: unknown }[]).find(
-    (surface) => surface.mode === mode || (mode === 'public' && surface.mode === 'mixed'),
+  return (
+    assistant.surfaces as {
+      readonly kind?: unknown;
+      readonly mode?: unknown;
+      readonly webmcp?: unknown;
+    }[]
+  ).find(
+    (surface) =>
+      surface.kind !== 'messaging' &&
+      (surface.mode === mode || (mode === 'public' && surface.mode === 'mixed')),
   );
 }
 

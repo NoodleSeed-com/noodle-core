@@ -65,9 +65,9 @@ describe('commands --json public wire contract', () => {
     expect(envelope.ok).toBe(true);
     if (!envelope.ok) throw new Error('commands --json returned a failure envelope');
 
-    expect(envelope.data.commands).toHaveLength(64);
+    expect(envelope.data.commands).toHaveLength(65);
     const paths = leafPaths(envelope.data.commands);
-    expect(paths).toHaveLength(263);
+    expect(paths).toHaveLength(283);
     expect(paths.filter((path) => path.startsWith('capabilities '))).toEqual([
       'capabilities inspect',
       'capabilities configure',

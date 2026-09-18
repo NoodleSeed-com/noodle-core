@@ -27,6 +27,7 @@ import { type CondNode, collectPaths, type ExprNode } from './expression.js';
  */
 
 interface AssistantSurfaceInput {
+  readonly kind?: 'website' | 'messaging' | undefined;
   readonly mode: 'authenticated' | 'public' | 'mixed';
   readonly capabilities?: readonly { readonly kind: string; readonly name: string }[] | undefined;
 }
@@ -73,11 +74,32 @@ export function validateWebsiteProjection(
         });
         return;
       }
+      if (surface.kind === 'messaging' && !['tool', 'knowledge'].includes(capability.kind)) {
+        errors.push({
+          code: 'assistant_messaging_unsupported',
+          path: `server.assistant.surfaces[${surfaceIndex}].capabilities[${index}]`,
+          message: 'Messaging currently supports pure read tools and knowledge only',
+        });
+        return;
+      }
       if (surface.mode === 'authenticated' || capability.kind !== 'tool') return;
 
       const tool = toolsByName.get(capability.name);
       if (tool === undefined) return;
       const path = `tools.${tool.name}`;
+      if (
+        surface.kind === 'messaging' &&
+        (tool.annotations?.readOnlyHint !== true ||
+          tool._meta?.ui !== undefined ||
+          tool.fulfilment.kind === 'operation' ||
+          tool.fulfilment.steps.some((step) => step.kind === 'operation'))
+      ) {
+        errors.push({
+          code: 'assistant_messaging_unsupported',
+          path,
+          message: `"${tool.name}" requires a write, connector, or UI renderer not enabled for this messaging slice`,
+        });
+      }
 
       if (surface.mode === 'public' && anonymousBehavior(tool) === 'requires-identity') {
         errors.push({

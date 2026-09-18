@@ -121,6 +121,8 @@ export const ERROR_FIXES: Record<string, string> = {
     'Replace the Firebase/Microsoft bridge with direct or federated OIDC before using auth-derived customer connector endpoints.',
   customer_endpoint_action_unsupported:
     'Set exact `annotations.confirm: true` on the enclosing tool, or keep the customer-routed operation read-only; action hints alone do not enable confirmation.',
+  assistant_messaging_unsupported:
+    'Select only public read tools without browser UI or confirmation for publicMessaging; native write interactions belong to a later channel capability.',
   assistant_capability_unknown:
     'Name a tool, resource, or prompt this server declares in `embeddedAssistant({ capabilities })`, or remove the entry; capabilities reference declared components, not arbitrary names.',
   assistant_public_user_reference:

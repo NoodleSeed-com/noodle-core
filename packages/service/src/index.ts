@@ -218,6 +218,8 @@ export {
   type DeveloperGrantAuthorizationContext,
 } from './auth/developer-grant-guard.js';
 export { type BuildInfo, resolveBuildInfo } from './build-info.js';
+export type { WhatsAppServiceOptions } from './channels/runtime.js';
+export { ChannelWorkerLoop } from './channels/worker-loop.js';
 export type { ConnectionProvider } from './connections/oauth.js';
 export { PortableConnections, type PortableConnectionsOptions } from './connections/service.js';
 export { InMemoryConnectionStore, PostgresConnectionStore } from './connections/store.js';

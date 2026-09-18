@@ -218,6 +218,11 @@ export const COMMAND_GROUPS: Record<string, CommandGroupEntry> = {
     group: 'Governance & observability',
     summary: 'Operator governance audit status and event queries.',
   },
+  channels: {
+    group: 'Governance & observability',
+    summary:
+      'Configure, verify, enable and operate a public WhatsApp channel with managed secret references, limits, blocking and redacted receipts.',
+  },
   billing: {
     group: 'Governance & observability',
     summary:

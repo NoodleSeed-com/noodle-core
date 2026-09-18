@@ -176,6 +176,7 @@ export interface AssistantCapability {
 export type AssistantSurfaceMode = 'authenticated' | 'public' | 'mixed';
 
 export interface AuthenticatedWebsiteAccess {
+  readonly kind?: 'website';
   readonly mode: 'authenticated';
   readonly origins: readonly string[];
   readonly instructions?: string;
@@ -213,6 +214,7 @@ export interface AssistantContinuityDeclaration {
 }
 
 export interface PublicWebsiteAccess {
+  readonly kind?: 'website';
   readonly mode: 'public' | 'mixed';
   readonly origins: readonly string[];
   readonly capabilities: readonly CapabilityRef[];
@@ -223,7 +225,42 @@ export interface PublicWebsiteAccess {
   readonly continuity?: AssistantContinuityDeclaration;
 }
 
-export type AssistantAccess = AuthenticatedWebsiteAccess | PublicWebsiteAccess;
+export interface PublicMessagingInput {
+  readonly channel: 'whatsapp';
+  readonly capabilities: readonly CapabilityRef[];
+  readonly instructions?: string;
+}
+
+export interface PublicMessagingAccess extends Omit<PublicMessagingInput, 'capabilities'> {
+  readonly capabilities: readonly AssistantCapability[];
+  readonly kind: 'messaging';
+  readonly mode: 'public';
+}
+
+/** Public business capability intent. Provider assets and credentials are operator-owned. */
+export function publicMessaging(input: PublicMessagingInput): PublicMessagingAccess {
+  if (!input || !Array.isArray(input.capabilities)) {
+    throw new Error('publicMessaging requires an explicit capability allowlist');
+  }
+  for (const key of Object.keys(input)) {
+    if (!['channel', 'capabilities', 'instructions'].includes(key)) {
+      throw new Error(`publicMessaging does not accept ${key}`);
+    }
+  }
+  if (input.channel !== 'whatsapp') throw new Error('Unsupported public messaging channel');
+  return {
+    kind: 'messaging',
+    mode: 'public',
+    channel: input.channel,
+    capabilities: normalizeCapabilities(input.capabilities),
+    ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
+  };
+}
+
+export type AssistantAccess =
+  | AuthenticatedWebsiteAccess
+  | PublicWebsiteAccess
+  | PublicMessagingAccess;
 
 export interface AuthenticatedWebsiteInput {
   readonly origins: readonly (string | ConfigRef)[];
@@ -318,6 +355,7 @@ export interface EmbeddedAssistantOptions extends AssistantUiOptions {
 
 /** One projected surface as it appears in compiled data. */
 export interface AssistantSurfaceConfig {
+  readonly kind?: 'website';
   readonly mode: AssistantSurfaceMode;
   readonly origins: readonly string[];
   readonly instructions?: string;
@@ -335,7 +373,7 @@ export interface AssistantSurfaceConfig {
 
 export interface EmbeddedAssistantConfig extends AssistantUiOptions {
   readonly model: AssistantModel;
-  readonly surfaces: readonly AssistantSurfaceConfig[];
+  readonly surfaces: readonly (AssistantSurfaceConfig | PublicMessagingAccess)[];
   /**
    * Union of every surface's origins. Kept at the top level so the service's origin check and the
    * published session-exchange contract read on unchanged while surfaces are added.
@@ -382,22 +420,31 @@ export function embeddedAssistant(input: EmbeddedAssistantOptions): EmbeddedAssi
 
   return {
     model: { ...model },
-    surfaces: surfaces.map((surface) => ({
-      mode: surface.mode,
-      origins: [...surface.origins],
-      ...(surface.instructions === undefined ? {} : { instructions: surface.instructions }),
-      ...(surface.capabilities
-        ? { capabilities: normalizeCapabilities(surface.capabilities) }
-        : {}),
-      ...(surface.mode === 'authenticated' && surface.sessionClaims
-        ? { sessionClaims: structuredClone(surface.sessionClaims) }
-        : {}),
-      ...(surface.webmcp === undefined ? {} : { webmcp: { ...surface.webmcp } }),
-      ...(surface.mode !== 'authenticated' && surface.continuity !== undefined
-        ? { continuity: { ...surface.continuity } }
-        : {}),
-    })),
-    allowedOrigins: surfaces.flatMap((surface) => [...surface.origins]),
+    surfaces: surfaces.map((surface) =>
+      surface.kind === 'messaging'
+        ? {
+            ...surface,
+            capabilities: normalizeCapabilities(surface.capabilities),
+          }
+        : {
+            mode: surface.mode,
+            origins: [...surface.origins],
+            ...(surface.instructions === undefined ? {} : { instructions: surface.instructions }),
+            ...(surface.capabilities
+              ? { capabilities: normalizeCapabilities(surface.capabilities) }
+              : {}),
+            ...(surface.mode === 'authenticated' && surface.sessionClaims
+              ? { sessionClaims: structuredClone(surface.sessionClaims) }
+              : {}),
+            ...(surface.webmcp === undefined ? {} : { webmcp: { ...surface.webmcp } }),
+            ...(surface.mode !== 'authenticated' && surface.continuity !== undefined
+              ? { continuity: { ...surface.continuity } }
+              : {}),
+          },
+    ),
+    allowedOrigins: surfaces.flatMap((surface) =>
+      surface.kind === 'messaging' ? [] : [...surface.origins],
+    ),
     ...structuredClone(ui),
     ...(suggestedPrompts ? { suggestedPrompts: [...suggestedPrompts] } : {}),
     ...(sessionClaims ? { sessionClaims: structuredClone(sessionClaims) } : {}),
@@ -446,15 +493,18 @@ function assertDistinctSurfaces(surfaces: readonly AssistantAccess[]): void {
   if (surfaces.length === 0) {
     throw new Error('embeddedAssistant requires at least one access surface');
   }
-  const publicSurfaces = surfaces.filter((surface) => surface.mode !== 'authenticated');
+  const websites = surfaces.filter((surface) => surface.kind !== 'messaging');
+  const messaging = surfaces.filter((surface) => surface.kind === 'messaging');
+  if (messaging.length > 1) throw new Error('embeddedAssistant accepts only one whatsapp surface');
+  const publicSurfaces = websites.filter((surface) => surface.mode !== 'authenticated');
   if (publicSurfaces.length > 1) {
     throw new Error('embeddedAssistant accepts at most one public surface (public or mixed)');
   }
-  if (surfaces.length - publicSurfaces.length > 1) {
+  if (websites.length - publicSurfaces.length > 1) {
     throw new Error('embeddedAssistant accepts at most one authenticated surface');
   }
   const seen = new Set<string>();
-  for (const surface of surfaces) {
+  for (const surface of websites) {
     for (const origin of surface.origins) {
       if (seen.has(origin)) {
         throw new Error(`embeddedAssistant surfaces must not share an origin: ${origin}`);

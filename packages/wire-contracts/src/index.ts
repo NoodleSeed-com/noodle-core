@@ -286,3 +286,4 @@ export {
   serviceInfoClientResponseSchema,
   serviceInfoResponseSchema,
 } from './service-info.js';
+export * from './whatsapp.js';

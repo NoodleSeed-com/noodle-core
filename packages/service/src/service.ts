@@ -22,12 +22,14 @@ import { createApplicationServingRuntime } from './application-runtime-target.js
 import { createArchivePreflight } from './archive-preflight.js';
 import { ArchiveSweeper, resolveArchiveRetentionDays } from './archive-sweeper.js';
 import { serveLocalAsset } from './assets.js';
+import { assistantRouteDependencies } from './assistant-composition.js';
 import { resolveBuildInfo, serviceInfoPayload } from './build-info.js';
 import {
   createBusinessInformationRuntime,
   resolvePrivateInstallationDefinition,
 } from './business-information-runtime.js';
 import { serviceCapabilityReport } from './capabilities.js';
+import { createWhatsAppRuntime } from './channels/composition.js';
 import { rejectIncompatibleCli } from './client-compatibility.js';
 import { createDataPlaneMembershipAuthorizer } from './data-plane-membership.js';
 import { DEVELOPER_MCP_PATH, handleDeveloperMcpRequest } from './developer-mcp/mount.js';
@@ -89,6 +91,7 @@ import { dispatchProtectedResourceMetadata } from './routes/protected-resource-m
 import { dispatchResourceReads } from './routes/resource-read-dispatch.js';
 import { handleRollback } from './routes/rollback.js';
 import { createServicePrincipalDispatcher } from './routes/service-principals-dispatch.js';
+import { dispatchWhatsAppRoutes } from './routes/whatsapp.js';
 import { servicePrincipalDataPlaneHooks } from './service-principal-data-plane.js';
 import { InMemoryAlertRuleStore } from './store/alert-rules.js';
 import { type AuditSink, StdoutAuditSink } from './store/audit.js';
@@ -261,6 +264,23 @@ export function createServiceHandler(
       ? {}
       : { developerGrants: options.developerGrantStore }),
   };
+  const assistantDeps = assistantRouteDependencies(options, {
+    registry,
+    resolveRuntimeTarget,
+    store: assistantStore,
+    appearance: assistantAppearance,
+    gate,
+    controlPlane,
+    audit: activeAudit,
+    maxBody,
+    serviceBase: (request) => options.publicBaseUrl ?? baseFromRequest(request, tls),
+    logger,
+  });
+  const whatsapp = createWhatsAppRuntime(options.whatsapp, assistantDeps, {
+    allowance: moduleHost.resolveActivityHistoryAllowance,
+    installations: businessInformationStore,
+    activity,
+  });
   return (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     // Liveness/readiness probes: un-gated and **not** HTTPS-enforced — Cloud Run's internal probe is plain
@@ -294,7 +314,11 @@ export function createServiceHandler(
     // post-deploy smoke can confirm exactly which commit is live. Non-sensitive fields only.
     if (req.method === 'GET' && url.pathname === '/v1/service/info') {
       applySecurityHeaders(res, tls);
-      return sendJson(res, 200, serviceInfoPayload(buildInfo, options.developerMcp === true));
+      return sendJson(
+        res,
+        200,
+        serviceInfoPayload(buildInfo, options.developerMcp === true, whatsapp !== undefined),
+      );
     }
 
     if (url.pathname.startsWith('/v1/') && rejectIncompatibleCli(req, res, buildInfo, tls)) return;
@@ -368,6 +392,7 @@ export function createServiceHandler(
       businessInformationStore !== undefined &&
       options.businessInformationEnabled !== false &&
       dispatchBusinessInformationRoutes(req, res, url, {
+        ...(whatsapp ? { readWhatsApp: whatsapp.projection.bind(whatsapp) } : {}),
         store: businessInformationStore,
         ...(businessOnboarding ? { businessOnboarding } : {}),
         activateInstallation,
@@ -415,39 +440,14 @@ export function createServiceHandler(
     ) {
       return;
     }
+    if (url.pathname.includes('/channels/whatsapp')) {
+      applySecurityHeaders(res, tls);
+      if (enforceHttps(req, res, tls)) return;
+      if (dispatchWhatsAppRoutes(req, res, url, whatsapp, options.developerGrantStore)) return;
+    }
     if (
       dispatchAssistantRoutes(req, res, url, {
-        registry,
-        resolveRuntimeTarget,
-        store: assistantStore,
-        appearance: assistantAppearance,
-        ...(options.publicEmbeds !== undefined ? { publicEmbeds: options.publicEmbeds } : {}),
-        ...(options.elevations !== undefined ? { elevations: options.elevations } : {}),
-        ...(options.elevationCoordinator !== undefined
-          ? { elevationCoordinator: options.elevationCoordinator }
-          : {}),
-        ...(options.admissionCounters !== undefined
-          ? { admissionCounters: options.admissionCounters }
-          : {}),
-        ...(options.admissionEnvelope !== undefined
-          ? { admissionEnvelope: options.admissionEnvelope }
-          : {}),
-        gate,
-        controlPlane,
-        audit: activeAudit,
-        maxBody,
-        serviceBase: (request) => options.publicBaseUrl ?? baseFromRequest(request, tls),
-        ...(options.assistantModelFetch !== undefined
-          ? { modelFetch: options.assistantModelFetch }
-          : {}),
-        ...(options.managedAssistantModelResolver !== undefined
-          ? { managedModelResolver: options.managedAssistantModelResolver }
-          : {}),
-        ...(options.captureRequestEvent !== undefined
-          ? { captureRequestEvent: options.captureRequestEvent }
-          : {}),
-        ...(options.clock !== undefined ? { clock: options.clock } : {}),
-        logger,
+        ...assistantDeps,
         applySecurityHeaders,
         enforceHttps,
         sendJson,

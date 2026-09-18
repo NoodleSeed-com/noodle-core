@@ -58,6 +58,7 @@ describe('@noodleseed/one deploy-time shim (ADR 0150)', () => {
       'noodlePlatform',
       'openAICompatible',
       'prompt',
+      'publicMessaging',
       'publicWebsite',
       'resource',
       'secret',

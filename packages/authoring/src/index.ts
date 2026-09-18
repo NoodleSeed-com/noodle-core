@@ -36,8 +36,11 @@ export {
   type OpenAICompatibleModelInput,
   type OpenAICompatibleTransport,
   openAICompatible,
+  type PublicMessagingAccess,
+  type PublicMessagingInput,
   type PublicWebsiteAccess,
   type PublicWebsiteInput,
+  publicMessaging,
   publicWebsite,
 } from './assistant.js';
 export {

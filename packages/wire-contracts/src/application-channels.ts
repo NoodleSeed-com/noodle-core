@@ -41,6 +41,13 @@ const assistant = z
   })
   .strict();
 
+const whatsapp = z.strictObject({
+  status,
+  bindingId: z.string().max(256).optional(),
+  revision: z.number().int().positive().optional(),
+  capabilities: z.array(z.string().max(256)).max(64),
+  reason: z.string().max(200).optional(),
+});
 export const ApplicationChannelsProjectionSchema = z
   .object({
     revision: z.number().int().positive(),
@@ -49,6 +56,7 @@ export const ApplicationChannelsProjectionSchema = z
     deploymentId: z.string().min(1).max(256).optional(),
     mcp,
     assistant,
+    whatsapp: whatsapp.optional(),
   })
   .strict();
 export type ApplicationChannelsProjection = z.infer<typeof ApplicationChannelsProjectionSchema>;
@@ -60,6 +68,7 @@ export const ApplicationChannelsClientResponseSchema = z
     ok: z.literal(true),
     data: ApplicationChannelsProjectionSchema.extend({
       mcp: mcp.strip(),
+      whatsapp: whatsapp.strip().optional(),
       assistant: assistant
         .extend({
           usage: usage

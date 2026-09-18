@@ -43,6 +43,7 @@ exports[`service export surface lock > exports exactly this set of names 1`] = `
   "BillingStripeCheckoutResponseSchema",
   "BillingStripePortalResponseSchema",
   "CONFIG_NAME_PATTERN",
+  "ChannelWorkerLoop",
   "DEFAULT_ALERT_COOLDOWN_MINUTES",
   "DEFAULT_ARCHIVE_RETENTION_DAYS",
   "DEFAULT_MAX_PENDING_INTERACTIONS_PER_SESSION",
@@ -226,4 +227,4 @@ exports[`service export surface lock > exports exactly this set of names 1`] = `
 ]
 `;
 
-exports[`service export surface lock > reports the surface size so a bulk loss is visible in the diff 1`] = `221`;
+exports[`service export surface lock > reports the surface size so a bulk loss is visible in the diff 1`] = `222`;

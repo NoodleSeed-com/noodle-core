@@ -320,39 +320,51 @@ const embeddedAssistantSchema = z
         .strict(),
       z.object({ kind: z.literal('noodle-managed') }).strict(),
     ]),
-    allowedOrigins: z.array(assistantOriginOrVariableSchema).min(1),
+    allowedOrigins: z.array(assistantOriginOrVariableSchema),
     // The front doors this assistant serves (ADR 0201, amended 2026-08-12). Absent means the pre-0201
     // authenticated shape, so released artifacts keep their meaning; `allowedOrigins` stays the union
     // and `sessionClaims` stays mirrored, so the service reads both unchanged. `capabilities` is the
     // exact reachable surface: optional when authenticated, required when public or mixed.
     surfaces: z
       .array(
-        z
-          .object({
-            mode: z.enum(['authenticated', 'public', 'mixed']),
-            origins: z.array(assistantOriginOrVariableSchema).min(1),
-            instructions: z.string().trim().min(1).max(MAX_SERVER_INSTRUCTIONS).optional(),
-            capabilities: z.array(assistantCapabilitySchema).optional(),
-            sessionClaims: sessionClaimsSchema.optional(),
-            // Overrides the assistant's own opt-in for sessions minted on this surface, in either
-            // direction (ADR 0220, amended). Declared explicitly rather than inherited from
-            // `assistantUiSchema.shape` — this is not renderer presentation, and a surface that
-            // acquired it by a spread would be an accident rather than a decision.
-            webmcp: optionalStrictObject({ enabled: z.boolean().optional() }),
-            // Anonymous cross-page display continuity (ADR 0223, clauses 11-16), declared per public
-            // or mixed surface. These bounds mirror the structural ceilings the gateway clamps to at
-            // runtime; the ADR is the single source, and this package cannot import the gateway
-            // because the dependency runs the other way. Refusing rather than clamping is deliberate:
-            // the gateway narrows an operator's value silently by design, but a developer who asks
-            // for more than the ceiling has made a mistake, and silence would hide it until someone
-            // measured the live behaviour.
-            continuity: optionalStrictObject({
-              enabled: z.boolean().optional(),
-              windowSeconds: z.number().int().min(0).max(600).optional(),
-              maxRestores: z.number().int().min(0).max(10).optional(),
-            }),
-          })
-          .strict(),
+        z.union([
+          z
+            .object({
+              kind: z.literal('messaging'),
+              channel: z.literal('whatsapp'),
+              mode: z.literal('public'),
+              capabilities: z.array(assistantCapabilitySchema),
+              instructions: z.string().trim().min(1).max(MAX_SERVER_INSTRUCTIONS).optional(),
+            })
+            .strict(),
+          z
+            .object({
+              kind: z.literal('website').optional(),
+              mode: z.enum(['authenticated', 'public', 'mixed']),
+              origins: z.array(assistantOriginOrVariableSchema).min(1),
+              instructions: z.string().trim().min(1).max(MAX_SERVER_INSTRUCTIONS).optional(),
+              capabilities: z.array(assistantCapabilitySchema).optional(),
+              sessionClaims: sessionClaimsSchema.optional(),
+              // Overrides the assistant's own opt-in for sessions minted on this surface, in either
+              // direction (ADR 0220, amended). Declared explicitly rather than inherited from
+              // `assistantUiSchema.shape` — this is not renderer presentation, and a surface that
+              // acquired it by a spread would be an accident rather than a decision.
+              webmcp: optionalStrictObject({ enabled: z.boolean().optional() }),
+              // Anonymous cross-page display continuity (ADR 0223, clauses 11-16), declared per public
+              // or mixed surface. These bounds mirror the structural ceilings the gateway clamps to at
+              // runtime; the ADR is the single source, and this package cannot import the gateway
+              // because the dependency runs the other way. Refusing rather than clamping is deliberate:
+              // the gateway narrows an operator's value silently by design, but a developer who asks
+              // for more than the ceiling has made a mistake, and silence would hide it until someone
+              // measured the live behaviour.
+              continuity: optionalStrictObject({
+                enabled: z.boolean().optional(),
+                windowSeconds: z.number().int().min(0).max(600).optional(),
+                maxRestores: z.number().int().min(0).max(10).optional(),
+              }),
+            })
+            .strict(),
+        ]),
       )
       .min(1)
       .optional(),
@@ -368,7 +380,18 @@ const embeddedAssistantSchema = z
   })
   .strict()
   .superRefine((assistant, ctx) => {
+    const messaging = assistant.surfaces?.filter((surface) => surface.kind === 'messaging') ?? [];
+    if (messaging.length > 1)
+      ctx.addIssue({ code: 'custom', path: ['surfaces'], message: 'duplicate whatsapp surface' });
+    if (assistant.allowedOrigins.length === 0 && messaging.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['allowedOrigins'],
+        message: 'a website assistant requires allowedOrigins',
+      });
+    }
     assistant.surfaces?.forEach((surface, index) => {
+      if (surface.kind === 'messaging') return;
       // The authenticated direction already reattaches through ADR 0223 clause 7, authorized by a
       // backend-verified subject rather than by possession of a handle. A `continuity` block here
       // would be a developer believing they configured something nothing reads, so refuse it rather

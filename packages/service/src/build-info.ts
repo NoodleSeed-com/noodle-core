@@ -30,12 +30,16 @@ export interface BuildInfo {
 export function serviceInfoPayload(
   buildInfo: BuildInfo,
   developerMcp: boolean,
+  whatsapp = false,
 ): ServiceInfoResponse {
   return serviceInfoResponseSchema.parse({
     ok: true,
     status: 'ok',
     ...buildInfo,
-    features: { mixedCustomerAuth: MIXED_CUSTOMER_AUTH_FEATURE_VERSION },
+    features: {
+      mixedCustomerAuth: MIXED_CUSTOMER_AUTH_FEATURE_VERSION,
+      ...(whatsapp ? { whatsapp: 1 } : {}),
+    },
     ...(developerMcp
       ? { developerPlugin: { mcpCapabilityVersion: DEVELOPER_MCP_CAPABILITY_VERSION } }
       : {}),

@@ -72,6 +72,7 @@ export type CompileErrorCode =
   | 'customer_endpoint_mapping_required'
   | 'customer_endpoint_unknown_mapping'
   | 'customer_endpoint_bridge_unsupported'
+  | 'assistant_messaging_unsupported'
   | 'assistant_capability_unknown'
   | 'assistant_public_user_reference'
   | 'assistant_public_effect_unconfirmed'

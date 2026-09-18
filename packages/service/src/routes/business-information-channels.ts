@@ -37,6 +37,9 @@ export interface BusinessChannelRouteDeps
       | 'admissionEnvelope'
       | 'managedModelResolver'
     > {
+  readonly readWhatsApp?: (
+    tenant: import('../store.js').TenantRef,
+  ) => Promise<NonNullable<ApplicationChannelsProjection['whatsapp']>>;
   readonly resolveEndpointBase: ResolveEndpointBase;
   readonly resolveEndpointUrlOptions?: ResolveEndpointUrlOptions;
 }
@@ -114,6 +117,7 @@ export async function projectBusinessChannels(
     | 'managedModelResolver'
     | 'resolveEndpointUrlOptions'
     | 'now'
+    | 'readWhatsApp'
   >,
 ): Promise<ApplicationChannelsProjection> {
   const tenant = {
@@ -123,7 +127,20 @@ export async function projectBusinessChannels(
   };
   const registered = await deps.registry.getActiveByTenant(tenant);
   const target = registered && (await resolveTargetOrigins(registered));
-  const shared = { revision: installation.revision, active: installation.intakeActive, canEdit };
+  const whatsapp = await deps.readWhatsApp?.(tenant);
+  const shared = {
+    revision: installation.revision,
+    active: installation.intakeActive,
+    canEdit,
+    ...(whatsapp
+      ? {
+          whatsapp: {
+            ...whatsapp,
+            ...(!installation.intakeActive ? { status: 'paused' as const } : {}),
+          },
+        }
+      : {}),
+  };
   if (!target?.deploymentId)
     return {
       ...shared,

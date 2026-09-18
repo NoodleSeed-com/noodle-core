@@ -8,7 +8,12 @@ import {
   modelResponseError,
 } from './model-error.js';
 import { readResponsesCompletion, responsesInput, responsesTools } from './model-responses.js';
-import { type ModelCompletion, type ModelToolCall, readModelCompletion } from './model-stream.js';
+import {
+  type ModelCompletion,
+  type ModelToolCall,
+  type ModelUsage,
+  readModelCompletion,
+} from './model-stream.js';
 
 export type AssistantModelSource = 'operator' | 'noodle-managed';
 export type AssistantModelTransport = 'chat-completions' | 'responses';
@@ -29,7 +34,24 @@ export interface AssistantModelRequestPolicy {
   readonly extraBody?: Readonly<Record<string, unknown>>;
 }
 
+export interface AssistantInferenceCostBound {
+  readonly version: string;
+  readonly validUntil: string;
+  readonly maxInputTokens: number;
+  /** Includes every billed output token, including hidden reasoning. */
+  readonly maxBilledOutputTokens: number;
+  readonly inputMicroUsdPerMillionTokens: number;
+  readonly outputMicroUsdPerMillionTokens: number;
+}
 interface ResolvedAssistantModelBase {
+  /** Deployment/provider-owned verified bound for this exact resolved model, never tenant-supplied. */
+  readonly inferenceCost?: AssistantInferenceCostBound;
+  readonly inferenceGuard?: {
+    reserve(): Promise<{
+      settle(usage: ModelUsage): Promise<void>;
+      cancelBeforeDispatch?(): Promise<void>;
+    }>;
+  };
   readonly source: AssistantModelSource;
   readonly transport?: AssistantModelTransport;
   readonly baseUrl: string;
@@ -77,6 +99,7 @@ export type ResolvedAssistantModel = ResolvedAssistantModelBase &
 
 export interface ManagedAssistantModelResolver {
   resolve(input: {
+    readonly channel?: 'whatsapp';
     readonly tenant: { readonly org: string; readonly app: string; readonly env: string };
     readonly deploymentId: string;
   }): Promise<ResolvedAssistantModel | undefined>;
@@ -149,10 +172,19 @@ export async function requestModelCompletion(input: {
   if (maxRequestBytes !== undefined && requestBytes > maxRequestBytes) {
     throw modelRequestError('model request too large');
   }
-  await admitSponsorship(binding);
-  const bearerToken = binding.apiKey ?? (await binding.bearerToken());
-  if (!/^[^\s]{1,8192}$/.test(bearerToken)) {
-    throw modelRequestError('invalid model bearer token');
+  input.signal?.throwIfAborted();
+  const reservation = await binding.inferenceGuard?.reserve();
+  let bearerToken: string;
+  try {
+    // Channel work can recover as a new paid attempt; each request consumes funding authority.
+    await admitSponsorship(binding.inferenceGuard ? { ...binding } : binding);
+    input.signal?.throwIfAborted();
+    bearerToken = binding.apiKey ?? (await binding.bearerToken());
+    if (!/^[^\s]{1,8192}$/.test(bearerToken)) throw modelRequestError('invalid model bearer token');
+    input.signal?.throwIfAborted();
+  } catch (error) {
+    await reservation?.cancelBeforeDispatch?.();
+    throw error;
   }
   const timeoutSignal = AbortSignal.timeout(binding.requestPolicy?.timeoutMs ?? 30_000);
   let response: Response;
@@ -170,11 +202,15 @@ export async function requestModelCompletion(input: {
   }
   if (!response.ok) throw modelHttpError(response.status);
   try {
-    return await (transport === 'responses' ? readResponsesCompletion : readModelCompletion)(
+    const completion = await (transport === 'responses'
+      ? readResponsesCompletion
+      : readModelCompletion)(
       response,
       input.onContent ?? (() => undefined),
       input.maxResponseBytes,
     );
+    if (completion.usage) await reservation?.settle(completion.usage);
+    return completion;
   } catch (error) {
     if (error instanceof AssistantModelError) throw error;
     throw modelResponseError(error);

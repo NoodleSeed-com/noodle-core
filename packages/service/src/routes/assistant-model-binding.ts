@@ -9,11 +9,16 @@ export async function resolveAssistantModelBinding(
   tenant: { readonly org: string; readonly app: string; readonly env: string },
   deploymentId: string,
   deps: AssistantRouteDeps,
+  channel?: 'whatsapp',
 ): Promise<ResolvedAssistantModel | undefined> {
   const declaration = target.served.artifact.server.assistant?.model;
   if (declaration === undefined) return undefined;
   if (declaration.kind === 'noodle-managed') {
-    return deps.managedModelResolver?.resolve({ tenant, deploymentId });
+    return deps.managedModelResolver?.resolve({
+      tenant,
+      deploymentId,
+      ...(channel ? { channel } : {}),
+    });
   }
   const scope = resolveConfigScope(tenant);
   const [variables, secrets] = await Promise.all([

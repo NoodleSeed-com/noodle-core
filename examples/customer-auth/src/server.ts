@@ -6,12 +6,26 @@ import {
   customerEndpoint,
   embeddedAssistant,
   openAICompatible,
+  publicMessaging,
   secret,
   server,
   tool,
   variable,
   z,
 } from '@noodleseed/one';
+
+const publicHelp = tool('help', {
+  title: 'Help with organizations and apps',
+  description: 'Explain what customers can do before they sign in.',
+  input: z.object({}),
+  output: z.object({ help: z.string() }),
+  annotations: annotations.readOnly(),
+  fulfil() {
+    return {
+      help: 'Sign in to browse your organizations and apps. Archiving an app requires an administrator and confirmation.',
+    };
+  },
+});
 
 const customerApi = customerEndpoint('customer_api', {
   allowedHttpsHostSuffixes: ['api.noodleseed.dev'],
@@ -171,12 +185,15 @@ export default server(
         transport: 'responses',
       }),
       // Production origins are exact HTTPS; http://localhost:<port> is allowed for local development.
-      access: authenticatedWebsite({
-        origins: [assistantOrigin, 'https://dev.noodleseed.com', 'http://localhost:3000'],
-        sessionClaims: {
-          accountTier: { exposeToModel: true },
-        },
-      }),
+      access: [
+        authenticatedWebsite({
+          origins: [assistantOrigin, 'https://dev.noodleseed.com', 'http://localhost:3000'],
+          sessionClaims: {
+            accountTier: { exposeToModel: true },
+          },
+        }),
+        publicMessaging({ channel: 'whatsapp', capabilities: [publicHelp] }),
+      ],
       theme: 'auto',
       layout: { mode: 'floating', position: 'bottom-center', panelWidth: 970 },
       behavior: { showPoweredBy: true, showConfirmationDetails: false },
@@ -202,18 +219,7 @@ export default server(
     }),
   },
   [
-    tool('help', {
-      title: 'Help with organizations and apps',
-      description: 'Explain what customers can do before they sign in.',
-      input: z.object({}),
-      output: z.object({ help: z.string() }),
-      annotations: annotations.readOnly(),
-      fulfil() {
-        return {
-          help: 'Sign in to browse your organizations and apps. Archiving an app requires an administrator and confirmation.',
-        };
-      },
-    }),
+    publicHelp,
     tool('list_org_apps', {
       title: 'List organization apps',
       description: 'List NoodleSeed.com apps for an organization from its customer API.',

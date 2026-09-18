@@ -32,7 +32,9 @@ function collectVariablesFromManagedOrigins(manifest: Manifest, out: Set<string>
   const assistant = manifest.server.assistant;
   const values = [
     ...(assistant?.allowedOrigins ?? []),
-    ...(assistant?.surfaces?.flatMap((surface) => surface.origins) ?? []),
+    ...(assistant?.surfaces?.flatMap((surface) =>
+      surface.kind === 'messaging' ? [] : surface.origins,
+    ) ?? []),
     ...(manifest.handoff?.allowedDomains ?? []),
   ];
   for (const value of values) {

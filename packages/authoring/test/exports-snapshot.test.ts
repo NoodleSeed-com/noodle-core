@@ -35,6 +35,7 @@ const BARREL_EXPORTS = [
   'noodlePlatformCatalog',
   'openAICompatible',
   'prompt',
+  'publicMessaging',
   'publicWebsite',
   'resource',
   'secret',

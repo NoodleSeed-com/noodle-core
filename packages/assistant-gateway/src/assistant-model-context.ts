@@ -2,14 +2,18 @@ import type { RuntimeArtifact } from '@noodle-borg/compiler';
 import { evaluateToolAuthorization } from '@noodle-borg/protocol';
 import { type ExecuteDeps, executeTool, type InvocationContext } from '@noodle-borg/runtime';
 import { invocationContextSystemMessage } from './assistant-context.js';
-import { withAssistantSessionExecutionAuthority } from './assistant-customer-routing.js';
 import type { AssistantSessionRecord } from './assistant-store.js';
+import {
+  type AssistantTurnContext,
+  isMessagingTurn,
+  withAssistantTurnExecutionAuthority,
+} from './assistant-turn-context.js';
 import type { AssistantModelMessage } from './model-request.js';
-import { authenticatedSurfaceOf, publicSurfaceOf } from './public-surface.js';
+import { authenticatedSurfaceOf, messagingSurfaceOf, publicSurfaceOf } from './public-surface.js';
 
 interface AssistantCoreModelContext {
   readonly artifact: RuntimeArtifact;
-  readonly session: AssistantSessionRecord;
+  readonly session: AssistantTurnContext;
   readonly invocationContext: InvocationContext;
   readonly guideContext?: string;
   readonly knowledgeGuidance?: string;
@@ -32,7 +36,7 @@ interface AssistantTurnModelContext extends AssistantCoreModelContext {
 export async function resolveAssistantContextProviderModelResult(input: {
   readonly artifact: RuntimeArtifact;
   readonly executionDeps: ExecuteDeps;
-  readonly session: AssistantSessionRecord;
+  readonly session: AssistantTurnContext;
   readonly invocationContext: InvocationContext;
 }): Promise<AssistantContextProviderModelResult | undefined> {
   const provider = input.artifact.tools.find((tool) => tool.contextProvider === true);
@@ -45,7 +49,7 @@ export async function resolveAssistantContextProviderModelResult(input: {
     provider.name,
     {},
     {
-      ...withAssistantSessionExecutionAuthority(input.executionDeps, input.artifact, input.session),
+      ...withAssistantTurnExecutionAuthority(input.executionDeps, input.artifact, input.session),
       caller: input.session.caller,
       context: input.invocationContext,
     },
@@ -88,7 +92,7 @@ export function assistantTurnModelContextMessages(
   return [
     ...assistantCoreModelMessages(input),
     ...contextProviderMessages(input.contextProvider),
-    ...(input.session.context
+    ...(!isMessagingTurn(input.session) && input.session.context
       ? [
           {
             role: 'system' as const,
@@ -157,7 +161,14 @@ function invocationContextMessages(context: InvocationContext): readonly string[
 }
 
 /** Exact surface binding prevents one audience's instructions from leaking into another. */
-function surfaceInstructionsContext(assistant: unknown, session: AssistantSessionRecord): string {
+function surfaceInstructionsContext(assistant: unknown, session: AssistantTurnContext): string {
+  if (isMessagingTurn(session)) {
+    const surface = messagingSurfaceOf(assistant);
+    return (
+      '\n\nWhatsApp surface: concise plain text, at most 3500 characters. Do not promise cards, forms, sign-in or actions absent from your tools.' +
+      (surface?.instructions ? `\nTenant surface instructions:\n${surface.instructions}` : '')
+    );
+  }
   const bound =
     session.boundSurface ?? (session.publicEmbedId !== undefined ? 'public' : undefined);
   if (bound === undefined) return '';

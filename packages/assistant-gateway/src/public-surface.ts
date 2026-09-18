@@ -32,6 +32,7 @@ export function authenticatedSurfaceOf(assistant: unknown): AuthenticatedSurface
   const surfaces = (assistant as { surfaces?: unknown } | undefined)?.surfaces;
   if (!Array.isArray(surfaces)) return undefined;
   for (const entry of surfaces) {
+    if (entry?.kind === 'messaging') continue;
     const { mode, origins, capabilities, instructions } = entry as {
       mode?: unknown;
       origins?: unknown;
@@ -79,6 +80,7 @@ export function publicSurfaceOf(assistant: unknown): PublicSurface | undefined {
   const surfaces = (assistant as { surfaces?: unknown } | undefined)?.surfaces;
   if (!Array.isArray(surfaces)) return undefined;
   for (const entry of surfaces) {
+    if (entry?.kind === 'messaging') continue;
     const { mode, origins, capabilities, instructions } = entry as {
       mode?: unknown;
       origins?: unknown;
@@ -98,6 +100,31 @@ export function publicSurfaceOf(assistant: unknown): PublicSurface | undefined {
         ? (capabilities as readonly SurfaceCapabilityRef[])
         : [],
       ...(typeof instructions === 'string' ? { instructions } : {}),
+    };
+  }
+  return undefined;
+}
+
+export interface MessagingSurface {
+  readonly kind: 'messaging';
+  readonly channel: 'whatsapp';
+  readonly mode: 'public';
+  readonly capabilities: readonly SurfaceCapabilityRef[];
+  readonly instructions?: string;
+}
+export function messagingSurfaceOf(assistant: unknown): MessagingSurface | undefined {
+  const surfaces = (assistant as { surfaces?: unknown } | undefined)?.surfaces;
+  if (!Array.isArray(surfaces)) return undefined;
+  for (const entry of surfaces) {
+    if (entry?.kind !== 'messaging' || entry.channel !== 'whatsapp' || entry.mode !== 'public')
+      continue;
+    if (!Array.isArray(entry.capabilities)) return undefined;
+    return {
+      kind: 'messaging',
+      channel: 'whatsapp',
+      mode: 'public',
+      capabilities: entry.capabilities,
+      ...(typeof entry.instructions === 'string' ? { instructions: entry.instructions } : {}),
     };
   }
   return undefined;

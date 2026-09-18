@@ -4,6 +4,7 @@ export * from './catalog-data-auth-discovery.js';
 export * from './catalog-data-billing.js';
 export * from './catalog-data-bootstrap-authoring.js';
 export * from './catalog-data-bootstrap-pre-auth.js';
+export * from './catalog-data-channels.js';
 export * from './catalog-data-config.js';
 export * from './catalog-data-core.js';
 export * from './catalog-data-distributions.js';

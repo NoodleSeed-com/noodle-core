@@ -67,6 +67,7 @@ import { runLogin, runLogout, runTarget, runWhoami } from './commands/session.js
 import { usage } from './commands/shared.js';
 import { runSolutions } from './commands/solutions-ops.js';
 import { runUpdateCommand } from './commands/update-ops.js';
+import { runChannels } from './commands/whatsapp-ops.js';
 import type { ConfigLocation } from './config.js';
 import { RefreshTokenRejectedError } from './control-plane.js';
 import { runDoctor } from './doctor.js';
@@ -306,6 +307,8 @@ async function runCommand(
       return runAlerts(rest, env, home);
     case 'intents':
       return runIntents(rest, env, home);
+    case 'channels':
+      return runChannels(rest, env, home);
     case 'assistant':
       return runAssistant(rest, env, home);
     case 'policy':

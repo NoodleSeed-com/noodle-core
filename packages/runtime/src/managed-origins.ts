@@ -54,14 +54,18 @@ export function resolveManagedOrigins(
           ...(assistant.surfaces === undefined
             ? {}
             : {
-                surfaces: assistant.surfaces.map((surface, index) => ({
-                  ...surface,
-                  origins: resolveList(
-                    surface.origins,
-                    `server.assistant.surfaces.${index}.origins`,
-                    true,
-                  ),
-                })),
+                surfaces: assistant.surfaces.map((surface, index) =>
+                  surface.kind === 'messaging'
+                    ? surface
+                    : {
+                        ...surface,
+                        origins: resolveList(
+                          surface.origins,
+                          `server.assistant.surfaces.${index}.origins`,
+                          true,
+                        ),
+                      },
+                ),
               }),
         };
   const handoff = artifact.server.handoff;
@@ -74,6 +78,7 @@ export function resolveManagedOrigins(
         };
   const owners = new Map<string, number>();
   resolvedAssistant?.surfaces?.forEach((surface, index) => {
+    if (surface.kind === 'messaging') return;
     for (const origin of surface.origins) {
       const prior = owners.get(origin);
       if (prior !== undefined && prior !== index)
