@@ -17,7 +17,10 @@ import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import type { HostedPackagedAsset, PreparedPackagedAsset } from '@noodle-borg/compiler';
 import { describe, expect, it } from 'vitest';
-import { filesystemAssetPaths } from '../src/filesystem-layout.js';
+import {
+  filesystemAssetPaths,
+  type StoredFilesystemAssetMetadata,
+} from '../src/filesystem-layout.js';
 import { FilesystemAssetStore, type FilesystemAssetStoreConfig } from '../src/filesystem-store.js';
 
 const SCOPE = { org: 'acme', app: 'site', env: 'prod' } as const;
@@ -158,6 +161,25 @@ async function land(
   if (target === undefined) throw new Error('expected upload target');
   expect((await upload(assetStore, target, bytes)).status).toBe(201);
   return uploadPlan.assets[0] as HostedPackagedAsset;
+}
+
+// Boundary setup does not need hundreds of durable commits. Validate seeded metadata through a
+// fresh store, then exercise the actual commit, overflow and sibling-lock behavior in each test.
+async function seedReachability(
+  storageRoot: string,
+  hosted: HostedPackagedAsset,
+  reachableBy: StoredFilesystemAssetMetadata['reachableBy'],
+) {
+  const metadataPath = filesystemAssetPaths(storageRoot, hosted.objectKey).metadata;
+  const metadata = JSON.parse(
+    await readFile(metadataPath, 'utf8'),
+  ) as StoredFilesystemAssetMetadata;
+  const serialized = `${JSON.stringify({ ...metadata, reachableBy })}\n`;
+  expect(Buffer.byteLength(serialized)).toBeLessThanOrEqual(64 * 1024);
+  await writeFile(metadataPath, serialized);
+  await expect(
+    store(storageRoot).verifyUploadedAssets({ scope: SCOPE, assets: [hosted] }),
+  ).resolves.toMatchObject({ ok: true });
 }
 
 describe('FilesystemAssetStore shared reservations and capabilities', () => {
@@ -439,22 +461,32 @@ describe('FilesystemAssetStore containment and persisted bounds', () => {
     const storageRoot = await root();
     const assetStore = store(storageRoot);
     const hosted = await land(assetStore, prepared('bounded'));
-    let rejected = false;
-    for (let index = 0; index < 400; index += 1) {
-      try {
-        await assetStore.recordReachability({
-          scope: SCOPE,
-          deploymentId: `dep-${String(index).padStart(3, '0')}-${'x'.repeat(240)}`,
-          deploymentVersion: index,
-          assets: [hosted],
-        });
-      } catch {
-        rejected = true;
-        break;
-      }
-    }
-    expect(rejected).toBe(true);
     const metadataPath = filesystemAssetPaths(storageRoot, hosted.objectKey).metadata;
+    const original = JSON.parse(
+      await readFile(metadataPath, 'utf8'),
+    ) as StoredFilesystemAssetMetadata;
+    const reference = (index: number) => ({
+      deploymentId: `dep-${String(index).padStart(3, '0')}-${'x'.repeat(240)}`,
+      deploymentVersion: index,
+    });
+    const reachableBy: Array<ReturnType<typeof reference>> = [];
+    for (let index = 0; index < 256; index += 1) {
+      const next = [...reachableBy, reference(index)];
+      if (Buffer.byteLength(`${JSON.stringify({ ...original, reachableBy: next })}\n`) > 64 * 1024)
+        break;
+      reachableBy.push(reference(index));
+    }
+    expect(reachableBy.length).toBeLessThan(256);
+    const lastWithinLimit = reachableBy.pop();
+    if (lastWithinLimit === undefined) throw new Error('expected a near-limit metadata fixture');
+    const firstOverLimit = reference(reachableBy.length + 1);
+    await seedReachability(storageRoot, hosted, reachableBy);
+    await assetStore.recordReachability({ scope: SCOPE, ...lastWithinLimit, assets: [hosted] });
+    const beforeRejectedWrite = await readFile(metadataPath, 'utf8');
+    await expect(
+      assetStore.recordReachability({ scope: SCOPE, ...firstOverLimit, assets: [hosted] }),
+    ).rejects.toThrow(/metadata/i);
+    expect(await readFile(metadataPath, 'utf8')).toBe(beforeRejectedWrite);
     expect((await stat(metadataPath)).size).toBeLessThanOrEqual(64 * 1024);
     await expect(
       assetStore.verifyUploadedAssets({ scope: SCOPE, assets: [hosted] }),
@@ -465,14 +497,20 @@ describe('FilesystemAssetStore containment and persisted bounds', () => {
     const storageRoot = await root();
     const assetStore = store(storageRoot);
     const hosted = await land(assetStore, prepared('record-count'));
-    for (let index = 0; index < 256; index += 1) {
-      await assetStore.recordReachability({
-        scope: SCOPE,
+    await seedReachability(
+      storageRoot,
+      hosted,
+      Array.from({ length: 255 }, (_, index) => ({
         deploymentId: `dep-${index}`,
         deploymentVersion: index,
-        assets: [hosted],
-      });
-    }
+      })),
+    );
+    await assetStore.recordReachability({
+      scope: SCOPE,
+      deploymentId: 'dep-255',
+      deploymentVersion: 255,
+      assets: [hosted],
+    });
     await expect(
       store(storageRoot).recordReachability({
         scope: SCOPE,
@@ -521,14 +559,14 @@ describe('FilesystemAssetStore containment and persisted bounds', () => {
     const first = store(storageRoot);
     const second = store(storageRoot);
     const hosted = await land(first, prepared('concurrent-overflow'));
-    for (let index = 0; index < 255; index += 1) {
-      await first.recordReachability({
-        scope: SCOPE,
+    await seedReachability(
+      storageRoot,
+      hosted,
+      Array.from({ length: 255 }, (_, index) => ({
         deploymentId: `dep-${index}`,
         deploymentVersion: index,
-        assets: [hosted],
-      });
-    }
+      })),
+    );
     await Promise.all([
       first.recordReachability({
         scope: SCOPE,

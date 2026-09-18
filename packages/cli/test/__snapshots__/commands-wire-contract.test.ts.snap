@@ -17080,7 +17080,7 @@ exports[`commands --json public wire contract > writes one complete JsonEnvelope
                     "aliases": [],
                     "conflictsWith": [],
                     "constraints": {
-                      "default": "https://portal.noodleseed.com",
+                      "default": "https://portal.noodleseed.dev",
                     },
                     "name": "portal",
                     "repeatable": false,

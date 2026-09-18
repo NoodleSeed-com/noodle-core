@@ -101,10 +101,10 @@ export class WhatsAppRuntime {
   async doctor(id: string, req: IncomingMessage) {
     const binding = await this.channels.internal(id);
     const checks: Array<{ name: string; status: 'ready' | 'unavailable'; code?: string }> = [];
-    const check = async (name: string, work: () => Promise<void>) => {
+    const check = async (name: string, work: () => Promise<string | void>) => {
       try {
-        await work();
-        checks.push({ name, status: 'ready' });
+        const code = await work();
+        checks.push({ name, status: 'ready', ...(code ? { code } : {}) });
       } catch (error) {
         checks.push({
           name,
@@ -147,7 +147,8 @@ export class WhatsAppRuntime {
     await check('provider_asset', async () => {
       const health = await (await this.provider(binding)).adapter.health();
       if (health.phoneNumberId !== binding.phoneNumberId) throw new ChannelError('asset_mismatch');
-      if (!health.canSend) throw new ChannelError('provider_messaging_unavailable');
+      if (!health.canSend) throw new ChannelError('provider_messaging_blocked');
+      return health.status === 'LIMITED' ? 'provider_messaging_limited' : undefined;
     });
     await check('webhook', async () => {
       const state = await this.webhook(id, req);

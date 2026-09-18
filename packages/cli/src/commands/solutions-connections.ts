@@ -70,7 +70,7 @@ export async function runSolutionConnections(
         fetchImpl,
       );
       const portal = new URL(
-        args.portal ?? env.NOODLE_PORTAL_URL ?? 'https://portal.noodleseed.com',
+        args.portal ?? env.NOODLE_PORTAL_URL ?? 'https://portal.noodleseed.dev',
       );
       if (
         portal.origin !== portal.href.replace(/\/$/, '') ||

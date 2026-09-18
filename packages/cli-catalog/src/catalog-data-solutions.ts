@@ -398,7 +398,7 @@ export const CATALOG_SOLUTIONS: CommandSpec = {
               type: 'string',
               value: '<origin>',
               summary: 'Portal origin; defaults to NOODLE_PORTAL_URL or the managed Portal.',
-              constraints: { default: 'https://portal.noodleseed.com' },
+              constraints: { default: 'https://portal.noodleseed.dev' },
             },
             {
               ...OPTIONAL_FLAG,

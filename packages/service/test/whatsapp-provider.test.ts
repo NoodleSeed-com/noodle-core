@@ -24,6 +24,32 @@ const callback = (messages: unknown[], statuses: unknown[] = []) => ({
   ],
 });
 describe('360dialog adapter', () => {
+  it.each([
+    ['AVAILABLE', true],
+    ['LIMITED', true],
+    ['BLOCKED', false],
+  ])('preserves documented health status %s and whether messaging is permitted', async (status, canSend) => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ id: 'owned', health_status: { can_send_message: status } }),
+      );
+    expect(await new Dialog360('private', fetcher).health()).toEqual({
+      phoneNumberId: 'owned',
+      canSend,
+      status,
+    });
+  });
+  it.each(['UNKNOWN', '', null])('refuses unrecognized provider health %s', async (status) => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ id: 'owned', health_status: { can_send_message: status } }),
+      );
+    await expect(new Dialog360('private', fetcher).health()).rejects.toMatchObject({
+      code: 'provider_response_invalid',
+    });
+  });
   it('normalizes the entire batch, distinguishes statuses and rejects a different asset', () => {
     const data = callback(
       [

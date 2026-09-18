@@ -37,6 +37,30 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 describe('solutions connections operator projection', () => {
+  it.each([
+    [{}, [], 'https://portal.noodleseed.dev'],
+    [{ NOODLE_PORTAL_URL: 'https://operator.example.test' }, [], 'https://operator.example.test'],
+    [
+      { NOODLE_PORTAL_URL: 'https://operator.example.test' },
+      ['--portal', 'https://selected.example.test'],
+      'https://selected.example.test',
+    ],
+  ])('uses the managed .dev Portal default while preserving explicit overrides', async (env, portalFlags, origin) => {
+    const request = vi.fn<typeof fetch>(async () =>
+      Response.json({ ok: true, data: { installation: { appSlug: 'workflow' } } }),
+    );
+    expect(
+      await runSolutionConnections(
+        ['connect', 'installation', ...flags, ...portalFlags],
+        env,
+        home,
+        { fetchImpl: request },
+      ),
+    ).toBe(0);
+    expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toMatchObject({
+      data: { portalUrl: `${origin}/o/acme/workflow/integrations` },
+    });
+  });
   it('uses the typed list API and strips additive fields', async () => {
     const request = vi.fn<typeof fetch>(async () =>
       Response.json({ ...projection, data: { ...projection.data, future: 'hidden' } }),

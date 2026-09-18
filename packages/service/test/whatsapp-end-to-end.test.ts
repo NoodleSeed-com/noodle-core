@@ -50,6 +50,7 @@ describe.skipIf(!databaseUrl)('WhatsApp channel through real HTTP and encrypted 
   const modelRequests: unknown[] = [];
   const registry = new ServerRegistry();
   let http: Server, base: string;
+  let providerHealth = 'BLOCKED';
   let webhook: { url: string; headers?: Record<string, string> } = { url: '' };
   const tenant = { org: 'acme', app: 'site', env: 'prod' };
   const path = '/v1/orgs/acme/apps/site/envs/prod/channels/whatsapp';
@@ -130,7 +131,7 @@ describe.skipIf(!databaseUrl)('WhatsApp channel through real HTTP and encrypted 
             if (endpoint.pathname === '/health_status')
               return Response.json({
                 id: 'owned',
-                health_status: { can_send_message: 'AVAILABLE' },
+                health_status: { can_send_message: providerHealth },
               });
             if (endpoint.pathname === '/v1/configs/webhook') {
               if (init?.method === 'POST') webhook = JSON.parse(init.body as string);
@@ -233,8 +234,37 @@ describe.skipIf(!databaseUrl)('WhatsApp channel through real HTTP and encrypted 
     expect((await call('/webhook', 'POST', { expectedRevision: binding.revision })).status).toBe(
       200,
     );
+    const blocked = await (await call('/readiness', 'POST', {})).json();
+    expect(blocked.data).toMatchObject({ ready: false });
+    expect(blocked.data.checks).toContainEqual({
+      name: 'provider_asset',
+      status: 'unavailable',
+      code: 'provider_messaging_blocked',
+    });
+    expect(
+      (
+        await call('/state', 'PATCH', {
+          expectedRevision: binding.revision,
+          state: 'enabled',
+        })
+      ).status,
+    ).toBe(409);
+    providerHealth = 'UNKNOWN';
+    const unknown = await (await call('/readiness', 'POST', {})).json();
+    expect(unknown.data).toMatchObject({ ready: false });
+    expect(unknown.data.checks).toContainEqual({
+      name: 'provider_asset',
+      status: 'unavailable',
+      code: 'provider_response_invalid',
+    });
+    providerHealth = 'LIMITED';
     const readiness = await (await call('/readiness', 'POST', {})).json();
     expect(readiness.data, JSON.stringify(readiness)).toMatchObject({ ready: true });
+    expect(readiness.data.checks).toContainEqual({
+      name: 'provider_asset',
+      status: 'ready',
+      code: 'provider_messaging_limited',
+    });
     expect(
       (await call('/state', 'PATCH', { expectedRevision: binding.revision, state: 'enabled' }))
         .status,

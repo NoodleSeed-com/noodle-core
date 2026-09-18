@@ -132,12 +132,17 @@ export class Dialog360 {
     const response = await this.request('/health_status?fields=id');
     if (!response.ok) throw new ChannelError('provider_unavailable');
     const parsed = z
-      .object({ id: identifier, health_status: z.object({ can_send_message: z.string() }) })
+      .object({
+        id: identifier,
+        health_status: z.object({ can_send_message: z.enum(['AVAILABLE', 'LIMITED', 'BLOCKED']) }),
+      })
       .safeParse(await boundedJson(response));
     if (!parsed.success) throw new ChannelError('provider_response_invalid');
     return {
       phoneNumberId: parsed.data.id,
-      canSend: parsed.data.health_status.can_send_message === 'AVAILABLE',
+      // LIMITED meets provider messaging requirements; provider limits still govern each send.
+      canSend: parsed.data.health_status.can_send_message !== 'BLOCKED',
+      status: parsed.data.health_status.can_send_message,
     };
   }
   async webhook() {
