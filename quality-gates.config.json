@@ -46,8 +46,8 @@
       {
         "path": "packages/wire-contracts",
         "role": "foundation",
-        "maxSourceLines": 7000,
-        "reason": "Dependency-light shared wire schemas; routes and business authority stay outside. Founder-approved MVP allowance under ADR 0233. Founder-approved WhatsApp first-slice allowance (2026-09-18); docs/roadmap/whatsapp-channel-capacity.md."
+        "maxSourceLines": 8500,
+        "reason": "Dependency-light shared wire schemas; routes and business authority stay outside. Founder-approved full-Portal ceiling under ADR 0233 (2026-09-18), inclusive of the prior WhatsApp first-slice allowance; docs/roadmap/whatsapp-channel-capacity.md."
       },
       {
         "path": "packages/asset-storage",
@@ -70,13 +70,13 @@
       {
         "path": "packages/cli",
         "role": "composition",
-        "maxSourceLines": 58000,
-        "reason": "One published developer/operator CLI composition; bounded command and plugin modules, not satellite packages. Founder-approved WhatsApp first-slice allowance (2026-09-18); docs/roadmap/whatsapp-channel-capacity.md.",
+        "maxSourceLines": 60000,
+        "reason": "One published developer/operator CLI composition; bounded command and plugin modules, not satellite packages. Founder-approved full-Portal ceiling under ADR 0233 (2026-09-18), inclusive of the prior WhatsApp first-slice allowance; docs/roadmap/whatsapp-channel-capacity.md.",
         "modules": [
           {
             "path": "src/commands",
-            "maxSourceLines": 31250,
-            "reason": "Command implementations project existing public authoring and operator APIs."
+            "maxSourceLines": 33000,
+            "reason": "Command implementations project existing public authoring and operator APIs. Founder-approved full-Portal ceiling under ADR 0233 (2026-09-18)."
           },
           {
             "path": "src/plugin-mode",
@@ -88,13 +88,13 @@
       {
         "path": "packages/service",
         "role": "composition",
-        "maxSourceLines": 67000,
-        "reason": "Portable public runtime and control-plane composition; commercial imports remain forbidden. Founder-approved ADR 0233 amendment (2026-09-07) covers bounded reference capacity, onboarding and conservative recovery safeguards. Founder-approved WhatsApp first-slice allowance (2026-09-18); docs/roadmap/whatsapp-channel-capacity.md.",
+        "maxSourceLines": 80000,
+        "reason": "Portable public runtime and control-plane composition; commercial imports remain forbidden. Founder-approved full-Portal ceiling under ADR 0233 (2026-09-18), inclusive of prior MVP and WhatsApp first-slice allowances; docs/roadmap/whatsapp-channel-capacity.md.",
         "modules": [
           {
             "path": "src/routes",
-            "maxSourceLines": 15600,
-            "reason": "Public HTTP transport and portable operator API routes. Founder-approved MVP allowance under ADR 0233. Requester-approved deployment and version deletion API adapter allowance (2026-09-14)."
+            "maxSourceLines": 18000,
+            "reason": "Public HTTP transport and portable operator API routes. Founder-approved full-Portal ceiling under ADR 0233 (2026-09-18), inclusive of the deployment/version deletion allowance (2026-09-14)."
           },
           {
             "path": "src/oauth",
@@ -103,8 +103,8 @@
           },
           {
             "path": "src/store",
-            "maxSourceLines": 6400,
-            "reason": "Portable runtime and control-plane persistence."
+            "maxSourceLines": 8000,
+            "reason": "Portable runtime and control-plane persistence. Founder-approved full-Portal ceiling under ADR 0233 (2026-09-18)."
           },
           {
             "path": "src/developer-mcp",
@@ -122,8 +122,8 @@
       {
         "path": "packages/compiler",
         "role": "library",
-        "maxSourceLines": 10000,
-        "reason": "One compiler pipeline with cohesive validation and emission phases. Founder-approved MVP allowance under ADR 0233."
+        "maxSourceLines": 12000,
+        "reason": "One compiler pipeline with cohesive validation and emission phases. Founder-approved full-Portal ceiling under ADR 0233 (2026-09-18)."
       },
       {
         "path": "packages/authoring",
