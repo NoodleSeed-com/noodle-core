@@ -18,16 +18,24 @@ export class BusinessPrincipalAuthority {
     this.#provider = provider;
   }
 
-  async allows(subject: string, transaction?: ModuleSqlTransaction): Promise<boolean> {
+  async allows(
+    subject: string,
+    transaction?: ModuleSqlTransaction,
+    options: { readonly requireKnown?: true } = {},
+  ): Promise<boolean> {
     const provider = this.#provider;
-    if (provider === undefined) return true;
+    if (provider === undefined) return options.requireKnown !== true;
     try {
-      if (transaction === undefined) await provider.principalResolver.assertActive(subject);
-      else {
+      if (transaction === undefined) {
+        if (options.requireKnown)
+          return (await provider.principalResolver.resolveExisting(subject))?.subject === subject;
+        await provider.principalResolver.assertActive(subject);
+      } else {
         if (provider.assertActivePrincipal === undefined) {
           throw new Error('Business assignment requires transactional principal authority');
         }
-        await provider.assertActivePrincipal(transaction, subject);
+        const checked = await provider.assertActivePrincipal(transaction, subject);
+        if (options.requireKnown) return checked?.known === true;
       }
       return true;
     } catch (error) {

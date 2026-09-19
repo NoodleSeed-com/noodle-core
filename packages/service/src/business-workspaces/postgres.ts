@@ -27,6 +27,10 @@ export class PostgresBusinessWorkspaceBackend implements BusinessWorkspaceBacken
     private readonly pool: Pool,
     private readonly cipher: PayloadCipher,
   ) {}
+  principalTransaction() {
+    const executor = postgresQueryExecutor(this.pool);
+    return executor === this.pool ? undefined : { query: executor.query.bind(executor) };
+  }
   async ensureSchema(): Promise<void> {
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS business_workspace_authority (
@@ -95,6 +99,9 @@ export class PostgresBusinessWorkspaceBackend implements BusinessWorkspaceBacken
       if (!now) throw new Error('workspace transaction clock unavailable');
       return work({
         now: now.toISOString(),
+        principalTransaction: {
+          query: (sql, values) => client.query(sql, values ? [...values] : undefined),
+        },
         get: () => this.read(org),
         save: async (value, event) => {
           const state = WorkspaceStateSchema.parse(value);

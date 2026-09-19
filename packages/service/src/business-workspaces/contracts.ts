@@ -1,4 +1,5 @@
 import { SLUG_PATTERN, validateSlug } from '@noodle-borg/control-plane/portable';
+import type { ModuleSqlTransaction } from '@noodle-borg/module';
 import { BusinessWorkspaceRoleSchema } from '@noodle-borg/wire-contracts';
 import { z } from 'zod';
 import type { WorkspacePermission } from './permissions.js';
@@ -65,10 +66,14 @@ export interface WorkspaceAuditEvent {
 }
 export interface BusinessWorkspaceTransaction {
   readonly now: string;
+  /** Borrowed authority transaction for canonical principal checks; never acquire a second connection. */
+  readonly principalTransaction?: ModuleSqlTransaction;
   get(): Promise<WorkspaceState | undefined>;
   save(state: WorkspaceState, event: WorkspaceAuditEvent): Promise<void>;
 }
 export interface BusinessWorkspaceBackend {
+  /** Existing caller transaction only; reads must not acquire a second identity connection. */
+  principalTransaction?(): ModuleSqlTransaction | undefined;
   /** Candidate lookup only; the encrypted workspace state remains permission authority. */
   findMemberships(
     subject: string,

@@ -330,6 +330,35 @@ export function describeBusinessWorkspaceStore(
       ).rejects.toMatchObject({ code: 'forbidden' });
     });
 
+    it('does not count a suspended co-owner as an active replacement', async () => {
+      const { store, suspended } = await setup();
+      const invitation = await store.invite({
+        org: 'acme',
+        actor: 'alice',
+        expectedRevision: 1,
+        email: 'bob@example.test',
+        role: 'owner',
+      });
+      await store.accept({
+        org: 'acme',
+        subject: 'bob',
+        verifiedEmail: 'bob@example.test',
+        token: invitation.token,
+      });
+      suspended.add('bob');
+      for (const role of [null, 'builder'] as const)
+        await expect(
+          store.changeRole({
+            org: 'acme',
+            actor: 'alice',
+            subject: 'alice',
+            expectedRevision: 3,
+            role,
+          }),
+        ).rejects.toMatchObject({ code: 'last_owner' });
+      expect((await store.inspect('acme', 'alice')).revision).toBe(3);
+    });
+
     it('serializes concurrent last-owner mutations and retains one owner', async () => {
       const { store } = await setup();
       const invitation = await store.invite({

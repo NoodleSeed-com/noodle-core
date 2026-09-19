@@ -5,6 +5,7 @@ import {
 } from '@noodle-borg/module';
 import { describe, expect, it, vi } from 'vitest';
 import { InMemoryBusinessInformationStore } from '../src/business-information/in-memory-store.js';
+import { BusinessPrincipalAuthority } from '../src/business-information/principal-authority.js';
 
 async function setup() {
   const store = new InMemoryBusinessInformationStore();
@@ -64,6 +65,51 @@ function authority(
     },
   };
 }
+
+describe('versioned workspace principal evidence', () => {
+  const strict = { requireKnown: true } as const;
+  it('requires actual canonical existence, while preserving portable legacy semantics', async () => {
+    const principal = new BusinessPrincipalAuthority();
+    expect(await principal.allows('owner')).toBe(true);
+    expect(await principal.allows('owner', undefined, strict)).toBe(false);
+    const provider = authority(async () => {});
+    principal.configure(provider);
+    expect(await principal.allows('unknown', undefined, strict)).toBe(false);
+    vi.mocked(provider.principalResolver.resolveExisting).mockResolvedValueOnce({
+      subject: 'owner',
+    });
+    expect(await principal.allows('owner', undefined, strict)).toBe(true);
+    vi.mocked(provider.principalResolver.resolveExisting).mockResolvedValueOnce({
+      subject: 'other',
+    });
+    expect(await principal.allows('owner', undefined, strict)).toBe(false);
+  });
+  it('requires a known-principal receipt from the borrowed-transaction provider', async () => {
+    const principal = new BusinessPrincipalAuthority();
+    const transaction = { query: vi.fn() };
+    const provider = authority(async () => {});
+    principal.configure(provider);
+    await expect(principal.allows('owner', transaction, strict)).rejects.toThrow(
+      'transactional principal authority',
+    );
+    principal.configure({ ...provider, assertActivePrincipal: async () => {} });
+    expect(await principal.allows('owner', transaction, strict)).toBe(false);
+    expect(await principal.allows('owner', transaction)).toBe(true);
+    const check = vi.fn(async () => ({ known: true }));
+    principal.configure({ ...provider, assertActivePrincipal: check });
+    expect(await principal.allows('owner', transaction, strict)).toBe(true);
+    expect(check).toHaveBeenCalledWith(transaction, 'owner');
+    expect(provider.principalResolver.resolveExisting).not.toHaveBeenCalled();
+    check.mockResolvedValueOnce({ known: false });
+    expect(await principal.allows('unknown', transaction, strict)).toBe(false);
+    check.mockRejectedValueOnce(new PlatformIdentityError('principal_suspended'));
+    expect(await principal.allows('owner', transaction, strict)).toBe(false);
+    check.mockRejectedValueOnce(new Error('identity unavailable'));
+    await expect(principal.allows('owner', transaction, strict)).rejects.toThrow(
+      'identity unavailable',
+    );
+  });
+});
 
 describe('canonical principal assignment authority', () => {
   it('excludes suspended principals and preserves accepted history when suspension happens later', async () => {

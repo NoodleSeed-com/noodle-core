@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
+import type { ModuleSqlTransaction } from '@noodle-borg/module';
 import {
   BusinessWorkspaceInvitationRequestSchema,
   BusinessWorkspaceListQuerySchema,
@@ -25,7 +26,10 @@ import {
 
 export interface BusinessWorkspaceStoreOptions {
   /** Canonical identity authority, never an email claim or a caller-supplied boolean. */
-  readonly isIdentityActive: (subject: string) => Promise<boolean>;
+  readonly isIdentityActive: (
+    subject: string,
+    transaction?: ModuleSqlTransaction,
+  ) => Promise<boolean>;
 }
 interface Mutation {
   readonly org: string;
@@ -97,13 +101,13 @@ export class BusinessWorkspaceStore {
   }): Promise<WorkspaceState> {
     validateIdentity(input.org, input.ownerSubject);
     return this.backend.run(input.org, async (tx) => {
+      await this.requireActive(input.ownerSubject, tx);
       const existing = await tx.get();
       if (existing) {
         if (existing.initializedBy !== input.ownerSubject)
           throw new BusinessWorkspaceError('already_activated');
         return existing;
       }
-      await this.requireActive(input.ownerSubject);
       const state: WorkspaceState = {
         org: input.org,
         authorityVersion: 1,
@@ -131,7 +135,8 @@ export class BusinessWorkspaceStore {
     permission: WorkspacePermission,
   ): Promise<'legacy' | 'allowed' | 'denied'> {
     validateIdentity(org, subject);
-    if (!(await this.options.isIdentityActive(subject))) return 'denied';
+    if (!(await this.options.isIdentityActive(subject, this.backend.principalTransaction?.())))
+      return 'denied';
     const state = await this.backend.read(org);
     if (!state) return 'legacy';
     const member = state.members.find((item) => item.subject === subject);
@@ -164,7 +169,7 @@ export class BusinessWorkspaceStore {
   ): Promise<readonly EligibleBusinessAssignee[] | undefined> {
     validateIdentity(org, actor);
     return this.backend.run(org, async (tx) => {
-      await this.requireActive(actor);
+      await this.requireActive(actor, tx);
       const state = await tx.get();
       if (!state) return undefined;
       const member = state.members.find((item) => item.subject === actor);
@@ -176,7 +181,7 @@ export class BusinessWorkspaceStore {
           (candidate.role === 'owner' ||
             candidate.role === 'administrator' ||
             candidate.role === 'operator') &&
-          (await this.options.isIdentityActive(candidate.subject))
+          (await this.options.isIdentityActive(candidate.subject, tx.principalTransaction))
         )
           result.push({ subject: candidate.subject, role: candidate.role, authorityVersion: 1 });
         if (result.length === 100) break;
@@ -199,7 +204,7 @@ export class BusinessWorkspaceStore {
     validateIdentity(org, actor);
     return this.backend.run(org, async (tx) => {
       const state = await tx.get();
-      await this.requireActive(actor);
+      await this.requireActive(actor, tx);
       if (!state) {
         if (legacy) return legacy();
         throw new BusinessWorkspaceError('legacy_authority');
@@ -219,7 +224,7 @@ export class BusinessWorkspaceStore {
     validateIdentity(org, actor);
     return this.backend.run(org, async (tx) => {
       const state = await this.requireState(tx);
-      await this.requireActive(actor);
+      await this.requireActive(actor, tx);
       const member = state.members.find((item) => item.subject === actor);
       if (!member) throw new BusinessWorkspaceError('forbidden');
       return {
@@ -262,12 +267,19 @@ export class BusinessWorkspaceStore {
       ) {
         throw new BusinessWorkspaceError('forbidden');
       }
-      if (
-        member.role === 'owner' &&
-        change.role !== 'owner' &&
-        state.members.filter((item) => item.role === 'owner').length === 1
-      ) {
-        throw new BusinessWorkspaceError('last_owner');
+      if (member.role === 'owner' && change.role !== 'owner') {
+        let replacement = false;
+        for (const candidate of state.members) {
+          if (
+            candidate.subject !== change.subject &&
+            candidate.role === 'owner' &&
+            (await this.options.isIdentityActive(candidate.subject, tx.principalTransaction))
+          ) {
+            replacement = true;
+            break;
+          }
+        }
+        if (!replacement) throw new BusinessWorkspaceError('last_owner');
       }
       state.members = state.members.flatMap((item) =>
         item.subject !== change.subject
@@ -344,7 +356,7 @@ export class BusinessWorkspaceStore {
       throw new BusinessWorkspaceError('invalid_invitation');
     }
     return this.backend.run(input.org, async (tx) => {
-      await this.requireActive(input.subject);
+      await this.requireActive(input.subject, tx);
       const state = await this.requireState(tx);
       const tokenDigest = Buffer.from(digest(input.token), 'hex');
       const invitation = state.invitations.find((item) =>
@@ -360,7 +372,7 @@ export class BusinessWorkspaceStore {
       const issuer = state.members.find((item) => item.subject === invitation.createdBy);
       if (
         !mayDelegate(issuer?.role, invitation.role) ||
-        !(await this.options.isIdentityActive(invitation.createdBy))
+        !(await this.options.isIdentityActive(invitation.createdBy, tx.principalTransaction))
       ) {
         throw new BusinessWorkspaceError('invalid_invitation');
       }
@@ -396,7 +408,7 @@ export class BusinessWorkspaceStore {
     if (!WorkspaceRevisionSchema.safeParse(input.expectedRevision).success)
       throw new BusinessWorkspaceError('invalid_request');
     return this.backend.run(input.org, async (tx) => {
-      await this.requireActive(input.actor);
+      await this.requireActive(input.actor, tx);
       const state = await this.requireState(tx);
       if (!state.members.some((member) => member.subject === input.actor))
         throw new BusinessWorkspaceError('forbidden');
@@ -422,8 +434,13 @@ export class BusinessWorkspaceStore {
     if (!state) throw new BusinessWorkspaceError('legacy_authority');
     return state;
   }
-  private async requireActive(subject: string) {
-    if (!(await this.options.isIdentityActive(subject)))
+  private async requireActive(subject: string, tx?: BusinessWorkspaceTransaction) {
+    if (
+      !(await this.options.isIdentityActive(
+        subject,
+        tx?.principalTransaction ?? this.backend.principalTransaction?.(),
+      ))
+    )
       throw new BusinessWorkspaceError('forbidden');
   }
 }
