@@ -108,7 +108,7 @@ export async function runSolutionActivity(
       else
         console.log(
           [
-            `Activity within the ${data.historyDays}-day plan window.`,
+            `Activity within your current ${data.historyDays}-day history window.`,
             'Actor references are installation-scoped and do not imply verified identity.',
             ...data.activities.map(
               (entry) =>

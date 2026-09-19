@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createOperationEvidencePort, operationEvidenceKey } from '../src/operation-evidence.js';
 import { PostgresOperationEvidenceStore } from '../src/operation-evidence-postgres.js';
 import { withPostgresTransaction } from '../src/store/postgres-transaction.js';
+import { describeActivityHistoryPolicy } from './application-activity-history-suite.js';
 import { describeOperationEvidence } from './operation-evidence-suite.js';
 
 const databaseUrl = process.env.DATABASE_URL_TEST;
@@ -36,6 +37,10 @@ describe.skipIf(databaseUrl === undefined)('PostgreSQL operation evidence', () =
     await admin.end();
   });
   describeOperationEvidence(async () => {
+    await pool.query('TRUNCATE operation_evidence, operation_history_settings');
+    return store;
+  });
+  describeActivityHistoryPolicy(async () => {
     await pool.query('TRUNCATE operation_evidence, operation_history_settings');
     return store;
   });
@@ -126,6 +131,7 @@ describe.skipIf(databaseUrl === undefined)('PostgreSQL operation evidence', () =
       operation: {
         resolved: true,
         connectorId: 'external',
+        alias: 'external',
         connectorVersion: '1',
         operation: 'submit',
         signatureHash: 'signature',

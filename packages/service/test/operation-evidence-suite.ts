@@ -22,6 +22,7 @@ export function describeOperationEvidence(create: () => Promise<OperationEvidenc
     operation: {
       resolved: true,
       connectorId: 'external',
+      alias: 'external',
       connectorVersion: '1',
       operation: 'submit',
       signatureHash: 'signature',

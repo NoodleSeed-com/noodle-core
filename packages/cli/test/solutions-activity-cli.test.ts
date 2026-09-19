@@ -242,6 +242,8 @@ describe('solutions activity CLI', () => {
       ),
     ).toBe(0);
     const output = String(log.mock.calls[0]?.[0]);
+    expect(output).toContain('current 30-day history window');
+    expect(output).not.toContain('30-day plan window');
     expect(output).toContain('completion unconfirmed');
     expect(output).toContain('pending external completion');
     expect(output).toContain('do not retry blindly');

@@ -300,7 +300,7 @@ export class ApplicationActivity {
       this.options.store.list(
         scope,
         this.options.now?.() ?? Date.now(),
-        policy.maximumDays,
+        policy.retentionDays,
         input.limit + 1,
         decodeActivityCursor(input.cursor, binding),
       ),
@@ -335,7 +335,7 @@ export class ApplicationActivity {
           ...(reference === undefined ? {} : { reference }),
         }),
       ),
-      historyDays: policy.maximumDays,
+      historyDays: policy.retentionDays,
       ...(records.length > page.length && last
         ? {
             nextCursor: Buffer.from(
@@ -395,18 +395,32 @@ export class ApplicationActivity {
       )
     )
       throw new ActivityPolicyError('activity_unavailable');
+    // A comparison is read-only: use the verified default without initializing a setting.
+    const readSetting = () =>
+      local(() => this.options.store.readRetention(scope).catch(unavailable));
+    const setting = await readSetting();
+    if (setting && !validDays(setting.days)) throw new ActivityPolicyError('activity_unavailable');
+    const selectedDays = setting?.days ?? allowance.defaultDays;
     const counts = await local(() =>
       this.options.store
         .preview(scope, {
           asOf,
           paidPeriodEnd,
-          currentMaximumDays: allowance.maximumDays,
-          scenarios: preview.scenarios,
+          currentMaximumDays: Math.min(selectedDays, allowance.maximumDays),
+          scenarios: preview.scenarios.map(({ id, maximumDays }) => ({
+            id,
+            maximumDays: Math.min(selectedDays, maximumDays),
+          })),
         })
         .catch(unavailable),
     );
     const current = await resolve();
-    if (current?.revision !== allowance.revision)
+    const currentSetting = await readSetting();
+    if (
+      current?.revision !== allowance.revision ||
+      currentSetting?.revision !== setting?.revision ||
+      currentSetting?.days !== setting?.days
+    )
       throw new ActivityPolicyError('activity_conflict');
     return {
       state: 'available' as const,
@@ -417,6 +431,7 @@ export class ApplicationActivity {
         purpose: 'activity-preview-v1',
         scope,
         allowance: allowance.revision,
+        setting: setting ?? null,
         preview,
         counts,
       }),

@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { type ActivityHistoryAllowance, ApplicationActivity } from '../src/application-activity.js';
 import { InMemoryOperationEvidenceStore } from '../src/operation-evidence-memory.js';
+import { describeActivityHistoryPolicy } from './application-activity-history-suite.js';
+
+describeActivityHistoryPolicy(async () => new InMemoryOperationEvidenceStore());
 
 describe('verified application history settings', () => {
   const scope = { org: 'acme', app: 'sales', env: 'production', installationId: 'sales' };
