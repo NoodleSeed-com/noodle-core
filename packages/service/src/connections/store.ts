@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { SealedSecret, SecretBox } from '@noodle-borg/runtime';
 import type { Pool } from 'pg';
-import { withPostgresTransaction } from '../store/postgres-transaction.js';
+import { postgresQueryExecutor, withPostgresTransaction } from '../store/postgres-transaction.js';
 import type {
   ConnectionKey,
   ConnectionStore,
@@ -115,20 +115,25 @@ export class PostgresConnectionStore implements ConnectionStore {
     });
   }
   async putState(hash: string, key: ConnectionKey, expiresAt: number): Promise<void> {
-    await this.pool.query('DELETE FROM external_connection_states WHERE expires_at <= now()');
-    await this.pool.query(
+    await postgresQueryExecutor(this.pool).query(
+      'DELETE FROM external_connection_states WHERE expires_at <= now()',
+    );
+    await postgresQueryExecutor(this.pool).query(
       'INSERT INTO external_connection_states(state_hash,scope,expires_at) VALUES ($1,$2::jsonb,$3)',
       [hash, JSON.stringify(key), new Date(expiresAt)],
     );
   }
   async getState(hash: string, now: number): Promise<ConnectionKey | undefined> {
-    const { rows } = await this.pool.query<{ scope: ConnectionKey }>(
+    const { rows } = await postgresQueryExecutor(this.pool).query<{ scope: ConnectionKey }>(
       'SELECT scope FROM external_connection_states WHERE state_hash=$1 AND expires_at>$2',
       [hash, new Date(now)],
     );
     return rows[0] === undefined ? undefined : connectionScopeSchema.parse(rows[0].scope);
   }
   async deleteState(hash: string): Promise<void> {
-    await this.pool.query('DELETE FROM external_connection_states WHERE state_hash=$1', [hash]);
+    await postgresQueryExecutor(this.pool).query(
+      'DELETE FROM external_connection_states WHERE state_hash=$1',
+      [hash],
+    );
   }
 }

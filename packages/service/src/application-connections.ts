@@ -23,7 +23,7 @@ export interface ApplicationConnectionsOptions
   > {
   readonly installations: Pick<
     BusinessInformationStore,
-    'listInstallations' | 'getInstallation' | 'getGrant'
+    'listInstallations' | 'getInstallation' | 'staff'
   >;
   readonly getRegistry: () => Pick<ServerRegistry, 'getActiveByTenant'>;
 }
@@ -73,9 +73,16 @@ export function createApplicationConnections(options: ApplicationConnectionsOpti
     authorize: async (key, actor) => {
       const installation = await options.installations.getInstallation(key);
       if (!installation) return false;
-      const grant = await options.installations.getGrant(key, actor);
-      return grant?.role === 'administrator' && grant.revokedAt === undefined;
+      return options.installations.staff.allows(key, actor, 'installation:administer');
     },
+    authorizeLocal: (key, actor, operation) =>
+      options.installations.staff.run(
+        key,
+        actor,
+        'installation:administer',
+        operation,
+        () => new ConnectionError('connection_denied'),
+      ),
   });
   async function installationFor(served: ServedTarget): Promise<SolutionInstallation | undefined> {
     if (!served.org || !served.app || !served.environment) return undefined;

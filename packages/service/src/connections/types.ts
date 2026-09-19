@@ -81,6 +81,7 @@ export class ConnectionError extends Error {
 }
 
 export type ConnectionView = Readonly<ApplicationConnectionsProjection['connections'][number]>;
+export type ConnectionLocalRead = <T>(operation: () => Promise<T>) => Promise<T>;
 export interface ConnectionCallback {
   readonly state: string;
   readonly sessionBinding: string;
@@ -93,7 +94,7 @@ export interface ConnectionCallback {
 export interface ApplicationConnections {
   readonly localProvider: LocalExternalCredentialProvider;
   readonly connections: {
-    inspect(target: ConnectionTarget): Promise<ConnectionView>;
+    inspect(target: ConnectionTarget, local?: ConnectionLocalRead): Promise<ConnectionView>;
     connect(
       target: ConnectionTarget,
       input: { expectedRevision: number; returnUrl: string; sessionBinding: string },

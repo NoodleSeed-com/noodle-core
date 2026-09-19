@@ -15,6 +15,7 @@ import {
   type ConnectionCallback,
   ConnectionError,
   type ConnectionKey,
+  type ConnectionLocalRead,
   type ConnectionStore,
   type ConnectionTarget,
   type ConnectionView,
@@ -27,6 +28,12 @@ export interface PortableConnectionsOptions {
   readonly providers: (key: ConnectionKey) => Promise<ConnectionProvider | undefined>;
   readonly resolveTarget: (key: ConnectionKey) => Promise<ConnectionTarget | undefined>;
   readonly authorize: (key: ConnectionKey, actor: string) => Promise<boolean>;
+  /** Current staff authority and local effects share one transaction; provider I/O stays outside. */
+  readonly authorizeLocal?: <T>(
+    key: ConnectionKey,
+    actor: string,
+    operation: () => Promise<T>,
+  ) => Promise<T>;
   readonly portalOrigins: readonly string[];
   /** Stable across normal restart; rotate during restore before enabling traffic. Not a tenant setting. */
   readonly credentialEpoch: string;
@@ -64,6 +71,11 @@ export class PortableConnections {
   async #authorize(key: ConnectionKey, actor: string): Promise<void> {
     if (!(await this.options.authorize(key, actor))) throw new ConnectionError('connection_denied');
   }
+  async #local<T>(key: ConnectionKey, actor: string, operation: () => Promise<T>): Promise<T> {
+    if (this.options.authorizeLocal) return this.options.authorizeLocal(key, actor, operation);
+    await this.#authorize(key, actor);
+    return operation();
+  }
   #matches(
     record: StoredConnection,
     target: ConnectionTarget,
@@ -76,10 +88,13 @@ export class PortableConnections {
       record.providerDigest === providerDigest(provider)
     );
   }
-  async inspect(target: ConnectionTarget): Promise<ConnectionView> {
+  async inspect(
+    target: ConnectionTarget,
+    local: ConnectionLocalRead = (operation) => operation(),
+  ): Promise<ConnectionView> {
     const provider = await this.options.providers(target.key);
-    const stored = await this.options.store.transact(target.key, (transaction) =>
-      transaction.read(),
+    const stored = await local(() =>
+      this.options.store.transact(target.key, (transaction) => transaction.read()),
     );
     const usable =
       provider !== undefined &&
@@ -167,57 +182,59 @@ export class PortableConnections {
     const nonce = oauth.generateRandomNonce();
     const expiresAt = this.#now() + 10 * 60 * 1000;
     const url = await authorizationUrl(provider, state, verifier, nonce);
-    await this.options.store.transact(target.key, async (transaction) => {
-      const current = await transaction.read();
-      if ((current?.revision ?? 0) !== input.expectedRevision)
-        throw new ConnectionError('connection_conflict');
-      if (
-        current?.subject !== undefined &&
-        current.credentialEpoch === this.options.credentialEpoch &&
-        current.providerDigest !== providerDigest(provider)
-      )
-        throw new ConnectionError('connection_conflict');
-      const base: StoredConnection =
-        current && this.#matches(current, target, provider)
-          ? current
-          : {
-              revision: current?.revision ?? 0,
-              generation: randomUUID(),
-              credentialEpoch: this.options.credentialEpoch,
-              providerId: provider.id,
-              providerDigest: providerDigest(provider),
-              connectionConfigRevision: target.connectionConfigRevision,
-              state: 'unconfigured',
-              ...(current?.subject !== undefined &&
-              current.credentialEpoch === this.options.credentialEpoch
-                ? { subject: current.subject }
-                : {}),
-              pending: [],
-            };
-      const live = base.pending.filter((pending) => pending.expiresAt > this.#now());
-      if (live.length >= 4) throw new ConnectionError('connection_conflict');
-      const pending = {
-        target,
-        stateHash: hash(state),
-        sessionHash: hash(input.sessionBinding),
-        subject: actor,
-        providerId: provider.id,
-        providerDigest: providerDigest(provider),
-        credentialEpoch: this.options.credentialEpoch,
-        generation: base.generation,
-        verifier,
-        nonce,
-        returnUrl: destination.href,
-        expiresAt,
-        revision: base.revision + 1,
-      };
-      await transaction.write({
-        ...base,
-        revision: base.revision + 1,
-        pending: [...live, pending],
+    await this.#local(target.key, actor, async () => {
+      await this.options.store.transact(target.key, async (transaction) => {
+        const current = await transaction.read();
+        if ((current?.revision ?? 0) !== input.expectedRevision)
+          throw new ConnectionError('connection_conflict');
+        if (
+          current?.subject !== undefined &&
+          current.credentialEpoch === this.options.credentialEpoch &&
+          current.providerDigest !== providerDigest(provider)
+        )
+          throw new ConnectionError('connection_conflict');
+        const base: StoredConnection =
+          current && this.#matches(current, target, provider)
+            ? current
+            : {
+                revision: current?.revision ?? 0,
+                generation: randomUUID(),
+                credentialEpoch: this.options.credentialEpoch,
+                providerId: provider.id,
+                providerDigest: providerDigest(provider),
+                connectionConfigRevision: target.connectionConfigRevision,
+                state: 'unconfigured',
+                ...(current?.subject !== undefined &&
+                current.credentialEpoch === this.options.credentialEpoch
+                  ? { subject: current.subject }
+                  : {}),
+                pending: [],
+              };
+        const live = base.pending.filter((pending) => pending.expiresAt > this.#now());
+        if (live.length >= 4) throw new ConnectionError('connection_conflict');
+        const pending = {
+          target,
+          stateHash: hash(state),
+          sessionHash: hash(input.sessionBinding),
+          subject: actor,
+          providerId: provider.id,
+          providerDigest: providerDigest(provider),
+          credentialEpoch: this.options.credentialEpoch,
+          generation: base.generation,
+          verifier,
+          nonce,
+          returnUrl: destination.href,
+          expiresAt,
+          revision: base.revision + 1,
+        };
+        await transaction.write({
+          ...base,
+          revision: base.revision + 1,
+          pending: [...live, pending],
+        });
       });
+      await this.options.store.putState(hash(state), target.key, expiresAt);
     });
-    await this.options.store.putState(hash(state), target.key, expiresAt);
     return { authorizationUrl: url };
   }
   async callback(input: ConnectionCallback, actor: string): Promise<{ returnUrl: string }> {
@@ -231,26 +248,29 @@ export class PortableConnections {
     const key = await this.options.store.getState(stateHash, this.#now());
     if (!key) throw new ConnectionError('connection_invalid');
     await this.#authorize(key, actor);
-    const consumed = await this.options.store.transact(key, async (transaction) => {
-      const current = await transaction.read();
-      const pending = current?.pending.find((entry) => entry.stateHash === stateHash);
-      if (
-        !current ||
-        !pending ||
-        pending.expiresAt <= this.#now() ||
-        pending.credentialEpoch !== this.options.credentialEpoch
-      )
-        throw new ConnectionError('connection_invalid');
-      if (pending.subject !== actor || pending.sessionHash !== hash(input.sessionBinding))
-        throw new ConnectionError('connection_denied');
-      await transaction.write({
-        ...current,
-        revision: current.revision + 1,
-        pending: current.pending.filter((entry) => entry.stateHash !== stateHash),
+    const consumed = await this.#local(key, actor, async () => {
+      const consent = await this.options.store.transact(key, async (transaction) => {
+        const current = await transaction.read();
+        const pending = current?.pending.find((entry) => entry.stateHash === stateHash);
+        if (
+          !current ||
+          !pending ||
+          pending.expiresAt <= this.#now() ||
+          pending.credentialEpoch !== this.options.credentialEpoch
+        )
+          throw new ConnectionError('connection_invalid');
+        if (pending.subject !== actor || pending.sessionHash !== hash(input.sessionBinding))
+          throw new ConnectionError('connection_denied');
+        await transaction.write({
+          ...current,
+          revision: current.revision + 1,
+          pending: current.pending.filter((entry) => entry.stateHash !== stateHash),
+        });
+        return { current, pending };
       });
-      return { current, pending };
+      await this.options.store.deleteState(stateHash);
+      return consent;
     });
-    await this.options.store.deleteState(stateHash);
     if (input.error !== undefined) return { returnUrl: consumed.pending.returnUrl };
     const target = await this.options.resolveTarget(key);
     if (
@@ -283,23 +303,25 @@ export class PortableConnections {
       providerDigest(await this.#provider(latestTarget)) !== providerDigest(provider)
     )
       throw new ConnectionError('connection_conflict');
-    await this.options.store.transact(key, async (transaction) => {
-      const current = await transaction.read();
-      if (
-        !current ||
-        current.generation !== consumed.pending.generation ||
-        !this.#matches(current, target, provider) ||
-        (current.subject !== undefined && current.subject !== tokens.subject)
-      )
-        throw new ConnectionError('connection_conflict');
-      await transaction.write({
-        ...current,
-        revision: current.revision + 1,
-        state: 'ready',
-        subject: tokens.subject,
-        tokens,
-      });
-    });
+    await this.#local(key, actor, () =>
+      this.options.store.transact(key, async (transaction) => {
+        const current = await transaction.read();
+        if (
+          !current ||
+          current.generation !== consumed.pending.generation ||
+          !this.#matches(current, target, provider) ||
+          (current.subject !== undefined && current.subject !== tokens.subject)
+        )
+          throw new ConnectionError('connection_conflict');
+        await transaction.write({
+          ...current,
+          revision: current.revision + 1,
+          state: 'ready',
+          subject: tokens.subject,
+          tokens,
+        });
+      }),
+    );
     await this.options.audit?.emit({
       eventType: 'config.connection.connected',
       org: key.org,
@@ -317,20 +339,22 @@ export class PortableConnections {
   ): Promise<ConnectionView> {
     await this.#authorize(target.key, actor);
     const provider = await this.options.providers(target.key);
-    const refresh = await this.options.store.transact(target.key, async (transaction) => {
-      const current = await transaction.read();
-      if (!current || current.revision !== expectedRevision)
-        throw new ConnectionError('connection_conflict');
-      const { tokens, subject: _subject, ...rest } = current;
-      await transaction.write({
-        ...rest,
-        revision: current.revision + 1,
-        generation: randomUUID(),
-        state: 'revoked',
-        pending: [],
-      });
-      return tokens?.refreshToken;
-    });
+    const refresh = await this.#local(target.key, actor, () =>
+      this.options.store.transact(target.key, async (transaction) => {
+        const current = await transaction.read();
+        if (!current || current.revision !== expectedRevision)
+          throw new ConnectionError('connection_conflict');
+        const { tokens, subject: _subject, ...rest } = current;
+        await transaction.write({
+          ...rest,
+          revision: current.revision + 1,
+          generation: randomUUID(),
+          state: 'revoked',
+          pending: [],
+        });
+        return tokens?.refreshToken;
+      }),
+    );
     if (provider && refresh)
       try {
         await revokeToken(provider, refresh, this.options.guardedFetch);

@@ -3,6 +3,8 @@ import { SecretBox, staticMasterKeyProvider } from '@noodle-borg/runtime';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { connectionKey, PostgresConnectionStore } from '../src/connections/store.js';
+import { withPostgresTransaction } from '../src/store/postgres-transaction.js';
+import { describeConnectionAuthority } from './connections-authority-suite.js';
 import { describePortableConnections } from './connections-suite.js';
 
 const databaseUrl = process.env.DATABASE_URL_TEST;
@@ -29,6 +31,64 @@ describe.skipIf(databaseUrl === undefined)('PostgreSQL portable connections', ()
   describePortableConnections(async () => {
     await pool.query('TRUNCATE external_connections, external_connection_states');
     return { store, otherStore: new PostgresConnectionStore(pool, cipher) };
+  });
+  describeConnectionAuthority(async () => {
+    await pool.query('TRUNCATE external_connections, external_connection_states');
+    return store;
+  });
+  it('borrows one authority connection for consent indexes and rolls back all local writes', async () => {
+    const one = new pg.Pool({
+      connectionString: databaseUrl,
+      max: 1,
+      connectionTimeoutMillis: 1000,
+      options: `-c search_path=${schema}`,
+    });
+    const local = new PostgresConnectionStore(one, cipher);
+    const key = {
+      org: 'atomic',
+      app: 'site',
+      env: 'prod',
+      installationId: 'site',
+      connectionId: 'account',
+    };
+    const hash = 'e'.repeat(64),
+      now = Date.now(),
+      expiry = now + 60_000;
+    try {
+      await expect(
+        withPostgresTransaction(one, async () => {
+          await local.transact(key, (tx) =>
+            tx.write({
+              revision: 1,
+              generation: 'generation',
+              credentialEpoch: 'epoch',
+              connectionConfigRevision: 'revision',
+              providerDigest: 'f'.repeat(64),
+              providerId: 'fixture',
+              state: 'unconfigured',
+              pending: [],
+            }),
+          );
+          await local.putState(hash, key, expiry);
+          expect(await local.getState(hash, now)).toEqual(key);
+          expect((await local.transact(key, (tx) => tx.read()))?.revision).toBe(1);
+          throw new Error('authority-rollback');
+        }),
+      ).rejects.toThrow('authority-rollback');
+      expect(await local.getState(hash, now)).toBeUndefined();
+      expect(await local.transact(key, (tx) => tx.read())).toBeUndefined();
+      await local.putState(hash, key, expiry);
+      await expect(
+        withPostgresTransaction(one, async () => {
+          await local.deleteState(hash);
+          expect(await local.getState(hash, now)).toBeUndefined();
+          throw new Error('authority-rollback');
+        }),
+      ).rejects.toThrow('authority-rollback');
+      expect(await local.getState(hash, now)).toEqual(key);
+    } finally {
+      await one.end();
+    }
   });
   it('rejects scope-transplanted ciphertext and key loss without exposing plaintext', async () => {
     const key = {

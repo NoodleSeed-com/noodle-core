@@ -62,10 +62,28 @@ export async function handleApplicationConnections(
   try {
     const targets = await deps.resolveConnectionTargets(authorized.installation);
     const connections = deps.connections;
-    const projection = async () => ({
-      connections: await Promise.all(targets.map((target) => connections.inspect(target))),
-      canEdit: businessGrantAllows(authorized.grant, 'installation:administer'),
-    });
+    const projection = async () => {
+      const views = await Promise.all(
+        targets.map((target) =>
+          connections.inspect(target, (operation) =>
+            deps.store.staff.run(
+              authorized.scope,
+              identity.subject,
+              'records:read',
+              operation,
+              () => new ConnectionError('connection_denied'),
+            ),
+          ),
+        ),
+      );
+      const current = await deps.store.staff.resolve(authorized.scope, identity.subject);
+      if (!businessGrantAllows(current, 'records:read') || current?.role === 'viewer')
+        throw new ConnectionError('connection_denied');
+      return {
+        connections: views,
+        canEdit: businessGrantAllows(current, 'installation:administer'),
+      };
+    };
     if (!mutation)
       return sendJson(
         res,

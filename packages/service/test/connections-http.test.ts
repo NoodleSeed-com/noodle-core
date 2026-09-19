@@ -7,7 +7,8 @@ import {
   mintAccessToken,
 } from '@noodle-borg/auth';
 import { InMemoryControlPlaneStore } from '@noodle-borg/control-plane/portable';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ApplicationConnectionConnectResponseSchema } from '@noodle-borg/wire-contracts';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryBusinessInformationStore } from '../src/business-information/portable.js';
 import { PortableConnections } from '../src/connections/service.js';
 import { InMemoryConnectionStore } from '../src/connections/store.js';
@@ -133,6 +134,23 @@ const startBody = {
   sessionBinding: binding,
 };
 describe('Portal connection HTTP boundary', () => {
+  it('rechecks permissions after connection inspection before exposing the projection', async () => {
+    const inspect = deps.connections?.inspect.bind(deps.connections);
+    if (!inspect || !deps.connections) throw new Error('missing connection fixture');
+    vi.spyOn(deps.connections, 'inspect').mockImplementationOnce(async (...args) => {
+      const view = await inspect(...args);
+      await business.revokeGrant({
+        scope: key,
+        actorSubject: 'owner',
+        subject: 'operator',
+        expectedRevision: 1,
+      });
+      return view;
+    });
+    const response = await call('', undefined, 'operator');
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'connection_denied' });
+  });
   it('completes the POST callback with a cryptographically verified first-party Portal token', async () => {
     const issuer = 'https://service.example.test';
     const signer = await createStaticSigningKeyProvider();
@@ -166,7 +184,7 @@ describe('Portal connection HTTP boundary', () => {
     );
     const started = await call('/records_account/connect', startBody, token);
     expect(started.status, await started.clone().text()).toBe(200);
-    const start = await started.json();
+    const start = ApplicationConnectionConnectResponseSchema.parse(await started.json());
     const callback = provider.authorize(start.data.authorizationUrl);
     const completed = await fetch(`${origin}/v1/solution-connections/callback`, {
       method: 'POST',

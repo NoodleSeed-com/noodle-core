@@ -5,6 +5,8 @@ import { createApplicationConnections } from '../src/application-connections.js'
 import { InMemoryBusinessInformationStore } from '../src/business-information/portable.js';
 import { fenceSourceStore } from '../src/business-information/source-credential-fence.js';
 import { InMemorySourceIngestionStore } from '../src/business-information/source-ingestion-memory-store.js';
+import { InMemoryBusinessWorkspaceBackend } from '../src/business-workspaces/memory.js';
+import { BusinessWorkspaceStore } from '../src/business-workspaces/store.js';
 import { InMemoryConnectionStore } from '../src/connections/store.js';
 import { buildCredentialBindingIndex } from '../src/credential-binding-index.js';
 import { oauthFixture } from './connection-oauth-fixture.js';
@@ -42,7 +44,7 @@ async function fixture() {
     providers: async () => (providerAvailable ? provider.provider : undefined),
     portalOrigins: ['https://portal.example.test'],
     credentialEpoch: 'fixture-epoch-0001',
-    guardedFetch: provider.fetch,
+    guardedFetch: (url, init) => provider.fetch(url, init),
     getRegistry: () => ({
       getActiveByTenant: async (ref) =>
         ref.org === scope.org && ref.app === scope.app && ref.env === scope.env
@@ -68,6 +70,105 @@ async function fixture() {
   };
 }
 describe('application connection composition', () => {
+  it('does not install credentials when workspace revocation wins during provider consent', async () => {
+    const f = await fixture();
+    const workspaces = new BusinessWorkspaceStore(new InMemoryBusinessWorkspaceBackend(), {
+      isIdentityActive: async () => true,
+    });
+    await workspaces.initializeNewWorkspace({ org: f.scope.org, ownerSubject: 'workspace-owner' });
+    const invitation = await workspaces.invite({
+      org: f.scope.org,
+      actor: 'workspace-owner',
+      expectedRevision: 1,
+      email: 'owner@example.test',
+      role: 'administrator',
+    });
+    await workspaces.accept({
+      org: f.scope.org,
+      subject: 'owner',
+      verifiedEmail: 'owner@example.test',
+      token: invitation.token,
+    });
+    f.installations.staff.configure(workspaces);
+    const started = await f.runtime.connections.connect(
+      f.target,
+      {
+        expectedRevision: 0,
+        returnUrl: 'https://portal.example.test/o/acme/workflow/integrations',
+        sessionBinding: 'b'.repeat(43),
+      },
+      'owner',
+    );
+    const providerFetch = f.provider.fetch;
+    const spy = vi.spyOn(f.provider, 'fetch').mockImplementation(async (url, init) => {
+      if (url.href === f.provider.provider.server.token_endpoint)
+        await workspaces.changeRole({
+          org: f.scope.org,
+          actor: 'workspace-owner',
+          expectedRevision: 3,
+          subject: 'owner',
+          role: null,
+        });
+      return providerFetch(url, init);
+    });
+    try {
+      await expect(
+        f.runtime.connections.callback(
+          {
+            ...f.provider.authorize(started.authorizationUrl),
+            sessionBinding: 'b'.repeat(43),
+          },
+          'owner',
+        ),
+      ).rejects.toThrow('connection_denied');
+      expect((await f.runtime.connections.inspect(f.target)).state).toBe('unconfigured');
+      expect(f.provider.metrics().tokenCalls).toBe(1);
+      expect((await f.installations.getGrant(f.scope, 'owner'))?.role).toBe('administrator');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it('uses workspace Owner/Admin authority, never supplementing it with old installation grants', async () => {
+    const f = await fixture();
+    const workspaces = new BusinessWorkspaceStore(new InMemoryBusinessWorkspaceBackend(), {
+      isIdentityActive: async () => true,
+    });
+    await workspaces.initializeNewWorkspace({ org: f.scope.org, ownerSubject: 'workspace-owner' });
+    f.installations.staff.configure(workspaces);
+    const input = {
+      expectedRevision: 0,
+      returnUrl: 'https://portal.example.test/o/acme/workflow/integrations',
+      sessionBinding: 'b'.repeat(43),
+    };
+    await expect(f.runtime.connections.connect(f.target, input, 'owner')).rejects.toThrow(
+      'connection_denied',
+    );
+    for (const role of ['administrator', 'builder', 'operator', 'viewer'] as const) {
+      const invitation = await workspaces.invite({
+        org: f.scope.org,
+        actor: 'workspace-owner',
+        expectedRevision: (await workspaces.inspect(f.scope.org, 'workspace-owner')).revision,
+        email: `${role}@example.test`,
+        role,
+      });
+      await workspaces.accept({
+        org: f.scope.org,
+        subject: role,
+        verifiedEmail: `${role}@example.test`,
+        token: invitation.token,
+      });
+    }
+    for (const actor of ['builder', 'operator', 'viewer', 'stranger'])
+      await expect(f.runtime.connections.connect(f.target, input, actor)).rejects.toThrow(
+        'connection_denied',
+      );
+    await expect(
+      f.runtime.connections.connect(f.target, input, 'workspace-owner'),
+    ).resolves.toHaveProperty('authorizationUrl');
+    await expect(
+      f.runtime.connections.connect(f.target, { ...input, expectedRevision: 1 }, 'administrator'),
+    ).resolves.toHaveProperty('authorizationUrl');
+  });
   it('keeps unconfigured apps available while binding account credentials to the active installation/deployment', async () => {
     const f = await fixture();
     expect(await f.runtime.readGenerations(f.served)).toMatchObject({
