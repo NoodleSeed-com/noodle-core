@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { InMemoryAtomicState } from '../src/in-memory-atomic-state.js';
 import { InMemoryControlPlaneStore } from '../src/in-memory-control-plane-store.js';
 import {
   agreementDocumentDigest,
@@ -36,6 +37,29 @@ describe('organization agreement acceptance', () => {
     org: 'first',
     legacyOwner: 'first-owner',
   }));
+  it('joins an enclosing local composition transaction without retaining a failed catalog entry', async () => {
+    const transactions = new InMemoryAtomicState();
+    const store = new InMemoryControlPlaneStore({ transactions });
+    await store.createOrgWithOwner({
+      slug: 'joined',
+      owner: { subject: 'owner', email: 'owner@example.test' },
+    });
+    const input = { org: 'joined', actorSubject: 'owner', documents };
+    await expect(
+      transactions.run(async () => {
+        await store.acceptOrganizationAgreement(input);
+        expect(await store.getOrganizationAgreement('joined', documents.version)).toBeDefined();
+        throw new Error('outer transaction failed');
+      }),
+    ).rejects.toThrow('outer transaction failed');
+    expect(await store.getOrganizationAgreement('joined', documents.version)).toBeUndefined();
+    const changed = { ...documents, terms: { ...documents.terms, sha256: 'd'.repeat(64) } };
+    expect(await store.acceptOrganizationAgreement({ ...input, documents: changed })).toMatchObject(
+      {
+        documents: changed,
+      },
+    );
+  });
   it('records exact documents and server time once, isolated by organization', async () => {
     const store = await setup();
     expect(await store.getOrganizationAgreement('first', documents.version)).toBeUndefined();

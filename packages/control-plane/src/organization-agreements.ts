@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { InMemoryAtomicState } from './in-memory-atomic-state.js';
 import { validateSlug } from './validation.js';
 
 export interface AgreementDocument {
@@ -93,14 +94,18 @@ export function agreementDocumentDigest(documents: AgreementDocuments): string {
     .digest('hex');
 }
 
-/** Synchronous commit boundary keeps membership recheck, catalog registration and receipt indivisible. */
+/** Authority completion and receipt publication share the development-only transaction context. */
 export class InMemoryOrganizationAgreements implements OrganizationAgreementStore {
-  readonly #catalog = new Map<string, string>();
-  readonly #receipts = new Map<string, OrganizationAgreementAcceptance>();
+  readonly #catalog: Map<string, string>;
+  readonly #receipts: Map<string, OrganizationAgreementAcceptance>;
   constructor(
     private readonly isOwner: (org: string, subject: string) => boolean,
     private readonly now: () => Date,
-  ) {}
+    private readonly transactions = new InMemoryAtomicState(),
+  ) {
+    this.#catalog = transactions.map();
+    this.#receipts = transactions.map();
+  }
 
   getOrganizationAgreement(
     org: string,
@@ -121,7 +126,9 @@ export class InMemoryOrganizationAgreements implements OrganizationAgreementStor
         throw new OrganizationAgreementError('agreement_owner_required');
       return commit();
     };
-    return authority ? authority.run(org, input.actorSubject, commit, legacy) : legacy();
+    return this.transactions.run(async () =>
+      authority ? authority.run(org, input.actorSubject, commit, legacy) : legacy(),
+    );
   }
 
   private commit(input: AcceptOrganizationAgreementInput): OrganizationAgreementAcceptance {

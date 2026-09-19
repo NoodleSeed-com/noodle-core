@@ -1,10 +1,11 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { agreementDocumentDigest } from '@noodle-borg/control-plane/portable';
+import { agreementDocumentDigest, InMemoryAtomicState } from '@noodle-borg/control-plane/portable';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryApplicationDraftBackend } from '../src/application-drafts/memory.js';
 import { ApplicationDraftStore } from '../src/application-drafts/store.js';
 import { InMemoryBusinessInformationStore } from '../src/business-information/in-memory-store.js';
+import { BusinessOnboarding } from '../src/business-onboarding.js';
 import { InMemoryBusinessWorkspaceBackend } from '../src/business-workspaces/memory.js';
 import { BusinessWorkspaceStore } from '../src/business-workspaces/store.js';
 import { createServiceHandler, InMemoryControlPlaneStore, ServerRegistry } from '../src/index.js';
@@ -28,15 +29,17 @@ afterEach(async () => {
 });
 
 async function fixture() {
-  const organizations = new InMemoryControlPlaneStore();
+  const transactions = new InMemoryAtomicState();
+  const organizations = new InMemoryControlPlaneStore({ transactions });
   await organizations.createOrgWithOwner({
     slug: 'acme',
     owner: { subject: 'legacy-owner', email: 'legacy@example.test' },
   });
   const suspended = new Set<string>();
-  const workspaces = new BusinessWorkspaceStore(new InMemoryBusinessWorkspaceBackend(), {
-    isIdentityActive: async (subject) => !suspended.has(subject),
-  });
+  const workspaces = new BusinessWorkspaceStore(
+    new InMemoryBusinessWorkspaceBackend(undefined, undefined, transactions),
+    { isIdentityActive: async (subject) => !suspended.has(subject) },
+  );
   await workspaces.initializeNewWorkspace({ org: 'acme', ownerSubject: 'owner' });
   for (const role of ['administrator', 'builder', 'operator', 'viewer', 'owner'] as const) {
     const subject = role === 'owner' ? 'second-owner' : role;
@@ -84,10 +87,30 @@ async function fixture() {
       headers: { authorization: actor, 'content-type': 'application/json' },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
-  return { organizations, workspaces, suspended, request };
+  return { organizations, workspaces, suspended, request, transactions };
 }
 
 describe('business agreement owner authority', () => {
+  it('rolls back the shared local workspace and agreement composition after outer failure', async () => {
+    const { transactions, organizations, workspaces } = await fixture();
+    const onboarding = new BusinessOnboarding(
+      { documents },
+      organizations,
+      new InMemoryBusinessInformationStore(),
+      workspaces,
+    );
+    await expect(
+      transactions.run(async () => {
+        expect(await onboarding.accept('acme', 'owner', acceptance)).toMatchObject({
+          accepted: true,
+        });
+        throw new Error('composition failed');
+      }),
+    ).rejects.toThrow('composition failed');
+    expect(await organizations.getOrganizationAgreement('acme', documents.version)).toBeUndefined();
+    expect(await onboarding.accept('acme', 'owner', acceptance)).toMatchObject({ accepted: true });
+  });
+
   it('accepts the current workspace Owner without a developer role and preserves the first receipt', async () => {
     const { request, organizations } = await fixture();
     expect(await organizations.getOrgMember({ org: 'acme', subject: 'owner' })).toBeUndefined();

@@ -66,6 +66,7 @@ export class InMemoryOrganizationStore {
     this.#agreements = new InMemoryOrganizationAgreements(
       (org, subject) => this.isExactOwner(org, subject),
       this.#now,
+      options.transactions,
     );
   }
 

@@ -77,16 +77,6 @@ export async function acceptOrganizationAgreementRow(
   const transaction =
     options.transaction ??
     (<T>(work: (client: Pick<PoolClient, 'query'>) => Promise<T>) => ownTransaction(pool, work));
-  const legacy = () =>
-    transaction(async (client) => {
-      const { rows: members } = await client.query<{ role: string }>(
-        'SELECT role FROM org_members WHERE org_slug=$1 AND subject=$2 FOR UPDATE',
-        [org, input.actorSubject],
-      );
-      if (members[0]?.role !== 'owner')
-        throw new OrganizationAgreementError('agreement_owner_required');
-      return commit(client);
-    });
   const commit = async (client: Pick<PoolClient, 'query'>) => {
     await client.query(
       `INSERT INTO organization_agreement_documents (version, document_digest, documents)
@@ -108,9 +98,20 @@ export async function acceptOrganizationAgreementRow(
     if (!rows[0]) throw new Error('Agreement receipt unavailable');
     return receipt(rows[0]);
   };
-  return options.authority
-    ? options.authority.run(org, input.actorSubject, () => transaction(commit), legacy)
-    : legacy();
+  return transaction(async (client) => {
+    const legacy = async () => {
+      const { rows: members } = await client.query<{ role: string }>(
+        'SELECT role FROM org_members WHERE org_slug=$1 AND subject=$2 FOR UPDATE',
+        [org, input.actorSubject],
+      );
+      if (members[0]?.role !== 'owner')
+        throw new OrganizationAgreementError('agreement_owner_required');
+      return commit(client);
+    };
+    return options.authority
+      ? options.authority.run(org, input.actorSubject, () => commit(client), legacy)
+      : legacy();
+  });
 }
 
 async function ownTransaction<T>(

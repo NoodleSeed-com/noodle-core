@@ -59,4 +59,70 @@ export function agreementOwnerAuthorityConformance(
       store.acceptOrganizationAgreement({ ...input, actorSubject: 'stranger' }, legacy),
     ).rejects.toMatchObject({ code: 'agreement_owner_required' });
   });
+
+  it('rolls back both catalog registration and receipt if authority fails after the write', async () => {
+    const { store, org } = await fixture();
+    const selected = { ...documents, version: 'owner-authority-rollback' };
+    const input = { org, actorSubject: 'workspace-owner', documents: selected };
+    await expect(
+      store.acceptOrganizationAgreement(input, {
+        run: async (_org, _actor, commit) => {
+          await commit();
+          throw new Error('authority completion failed');
+        },
+      }),
+    ).rejects.toThrow('authority completion failed');
+    expect(await store.getOrganizationAgreement(org, selected.version)).toBeUndefined();
+    const corrected = { ...selected, terms: { ...selected.terms, sha256: 'd'.repeat(64) } };
+    const receipt = await store.acceptOrganizationAgreement(
+      { ...input, documents: corrected },
+      { run: (_org, _actor, commit) => commit() },
+    );
+    expect(receipt.documents).toEqual(corrected);
+    await expect(
+      store.acceptOrganizationAgreement(
+        { ...input, documents: corrected },
+        {
+          run: async (_org, _actor, commit) => {
+            await commit();
+            throw new Error('replay failed');
+          },
+        },
+      ),
+    ).rejects.toThrow('replay failed');
+    expect(await store.getOrganizationAgreement(org, selected.version)).toEqual(receipt);
+  });
+
+  it('keeps a pending acceptance private until its authority operation completes', async () => {
+    const { store, org } = await fixture();
+    let entered = () => {};
+    const committed = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const selected = { ...documents, version: 'owner-authority-private' };
+    const acceptance = store.acceptOrganizationAgreement(
+      { org, actorSubject: 'workspace-owner', documents: selected },
+      {
+        run: async (_org, _actor, commit) => {
+          await commit();
+          entered();
+          await held;
+          throw new Error('authority completion failed');
+        },
+      },
+    );
+    const failure = expect(acceptance).rejects.toThrow('authority completion failed');
+    await committed;
+    try {
+      expect(await store.getOrganizationAgreement(org, selected.version)).toBeUndefined();
+    } finally {
+      release();
+      await failure;
+    }
+    expect(await store.getOrganizationAgreement(org, selected.version)).toBeUndefined();
+  });
 }
