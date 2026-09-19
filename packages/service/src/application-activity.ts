@@ -34,6 +34,10 @@ import {
 import type { ServerRegistry } from './registry.js';
 
 export type { ActivityHistoryAllowance } from '@noodle-borg/module';
+
+/** Fence local reads/effects with current staff authority; never enclose remote or billing lookups. */
+type ActivityLocalOperation = <T>(operation: () => Promise<T>) => Promise<T>;
+const runLocal: ActivityLocalOperation = (operation) => operation();
 export interface ApplicationActivityOptions {
   readonly store: OperationEvidenceStore;
   readonly epoch: string;
@@ -68,7 +72,7 @@ export class ActivityPolicyError extends Error {
 /** One verified plan projection governs current access and the ceiling on newly assigned expiry. */
 export class ApplicationActivity {
   constructor(readonly options: ApplicationActivityOptions) {}
-  /** Shared strict operator projection. Callers authorize the live installation grant before and after it. */
+  /** Callers authorize before/after projection and fence each local effect with current authority. */
   async project(
     scope: InstallationScope,
     action: ActivityProjectionAction,
@@ -78,6 +82,7 @@ export class ApplicationActivity {
       readonly canEdit: boolean;
       readonly reviewer: string;
     },
+    local: ActivityLocalOperation = runLocal,
   ) {
     const coordinating = action.startsWith('coordination');
     const invalid = () =>
@@ -106,15 +111,16 @@ export class ApplicationActivity {
       if (!parsed.success) throw invalid();
       const store = this.options.coordination;
       if (!store) throw new ActivityPolicyError('coordination_unavailable');
-      let resolved: boolean;
-      try {
-        resolved = await store.resolve(scope, parsed.data.resource, parsed.data.token, {
-          reviewer: input.reviewer,
-          reason: parsed.data.reason,
-        });
-      } catch {
-        throw new ActivityPolicyError('coordination_unavailable');
-      }
+      const resolved = await local(async () => {
+        try {
+          return await store.resolve(scope, parsed.data.resource, parsed.data.token, {
+            reviewer: input.reviewer,
+            reason: parsed.data.reason,
+          });
+        } catch {
+          throw new ActivityPolicyError('coordination_unavailable');
+        }
+      });
       if (!resolved) throw new ActivityPolicyError('coordination_conflict');
       return mutation(
         OperationCoordinationResolveResponseSchema.parse({ ok: true, data: { resolved: true } }),
@@ -132,38 +138,50 @@ export class ApplicationActivity {
       if (!parsed.success) throw invalid();
       const store = this.options.coordination;
       if (!store) throw new ActivityPolicyError('coordination_unavailable');
-      try {
-        const limit = parsed.data.limit ?? 100;
-        const records = await store.list(scope, limit, parsed.data.beforeResource);
-        if (records.some((record) => canonicalJson(record.scope) !== canonicalJson(scope)))
-          throw new Error('Coordination scope mismatch');
-        return {
-          response: OperationCoordinationListResponseSchema.parse({
-            ok: true,
-            data: {
-              records: records.map(
-                ({ resource, token, reference, operationDigest, startedAt, deadline, state }) => ({
-                  resource,
-                  token,
-                  reference,
-                  operationDigest,
-                  startedAt: new Date(startedAt).toISOString(),
-                  deadline: new Date(deadline).toISOString(),
-                  state,
-                }),
-              ),
-              ...(records.length === limit ? { nextBeforeResource: records.at(-1)?.resource } : {}),
-            },
-          }),
-        };
-      } catch {
-        throw new ActivityPolicyError('coordination_unavailable');
-      }
+      return local(async () => {
+        try {
+          const limit = parsed.data.limit ?? 100;
+          const records = await store.list(scope, limit, parsed.data.beforeResource);
+          if (records.some((record) => canonicalJson(record.scope) !== canonicalJson(scope)))
+            throw new Error('Coordination scope mismatch');
+          return {
+            response: OperationCoordinationListResponseSchema.parse({
+              ok: true,
+              data: {
+                records: records.map(
+                  ({
+                    resource,
+                    token,
+                    reference,
+                    operationDigest,
+                    startedAt,
+                    deadline,
+                    state,
+                  }) => ({
+                    resource,
+                    token,
+                    reference,
+                    operationDigest,
+                    startedAt: new Date(startedAt).toISOString(),
+                    deadline: new Date(deadline).toISOString(),
+                    state,
+                  }),
+                ),
+                ...(records.length === limit
+                  ? { nextBeforeResource: records.at(-1)?.resource }
+                  : {}),
+              },
+            }),
+          };
+        } catch {
+          throw new ActivityPolicyError('coordination_unavailable');
+        }
+      });
     }
     if (action === 'save-settings') {
       const parsed = ApplicationActivitySettingsSaveRequestSchema.safeParse(input.body);
       if (!parsed.success) throw invalid();
-      const data = await this.save(scope, parsed.data);
+      const data = await this.save(scope, parsed.data, local);
       return mutation(
         ApplicationActivitySettingsResponseSchema.parse({ ok: true, data }),
         'config.activity.retention_changed',
@@ -174,14 +192,14 @@ export class ApplicationActivity {
       return {
         response: ApplicationActivityPreviewResponseSchema.parse({
           ok: true,
-          data: await this.preview(scope),
+          data: await this.preview(scope, local),
         }),
       };
     if (action === 'settings')
       return {
         response: ApplicationActivitySettingsResponseSchema.parse({
           ok: true,
-          data: (await this.settings(scope, input.canEdit)).projection,
+          data: (await this.settings(scope, input.canEdit, local)).projection,
         }),
       };
     const limit = parameters.has('limit') ? Number(parameters.get('limit')) : 50;
@@ -196,15 +214,23 @@ export class ApplicationActivity {
     return {
       response: ApplicationActivityListResponseSchema.parse({
         ok: true,
-        data: await this.page(scope, {
-          purpose: action,
-          limit,
-          ...(cursor === undefined ? {} : { cursor }),
-        }),
+        data: await this.page(
+          scope,
+          {
+            purpose: action,
+            limit,
+            ...(cursor === undefined ? {} : { cursor }),
+          },
+          local,
+        ),
       }),
     };
   }
-  async settings(scope: InstallationScope, canEdit: boolean) {
+  async settings(
+    scope: InstallationScope,
+    canEdit: boolean,
+    local: ActivityLocalOperation = runLocal,
+  ) {
     const allowance = await this.options.allowance(scope.org);
     if (
       !allowance ||
@@ -214,11 +240,14 @@ export class ApplicationActivity {
       !allowance.revision
     )
       throw new ActivityPolicyError('activity_unavailable');
-    let setting = await this.options.store.readRetention(scope);
-    if (!setting) {
-      await this.options.store.setRetention(scope, allowance.defaultDays, undefined);
-      setting = await this.options.store.readRetention(scope);
-    }
+    const setting = await local(async () => {
+      let value = await this.options.store.readRetention(scope);
+      if (!value) {
+        await this.options.store.setRetention(scope, allowance.defaultDays, undefined);
+        value = await this.options.store.readRetention(scope);
+      }
+      return value;
+    });
     if (!setting || !validDays(setting.days)) throw new ActivityPolicyError('activity_unavailable');
     return {
       setting,
@@ -231,17 +260,23 @@ export class ApplicationActivity {
       },
     };
   }
-  async save(scope: InstallationScope, input: { expectedRevision: string; retentionDays: number }) {
-    const current = await this.settings(scope, true);
+  async save(
+    scope: InstallationScope,
+    input: { expectedRevision: string; retentionDays: number },
+    local: ActivityLocalOperation = runLocal,
+  ) {
+    const current = await this.settings(scope, true, local);
     if (current.projection.revision !== input.expectedRevision)
       throw new ActivityPolicyError('activity_conflict');
     if (!validDays(input.retentionDays) || input.retentionDays > current.allowance.maximumDays)
       throw new ActivityPolicyError('activity_invalid');
     if (
-      !(await this.options.store.setRetention(scope, input.retentionDays, current.setting.revision))
+      !(await local(() =>
+        this.options.store.setRetention(scope, input.retentionDays, current.setting.revision),
+      ))
     )
       throw new ActivityPolicyError('activity_conflict');
-    return (await this.settings(scope, true)).projection;
+    return (await this.settings(scope, true, local)).projection;
   }
   async page(
     scope: InstallationScope,
@@ -250,24 +285,27 @@ export class ApplicationActivity {
       readonly limit: number;
       readonly cursor?: string;
     },
+    local: ActivityLocalOperation = runLocal,
   ) {
     if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100)
       throw new ActivityPolicyError('activity_invalid');
-    const policy = (await this.settings(scope, false)).projection;
+    const policy = (await this.settings(scope, false, local)).projection;
     const binding = this.hash({
       purpose: `activity-${input.purpose}-v1`,
       scope,
       revision: policy.revision,
       limit: input.limit,
     });
-    const records = await this.options.store.list(
-      scope,
-      this.options.now?.() ?? Date.now(),
-      policy.maximumDays,
-      input.limit + 1,
-      decodeActivityCursor(input.cursor, binding),
+    const records = await local(() =>
+      this.options.store.list(
+        scope,
+        this.options.now?.() ?? Date.now(),
+        policy.maximumDays,
+        input.limit + 1,
+        decodeActivityCursor(input.cursor, binding),
+      ),
     );
-    if ((await this.settings(scope, false)).projection.revision !== policy.revision)
+    if ((await this.settings(scope, false, local)).projection.revision !== policy.revision)
       throw new ActivityPolicyError('activity_conflict');
     const page = records.slice(0, input.limit);
     const last = page.at(-1);
@@ -319,7 +357,7 @@ export class ApplicationActivity {
   ) {
     return sha256Canonical({ scope, setting, allowance });
   }
-  async preview(scope: InstallationScope) {
+  async preview(scope: InstallationScope, local: ActivityLocalOperation = runLocal) {
     const unavailable = () => {
       throw new ActivityPolicyError('activity_unavailable');
     };
@@ -357,14 +395,16 @@ export class ApplicationActivity {
       )
     )
       throw new ActivityPolicyError('activity_unavailable');
-    const counts = await this.options.store
-      .preview(scope, {
-        asOf,
-        paidPeriodEnd,
-        currentMaximumDays: allowance.maximumDays,
-        scenarios: preview.scenarios,
-      })
-      .catch(unavailable);
+    const counts = await local(() =>
+      this.options.store
+        .preview(scope, {
+          asOf,
+          paidPeriodEnd,
+          currentMaximumDays: allowance.maximumDays,
+          scenarios: preview.scenarios,
+        })
+        .catch(unavailable),
+    );
     const current = await resolve();
     if (current?.revision !== allowance.revision)
       throw new ActivityPolicyError('activity_conflict');

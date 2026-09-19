@@ -10,6 +10,9 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ActivityHistoryAllowance, ApplicationActivity } from '../src/application-activity.js';
 import { InMemoryBusinessInformationStore } from '../src/business-information/in-memory-store.js';
+import { InMemoryBusinessWorkspaceBackend } from '../src/business-workspaces/memory.js';
+import { BusinessWorkspaceStore } from '../src/business-workspaces/store.js';
+import { InMemoryOperationCoordinationStore } from '../src/operation-coordination.js';
 import { InMemoryOperationEvidenceStore } from '../src/operation-evidence-memory.js';
 import { dispatchBusinessInformationRoutes } from '../src/routes/business-information-dispatch.js';
 
@@ -20,6 +23,7 @@ let http: Server;
 let base: string;
 let records: InMemoryBusinessInformationStore;
 let evidence: InMemoryOperationEvidenceStore;
+let beforeAllowance: (() => Promise<void>) | undefined;
 let allowance: ActivityHistoryAllowance | undefined = {
   maximumDays: 30,
   defaultDays: 30,
@@ -29,6 +33,7 @@ let allowance: ActivityHistoryAllowance | undefined = {
 beforeEach(async () => {
   records = new InMemoryBusinessInformationStore();
   evidence = new InMemoryOperationEvidenceStore();
+  beforeAllowance = undefined;
   allowance = { maximumDays: 30, defaultDays: 30, revision: 'standard-v1' };
   const controlPlane = new InMemoryControlPlaneStore();
   await controlPlane.createOrgWithOwner({
@@ -72,7 +77,11 @@ beforeEach(async () => {
     epoch: 'activity-http-epoch',
     identityKey: 'activity-http-fixture-key-over-thirty-two-characters',
     now: () => now,
-    allowance: async () => allowance,
+    allowance: async () => {
+      await beforeAllowance?.();
+      return allowance;
+    },
+    coordination: new InMemoryOperationCoordinationStore(),
   });
   http = createServer((req, res) => {
     const handled = dispatchBusinessInformationRoutes(
@@ -92,9 +101,10 @@ beforeEach(async () => {
         enforceHttps: () => false,
         gate: {
           authorize: async (request) => {
-            const subject = /^Bearer (owner|viewer|member|manager|operator)$/.exec(
-              String(request.headers.authorization ?? ''),
-            )?.[1];
+            const subject =
+              /^Bearer (owner|viewer|member|manager|operator|administrator|builder)$/.exec(
+                String(request.headers.authorization ?? ''),
+              )?.[1];
             return subject === undefined
               ? { ok: false, status: 401, message: 'Authentication required' }
               : {
@@ -147,6 +157,102 @@ async function seed(id: string, target = scope, ageDays = 0) {
     reference: 'receipt-reference',
   });
 }
+
+async function workspaceAuthority() {
+  const workspaces = new BusinessWorkspaceStore(new InMemoryBusinessWorkspaceBackend(), {
+    isIdentityActive: async () => true,
+  });
+  await workspaces.initializeNewWorkspace({ org: scope.org, ownerSubject: 'owner' });
+  for (const role of ['administrator', 'builder', 'operator', 'viewer'] as const) {
+    const invite = await workspaces.invite({
+      org: scope.org,
+      actor: 'owner',
+      email: `${role}@example.com`,
+      role,
+      expectedRevision: (await workspaces.inspect(scope.org, 'owner')).revision,
+    });
+    await workspaces.accept({
+      org: scope.org,
+      subject: role,
+      token: invite.token,
+      verifiedEmail: `${role}@example.com`,
+    });
+  }
+  records.staff.configure(workspaces);
+  return workspaces;
+}
+
+describe('workspace activity authority at the local effect', () => {
+  it('projects the fixed roles and never combines them with stale installation grants', async () => {
+    await workspaceAuthority();
+    for (const role of ['owner', 'administrator', 'builder', 'operator', 'viewer', 'manager']) {
+      const read = role !== 'builder' && role !== 'manager';
+      const manage = role === 'owner' || role === 'administrator';
+      for (const path of ['activity', 'activity/settings', 'activity/preview'])
+        expect((await get(`travel-prod/${path}`, role)).status, `${role} ${path}`).toBe(
+          read ? 200 : 403,
+        );
+      for (const path of ['activity/export', 'operations/coordination'])
+        expect((await get(`travel-prod/${path}`, role)).status, `${role} ${path}`).toBe(
+          manage ? 200 : 403,
+        );
+      const settings = ApplicationActivitySettingsResponseSchema.parse(
+        await (await get('travel-prod/activity/settings')).json(),
+      ).data;
+      expect(
+        (await patch({ expectedRevision: settings.revision, retentionDays: 7 }, role)).status,
+        role,
+      ).toBe(manage ? 200 : 403);
+    }
+  });
+
+  it('denies a removed viewer before history settings can initialize', async () => {
+    const workspaces = await workspaceAuthority();
+    const write = vi.spyOn(evidence, 'setRetention');
+    const read = vi.spyOn(evidence, 'list');
+    beforeAllowance = async () => {
+      beforeAllowance = undefined;
+      await workspaces.changeRole({
+        org: scope.org,
+        actor: 'owner',
+        subject: 'viewer',
+        role: null,
+        expectedRevision: (await workspaces.inspect(scope.org, 'owner')).revision,
+      });
+    };
+    const response = await get('travel-prod/activity', 'viewer');
+    expect(response.status).toBe(403);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    expect(write).not.toHaveBeenCalled();
+    expect(read).not.toHaveBeenCalled();
+    expect(await evidence.readRetention(scope)).toBeUndefined();
+  });
+
+  it('does not save retention after an administrator is removed during policy resolution', async () => {
+    const workspaces = await workspaceAuthority();
+    const settings = ApplicationActivitySettingsResponseSchema.parse(
+      await (await get('travel-prod/activity/settings')).json(),
+    ).data;
+    const previous = await evidence.readRetention(scope);
+    const write = vi.spyOn(evidence, 'setRetention');
+    beforeAllowance = async () => {
+      beforeAllowance = undefined;
+      await workspaces.changeRole({
+        org: scope.org,
+        actor: 'owner',
+        subject: 'administrator',
+        role: null,
+        expectedRevision: (await workspaces.inspect(scope.org, 'owner')).revision,
+      });
+    };
+    expect(
+      (await patch({ expectedRevision: settings.revision, retentionDays: 7 }, 'administrator'))
+        .status,
+    ).toBe(403);
+    expect(write).not.toHaveBeenCalled();
+    expect(await evidence.readRetention(scope)).toEqual(previous);
+  });
+});
 
 describe('application Activity HTTP projection', () => {
   it('requires live business read grants, not organization ownership, and emits a private payload-free projection', async () => {

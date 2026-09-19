@@ -14,6 +14,7 @@ import type {
   OperationHistoryPreviewCounts,
   OperationHistoryPreviewInput,
 } from './operation-history-preview.js';
+import { postgresQueryExecutor } from './store/postgres-transaction.js';
 
 interface EvidenceRow {
   readonly id: string;
@@ -35,7 +36,7 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
     scope: InstallationScope,
     input: OperationHistoryPreviewInput,
   ): Promise<OperationHistoryPreviewCounts> {
-    const { rows } = await this.pool.query<{
+    const { rows } = await postgresQueryExecutor(this.pool).query<{
       id: string;
       visible: string;
       expires: string;
@@ -92,7 +93,7 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
   }
 
   async readRetention(scope: InstallationScope): Promise<OperationHistorySetting | undefined> {
-    const { rows } = await this.pool.query<OperationHistorySetting>(
+    const { rows } = await postgresQueryExecutor(this.pool).query<OperationHistorySetting>(
       'SELECT days,revision FROM operation_history_settings WHERE scope_key=$1',
       [operationEvidenceKey(scope, '')],
     );
@@ -106,11 +107,11 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
     const key = operationEvidenceKey(scope, '');
     const { rowCount } =
       expectedRevision === undefined
-        ? await this.pool.query(
+        ? await postgresQueryExecutor(this.pool).query(
             'INSERT INTO operation_history_settings(scope_key,days,revision) VALUES($1,$2,1) ON CONFLICT DO NOTHING',
             [key, days],
           )
-        : await this.pool.query(
+        : await postgresQueryExecutor(this.pool).query(
             'UPDATE operation_history_settings SET days=$2,revision=revision+1 WHERE scope_key=$1 AND revision=$3',
             [key, days, expectedRevision],
           );
@@ -119,7 +120,7 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
 
   async claim(record: OperationEvidenceRecord): Promise<boolean> {
     const sealed = await this.secretBox.seal(JSON.stringify(record));
-    const { rowCount } = await this.pool.query(
+    const { rowCount } = await postgresQueryExecutor(this.pool).query(
       `INSERT INTO operation_evidence
       (scope_key,id,protected,started_at,execution_deadline,history_expires_at,outcome,parent_id)
       VALUES($1,$2,$3::jsonb,$4,$5,$6,'dispatching',$7) ON CONFLICT DO NOTHING`,
@@ -179,7 +180,7 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
     before?: OperationEvidenceCursor,
   ): Promise<readonly OperationEvidenceRecord[]> {
     await this.sweep(now);
-    const { rows } = await this.pool.query<EvidenceRow>(
+    const { rows } = await postgresQueryExecutor(this.pool).query<EvidenceRow>(
       `SELECT id,parent_id,protected,outcome,completed_at,history_expires_at FROM operation_evidence
       WHERE scope_key=$1 AND parent_id IS NULL AND (outcome='dispatching' OR COALESCE(completed_at,started_at) >= $2)
       AND (started_at < $3 OR (started_at=$3 AND id > $6)) AND history_expires_at > $4
@@ -197,11 +198,14 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
   }
 
   async sweep(now: number): Promise<void> {
-    await this.pool.query(
+    await postgresQueryExecutor(this.pool).query(
       "UPDATE operation_evidence SET outcome='unknown',completed_at=execution_deadline,history_expires_at=execution_deadline+history_expires_at-started_at WHERE outcome='dispatching' AND execution_deadline <= $1",
       [now],
     );
-    await this.pool.query('DELETE FROM operation_evidence WHERE history_expires_at <= $1', [now]);
+    await postgresQueryExecutor(this.pool).query(
+      'DELETE FROM operation_evidence WHERE history_expires_at <= $1',
+      [now],
+    );
   }
 
   private async open(scope: InstallationScope, row: EvidenceRow): Promise<OperationEvidenceRecord> {

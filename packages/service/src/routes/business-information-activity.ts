@@ -71,12 +71,18 @@ export async function handleApplicationActivity(
       body = parsed.value;
       if (!(await authorize())) return;
     }
-    const result = await deps.activity.project(authorized.scope, action, {
-      parameters: [...url.searchParams.entries()],
-      body,
-      reviewer: identity.subject,
-      canEdit: businessGrantAllows(authorized.grant, 'installation:administer'),
-    });
+    const result = await deps.activity.project(
+      authorized.scope,
+      action,
+      {
+        parameters: [...url.searchParams.entries()],
+        body,
+        reviewer: identity.subject,
+        canEdit: businessGrantAllows(authorized.grant, 'installation:administer'),
+      },
+      (operation) =>
+        deps.store.staff.run(authorized.scope, identity.subject, permission, operation),
+    );
     if ('audit' in result)
       await deps.audit?.emit({
         ...result.audit,

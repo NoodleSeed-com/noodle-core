@@ -4,6 +4,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createOperationEvidencePort, operationEvidenceKey } from '../src/operation-evidence.js';
 import { PostgresOperationEvidenceStore } from '../src/operation-evidence-postgres.js';
+import { withPostgresTransaction } from '../src/store/postgres-transaction.js';
 import { describeOperationEvidence } from './operation-evidence-suite.js';
 
 const databaseUrl = process.env.DATABASE_URL_TEST;
@@ -37,6 +38,69 @@ describe.skipIf(databaseUrl === undefined)('PostgreSQL operation evidence', () =
   describeOperationEvidence(async () => {
     await pool.query('TRUNCATE operation_evidence, operation_history_settings');
     return store;
+  });
+  it('joins a single-connection authority transaction and rolls back settings and evidence together', async () => {
+    const one = new pg.Pool({
+      connectionString: databaseUrl,
+      max: 1,
+      connectionTimeoutMillis: 1000,
+      options: `-c search_path=${schema}`,
+    });
+    const local = new PostgresOperationEvidenceStore(one, store.secretBox);
+    const scope = { org: 'atomic', app: 'site', env: 'production', installationId: 'site' };
+    const now = 1_800_000_000_000;
+    try {
+      await expect(
+        withPostgresTransaction(one, async () => {
+          expect(await local.setRetention(scope, 7, undefined)).toBe(true);
+          expect(await local.setRetention(scope, 3, 1)).toBe(true);
+          expect(await local.readRetention(scope)).toEqual({ days: 3, revision: 2 });
+          expect(
+            await local.claim({
+              scope,
+              id: 'a'.repeat(64),
+              lease: 'lease',
+              epoch: 'epoch',
+              deploymentId: 'release',
+              tool: 'submit',
+              connector: 'records',
+              operation: 'submit',
+              generation: 'generation',
+              actorDigest: 'actor',
+              intentDigest: 'intent',
+              startedAt: now,
+              executionDeadline: now + 1000,
+              historyExpiresAt: now + 86400000,
+              outcome: 'dispatching',
+            }),
+          ).toBe(true);
+          expect(
+            await local.finish(
+              scope,
+              'a'.repeat(64),
+              'lease',
+              'epoch',
+              { outcome: 'completed' },
+              now + 1,
+            ),
+          ).toBe(true);
+          expect(await local.list(scope, now + 2, 7, 100)).toHaveLength(1);
+          expect(
+            await local.preview(scope, {
+              asOf: now + 2,
+              paidPeriodEnd: now + 1000,
+              currentMaximumDays: 7,
+              scenarios: [{ id: 'shorter', maximumDays: 3 }],
+            }),
+          ).toMatchObject({ currentlyAccessibleCount: 1 });
+          throw new Error('rollback-test');
+        }),
+      ).rejects.toThrow('rollback-test');
+      expect(await local.readRetention(scope)).toBeUndefined();
+      expect(await local.list(scope, now + 2, 7, 100)).toEqual([]);
+    } finally {
+      await one.end();
+    }
   });
   it('binds the parent projection index to protected evidence and retains the child row', async () => {
     await pool.query('TRUNCATE operation_evidence, operation_history_settings');
