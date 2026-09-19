@@ -50,6 +50,7 @@ import {
   handleEligibleBusinessAssignees,
   handleMySolutionInstallations,
 } from './business-information-staff.js';
+import { handleNativeRecordLifecycle } from './business-native-lifecycle.js';
 
 export interface BusinessInformationDispatchDeps
   extends BusinessActivityRouteDeps,
@@ -126,6 +127,8 @@ export function dispatchBusinessInformationRoutes(
   }
   const installationRef = parseSolutionInstallationPath(url.pathname);
   if (installationRef === undefined) return false;
+  if (installationRef.action === 'record-lifecycle')
+    return run(req, res, deps, () => handleNativeRecordLifecycle(req, res, installationRef, deps));
   if (installationRef.action === 'notice')
     return run(req, res, deps, () => handleBusinessNotice(req, res, installationRef, deps));
   if (

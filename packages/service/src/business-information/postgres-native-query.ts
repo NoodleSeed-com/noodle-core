@@ -61,8 +61,8 @@ async function* scanRecords(
     if (input.includeDeleted !== true) clauses.push('deleted_at IS NULL');
     add(
       input.includeDeleted === true
-        ? '(deleted_at IS NOT NULL OR retention_expires_at>?)'
-        : 'retention_expires_at>?',
+        ? '(deleted_at IS NOT NULL OR retention_expires_at IS NULL OR retention_expires_at>?)'
+        : '(retention_expires_at IS NULL OR retention_expires_at>?)',
       dependencies.now.toISOString(),
     );
     if (input.status !== undefined) add('status=?', input.status);

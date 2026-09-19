@@ -3,6 +3,7 @@ import type { EligibleBusinessAssignee, ManagedRecordQuery } from '@noodle-borg/
 import type { BusinessWorkspaceAccess } from '../business-workspaces/contracts.js';
 import type { BusinessNoticeStore } from './business-notice.js';
 import type { BusinessPageStore } from './business-page.js';
+import type { NativeRecordLifecycleStore } from './native-record-lifecycle.js';
 import type { BusinessPrincipalProvider } from './principal-authority.js';
 import type { BusinessStaffAuthority } from './staff-authority.js';
 
@@ -112,6 +113,8 @@ export interface SolutionInstallation {
   readonly managedCollections: readonly string[];
   readonly definition: SolutionDefinitionSnapshot;
   readonly retentionDays: ManagedRetentionDays;
+  /** Absent on legacy installations until reviewed lifecycle migration. */
+  readonly nativeRecordLifecycle?: 'explicit_erasure';
   /** Public native-record intake exposure; authorized records remain operable while paused. */
   readonly intakeActive: boolean;
   /** Internal binding to the authoritative app incarnation; never a Portal configuration value. */
@@ -198,7 +201,7 @@ export interface ManagedRequestRecord {
   readonly assigneeSubject?: string;
   readonly origin: ManagedRequestOrigin;
   readonly revision: number;
-  readonly retentionExpiresAt: string;
+  readonly retentionExpiresAt: string | null;
   readonly createdAt: string;
   readonly createdBySubject: string;
   readonly updatedAt: string;
@@ -500,6 +503,7 @@ export interface BusinessInformationStore
     BusinessGrantStore,
     ManagedRequestStore {
   readonly pages: BusinessPageStore;
+  readonly nativeLifecycle: NativeRecordLifecycleStore;
   readonly staff: BusinessStaffAuthority;
   configurePrincipalAuthority(provider: BusinessPrincipalProvider | undefined): void;
   listEligibleAssignees(

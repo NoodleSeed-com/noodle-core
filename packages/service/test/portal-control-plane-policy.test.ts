@@ -9,6 +9,8 @@ import { InMemoryOAuthStore } from '../src/oauth/store.js';
 const resource = 'https://service.example';
 const base = '/v1/orgs/acme/solution-installations/installed';
 const authorized = [
+  ['GET', `${base}/record-lifecycle`],
+  ['POST', `${base}/record-lifecycle`],
   ['GET', `${base}/page`],
   ['PUT', `${base}/page`],
   ['POST', `${base}/page/publish`],
@@ -72,6 +74,9 @@ const authorized = [
 ] as const;
 const denied = [
   ['POST', '/v1/me/business-workspaces'],
+  ['DELETE', `${base}/record-lifecycle`],
+  ['PATCH', `${base}/record-lifecycle`],
+  ['POST', `${base}/record-lifecycle/extra`],
   ['DELETE', '/v1/me/business-workspaces'],
   ['POST', '/v1/orgs/acme/business-workspace'],
   ['DELETE', '/v1/orgs/acme/business-workspace'],

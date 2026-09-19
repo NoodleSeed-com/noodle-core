@@ -3,6 +3,7 @@ import { builtInManagedReleaseDefinitions } from './managed-releases.js';
 import { ensureBusinessNoticeSchema } from './postgres-business-notice.js';
 import { ensureBusinessPageSchema } from './postgres-business-pages.js';
 import { ensureInstallationCapacity } from './postgres-installation-capacity.js';
+import { ensureNativeLifecycleSchema } from './postgres-native-lifecycle.js';
 import { ensureNativeStorageBudget } from './postgres-storage-budget.js';
 
 /** Idempotent initial schema for solution installations and managed request custody. */
@@ -200,4 +201,5 @@ export async function ensureBusinessInformationSchema(pool: Pool): Promise<void>
     ON managed_request_records (retention_expires_at)
     WHERE deleted_at IS NULL`);
   await ensureNativeStorageBudget(pool);
+  await ensureNativeLifecycleSchema(pool);
 }

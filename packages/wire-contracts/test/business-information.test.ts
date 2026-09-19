@@ -425,6 +425,9 @@ describe('business-information wire contracts', () => {
       request: { status: 'new' },
     };
     expect(NativeManagedRecordSchema.safeParse(record).success).toBe(true);
+    expect(
+      NativeManagedRecordSchema.safeParse({ ...record, retentionExpiresAt: null }).success,
+    ).toBe(true);
     expect(ManagedRecordResponseSchema.safeParse({ ok: true, data: { record } }).success).toBe(
       true,
     );
@@ -455,6 +458,9 @@ describe('business-information wire contracts', () => {
       },
     };
     expect(ExternalManagedRecordSchema.safeParse(record).success).toBe(true);
+    expect(
+      ExternalManagedRecordSchema.safeParse({ ...record, retentionExpiresAt: null }).success,
+    ).toBe(false);
     expect(
       ExternalManagedRecordSchema.safeParse({
         ...record,

@@ -155,6 +155,7 @@ export function describeNativeRecordRetention(makeHarness: () => Promise<StoreHa
       const result = await store.createRequest(input);
       if (result.disposition !== 'created') throw new Error('retention fixture was not created');
       const record = result.record;
+      if (record.retentionExpiresAt === null) throw new Error('legacy expiry missing');
       expect(Date.parse(record.retentionExpiresAt) - Date.parse(record.createdAt)).toBe(
         retentionDays * DAY_MS,
       );
@@ -230,6 +231,7 @@ export function describeNativeRecordRetention(makeHarness: () => Promise<StoreHa
       actorSubject: 'owner',
     });
     if (fresh.disposition !== 'created') throw new Error('later record was not created');
+    if (fresh.record.retentionExpiresAt === null) throw new Error('legacy expiry missing');
     expect(Date.parse(fresh.record.retentionExpiresAt) - Date.parse(fresh.record.createdAt)).toBe(
       retentionDays * DAY_MS,
     );

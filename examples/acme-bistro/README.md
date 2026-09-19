@@ -1,14 +1,8 @@
 # Acme Bistro — ordering with payment handoff
 
-Fictional [`menu/cart`](src/server.ts) with off-app payment: card data stays outside the app.
-
-`GUEST_EXPERIENCE` settings use `guestExperience.field('notice')` to select a typed business value; native `guest_requests` demonstrate status, field exposure and notes. `submit_guest_request` requires an authorized installation and returns a receipt
-for staff review. The installed skill's `references/authoring-workflow.md` owns setup and source contracts.
-External collections declare a bounded connector scan; provider changes remain ordinary tools.
-
-Staff can clear optional `guestReference` in Portal or an authored
-`connectors.records.updateRecord({ collection: 'guest_requests', id, expectedRevision, patch: {}, unset: ['guestReference'] })`.
-Required fields cannot be removed; `null` is a value, not deletion.
+Fictional [menu/cart](src/server.ts): payment stays outside the app. Native `guest_requests` demonstrate
+status, field exposure, notes and optional-field removal with `unset: ['guestReference']`.
+`GUEST_EXPERIENCE` supplies typed business settings. Submission records a request, not a reservation.
 
 ## Design deliverables
 
@@ -20,3 +14,6 @@ Required fields cannot be removed; `null` is a value, not deletion.
 
 Use `noodle validate`, `noodle test`, and `noodle dev` for the local menu/cart.
 Native submission requires installed storage, grants and public intake.
+An Owner/Admin reviews preservation in Business settings or `noodle solutions records lifecycle`.
+Only after confirmation do available/future records remain until erased, within storage limits.
+Expired records stay unavailable; assistant history is separate. Tools do not choose expiry.

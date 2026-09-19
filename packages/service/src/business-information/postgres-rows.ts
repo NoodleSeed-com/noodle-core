@@ -26,6 +26,7 @@ export interface InstallationRow {
   readonly profile_version: number;
   readonly managed_collections: string[];
   readonly retention_days: number;
+  readonly native_record_lifecycle?: string | null;
   readonly intake_active: boolean;
   readonly application_generation: string | null;
   readonly revision: string;
@@ -90,7 +91,7 @@ export interface RequestRow {
   readonly assignee_subject: string | null;
   readonly origin_kind: string;
   readonly revision: string;
-  readonly retention_expires_at: Date;
+  readonly retention_expires_at: Date | null;
   readonly created_at: Date;
   readonly created_by_subject: string;
   readonly updated_at: Date;
@@ -136,6 +137,8 @@ export function installationFromRow(row: InstallationRow): SolutionInstallation 
   const profileKey = row.profile_key;
   const definition = definitionFromRow(row.definition_snapshot, profileKey, row.profile_version);
   const retentionDays = row.retention_days;
+  if (row.native_record_lifecycle != null && row.native_record_lifecycle !== 'explicit_erasure')
+    throw new Error('stored native lifecycle is invalid');
   if (retentionDays !== 7 && retentionDays !== 30 && retentionDays !== 90) {
     throw new Error('stored installation retention is invalid');
   }
@@ -147,6 +150,9 @@ export function installationFromRow(row: InstallationRow): SolutionInstallation 
     managedCollections: [...row.managed_collections],
     definition,
     retentionDays,
+    ...(row.native_record_lifecycle === 'explicit_erasure'
+      ? { nativeRecordLifecycle: 'explicit_erasure' as const }
+      : {}),
     intakeActive: row.intake_active,
     ...(row.application_generation == null
       ? {}
@@ -224,7 +230,8 @@ export async function requestFromRow(
       ...(opened?.originReference === undefined ? {} : { reference: opened.originReference }),
     },
     revision,
-    retentionExpiresAt: timestamp(row.retention_expires_at),
+    retentionExpiresAt:
+      row.retention_expires_at === null ? null : timestamp(row.retention_expires_at),
     createdAt: timestamp(row.created_at),
     createdBySubject: row.created_by_subject,
     updatedAt: timestamp(row.updated_at),

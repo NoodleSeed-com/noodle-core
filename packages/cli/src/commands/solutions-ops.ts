@@ -15,6 +15,7 @@ import { runSolutionConnections } from './solutions-connections.js';
 import { runSolutionOperations } from './solutions-coordination.js';
 import { runSolutionDrafts } from './solutions-drafts.js';
 import { runSolutionInstallationOptions } from './solutions-installation-options.js';
+import { runSolutionNativeLifecycle } from './solutions-native-lifecycle.js';
 import { runSolutionOnboarding } from './solutions-onboarding.js';
 import { parseArgs } from './solutions-ops-args.js';
 import { runSolutionPage } from './solutions-page.js';
@@ -136,6 +137,8 @@ export async function runSolutions(
   home: ConfigLocation,
   options: SolutionsCommandOptions = {},
 ): Promise<number> {
+  if (rest[0] === 'records' && rest[1] === 'lifecycle')
+    return runSolutionNativeLifecycle(rest.slice(2), env, home, options);
   if (rest[0] === 'drafts') return runSolutionDrafts(rest.slice(1), env, home, options);
   if (rest[0] === 'page') return runSolutionPage(rest.slice(1), env, home, options);
   if (rest[0] === 'workspace') return runSolutionWorkspace(rest.slice(1), env, home, options);

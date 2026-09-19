@@ -147,7 +147,9 @@ export function matchesNativeQueryMetadata(
     scopeKey(record.scope) === scopeKey(input.scope) &&
     record.collectionKey === input.collectionKey &&
     (input.includeDeleted === true || record.deletedAt === undefined) &&
-    (record.deletedAt !== undefined || record.retentionExpiresAt > now.toISOString()) &&
+    (record.deletedAt !== undefined ||
+      record.retentionExpiresAt === null ||
+      record.retentionExpiresAt > now.toISOString()) &&
     (input.status === undefined || record.status === input.status) &&
     (input.assigneeSubject === undefined || record.assigneeSubject === input.assigneeSubject) &&
     record.createdAt <= plan.snapshotAt &&

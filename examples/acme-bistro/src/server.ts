@@ -83,7 +83,8 @@ export default server(
     handoff: {
       allowedDomains: ['https://pay.acme.example', 'https://acme.example'],
     },
-    // Reusable business-record intent. Storage, lifecycle, access, and public intake bind separately.
+    // Reusable intent only. Operators review native record preservation separately from short-lived
+    // assistant history; tools must not select expiry or claim a saved request confirms a reservation.
     collections: [guestRequests],
     use: { records: noodlePlatform.records.v1 },
     variables: [guestExperience],

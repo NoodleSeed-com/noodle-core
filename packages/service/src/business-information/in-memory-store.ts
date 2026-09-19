@@ -23,6 +23,7 @@ import {
 } from './in-memory-installation-lifecycle.js';
 import { InMemoryBusinessInvitations } from './in-memory-invitations.js';
 import { BusinessMemoryLocks } from './in-memory-locks.js';
+import { InMemoryNativeRecordLifecycle } from './in-memory-native-lifecycle.js';
 import type {
   IdempotencyRecord,
   InMemoryBusinessInformationStoreOptions,
@@ -33,12 +34,12 @@ import {
 } from './installation-capacity.js';
 import { migrateLegacyRequestRecord } from './legacy-request-migration.js';
 import type { ManagedDefinitionResolver } from './managed-releases.js';
+import { eraseNativeMemoryRecord, expireNativeMemoryRecord } from './memory-native-retention.js';
 import {
   activityFromRecord,
   applyRequestOperation,
   cloneGrant,
   cloneRecord,
-  deletedRecord,
   effectiveInstallation,
   idempotencyDigest,
   initialRecord,
@@ -82,6 +83,7 @@ export type { InMemoryBusinessInformationStoreOptions } from './in-memory-store-
 export class InMemoryBusinessInformationStore implements BusinessInformationStore {
   readonly staff = new BusinessStaffAuthority((scope, subject) => this.getGrant(scope, subject));
   readonly pages: InMemoryBusinessPages;
+  readonly nativeLifecycle: InMemoryNativeRecordLifecycle;
   readonly #installations = new Map<string, SolutionInstallation>();
   readonly #installationIds = new Map<string, string>();
   readonly #publicIds = new Map<string, string>();
@@ -106,6 +108,15 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
     this.#publicId = options.publicId ?? (() => `sol_${randomUUID().replaceAll('-', '')}`);
     this.#managedDefinition = options.managedDefinition;
     this.pages = new InMemoryBusinessPages(this, this.#locks, this.#principals, this.#now);
+    this.nativeLifecycle = new InMemoryNativeRecordLifecycle({
+      installations: this.#installations,
+      records: this.#records,
+      locks: this.#locks,
+      staff: this.staff,
+      principals: this.#principals,
+      budget: this.#custody,
+      now: this.#now,
+    });
     this.#lifecycle = new InMemoryInstallationLifecycle({
       installations: this.#installations,
       staff: this.staff,
@@ -700,6 +711,7 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
         ([key, record]) =>
           (scope === undefined || key.startsWith(`${scope}\0`)) &&
           record.deletedAt === undefined &&
+          record.retentionExpiresAt !== null &&
           record.retentionExpiresAt <= now.toISOString(),
       )
       .slice(0, limit);
@@ -722,24 +734,20 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
       .filter(
         ([key, record]) =>
           key.startsWith(prefix) &&
-          (record.deletedAt !== undefined || record.retentionExpiresAt > now),
+          (record.deletedAt !== undefined ||
+            record.retentionExpiresAt === null ||
+            record.retentionExpiresAt > now),
       )
       .map(([, record]) => record)
       .sort(compareRecords);
   }
 
   #expireRecordIfNeeded(key: string, now: Date): ManagedRequestRecord | undefined {
-    const current = this.#records.get(key);
-    if (
-      current === undefined ||
-      current.deletedAt !== undefined ||
-      current.retentionExpiresAt > now.toISOString()
-    ) {
-      return current;
-    }
-    const erased = deletedRecord(current, 'system:retention', now, 'retention_expired');
-    this.#commitRecord(key, erased, 'retention_expired');
-    return erased;
+    return expireNativeMemoryRecord(
+      { records: this.#records, commit: this.#commitRecord.bind(this) },
+      key,
+      now,
+    );
   }
 
   #eraseRecord(
@@ -748,23 +756,14 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
     actorSubject: string,
     reason: 'customer_request' | 'retention_expired',
   ): RequestMutationResult {
-    const current =
-      reason === 'retention_expired'
-        ? this.#records.get(key)
-        : this.#expireRecordIfNeeded(key, this.#now());
-    if (current === undefined || current.deletedAt !== undefined) {
-      return { ok: false, reason: 'not_found', currentRevision: current?.revision ?? 0 };
-    }
-    if (current.revision !== expectedRevision) {
-      return { ok: false, reason: 'conflict', currentRevision: current.revision };
-    }
-    const erased = deletedRecord(current, actorSubject, this.#now(), reason);
-    this.#commitRecord(
+    return eraseNativeMemoryRecord(
+      { records: this.#records, commit: this.#commitRecord.bind(this) },
       key,
-      erased,
-      reason === 'customer_request' ? 'deleted' : 'retention_expired',
+      expectedRevision,
+      actorSubject,
+      reason,
+      this.#now(),
     );
-    return { ok: true, record: cloneRecord(erased) };
   }
 
   #commitRecord(

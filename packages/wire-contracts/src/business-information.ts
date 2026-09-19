@@ -466,6 +466,7 @@ const recordShape = {
 export const NativeManagedRecordSchema = z.strictObject({
   authority: z.literal('native'),
   ...recordShape,
+  retentionExpiresAt: instant.nullable(),
   origin: ManagedRecordOriginSchema,
   assigneeSubject: id.optional(),
   request: ManagedRecordRequestStateSchema.optional(),

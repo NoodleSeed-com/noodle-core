@@ -14,6 +14,7 @@ import {
   SOLUTION_COMMON_FLAGS,
 } from './catalog-data-solution-flags.js';
 import { SOLUTION_PAGE } from './catalog-data-solution-page.js';
+import { COLLECTION_ARGUMENT, SOLUTION_RECORDS } from './catalog-data-solution-records.js';
 import { SOLUTION_WORKSPACE } from './catalog-data-solution-workspace.js';
 import type { CommandSpec, FlagSpec } from './catalog-types.js';
 
@@ -40,109 +41,6 @@ const RETENTION: FlagSpec = {
   summary: 'Managed-record retention in days.',
   constraints: { choices: [7, 30, 90], default: 30 },
 };
-
-const COLLECTION_ARGUMENT = {
-  ...REQUIRED_ARGUMENT,
-  name: 'collection',
-  summary: 'Managed collection key.',
-};
-const RECORD_ARGUMENT = {
-  ...REQUIRED_ARGUMENT,
-  name: 'record',
-  summary: 'Managed record identifier.',
-};
-
-const RECORD_QUERY_FLAGS: readonly FlagSpec[] = [
-  {
-    ...OPTIONAL_FLAG,
-    name: 'filters',
-    type: 'string',
-    value: '<json>',
-    summary:
-      'JSON array of up to eight field/value equality filters, combined with AND. Only declared fields.',
-  },
-  {
-    ...OPTIONAL_FLAG,
-    name: 'sort-field',
-    type: 'string',
-    value: '<field>',
-    summary: 'Declared native collection sort field.',
-  },
-  {
-    ...OPTIONAL_FLAG,
-    name: 'sort-direction',
-    type: 'string',
-    value: '<asc|desc>',
-    summary: 'Sort direction; requires --sort-field.',
-  },
-  {
-    ...OPTIONAL_FLAG,
-    name: 'created-at-from',
-    type: 'string',
-    value: '<timestamp>',
-    summary: 'Inclusive creation-time lower bound; narrows the 10,000-record payload-query scan.',
-  },
-  {
-    ...OPTIONAL_FLAG,
-    name: 'created-at-to',
-    type: 'string',
-    value: '<timestamp>',
-    summary: 'Inclusive creation-time upper bound.',
-  },
-];
-
-const RECORD_FLAGS: readonly FlagSpec[] = [
-  ...SOLUTION_COMMON_FLAGS,
-  {
-    ...OPTIONAL_FLAG,
-    name: 'data',
-    type: 'string',
-    value: '<json>',
-    summary: 'Structured JSON record data.',
-  },
-  {
-    ...OPTIONAL_FLAG,
-    name: 'idempotency-key',
-    type: 'string',
-    value: '<key>',
-    summary: 'Retry-safe create key.',
-  },
-  {
-    ...OPTIONAL_FLAG,
-    name: 'expected-revision',
-    type: 'integer',
-    value: '<revision>',
-    summary: 'Expected current record revision.',
-  },
-  {
-    ...OPTIONAL_FLAG,
-    name: 'status',
-    type: 'string',
-    value: '<status>',
-    summary: 'Record status or list filter.',
-  },
-  {
-    ...OPTIONAL_FLAG,
-    name: 'assignee',
-    type: 'string',
-    value: '<subject>',
-    summary: 'Assignee subject or list filter.',
-  },
-  {
-    ...OPTIONAL_FLAG,
-    name: 'note',
-    type: 'string',
-    value: '<text>',
-    summary: 'Operator note text.',
-  },
-  ...PAGING_FLAGS,
-  {
-    ...OPTIONAL_FLAG,
-    name: 'include-deleted',
-    type: 'boolean',
-    summary: 'Include payload-free tombstones.',
-  },
-];
 
 export const CATALOG_SOLUTIONS: CommandSpec = {
   name: 'solutions',
@@ -660,59 +558,7 @@ export const CATALOG_SOLUTIONS: CommandSpec = {
         },
       ],
     },
-    {
-      name: 'records',
-      summary: 'Operate one installed managed collection.',
-      arguments: [],
-      flags: [],
-      usage:
-        'solutions records <list|create|get|update|assign|status|note|activity|delete|migrate-schema|export> <installation> <collection> [record] [options]',
-      subcommands: [
-        ...[
-          'list',
-          'create',
-          'get',
-          'update',
-          'assign',
-          'status',
-          'note',
-          'activity',
-          'delete',
-          'migrate-schema',
-          'export',
-        ].map((name) => ({
-          name,
-          summary:
-            name === 'activity'
-              ? 'Read native record history newest first; default 50, maximum 100, with --cursor for older pages.'
-              : name === 'migrate-schema'
-                ? 'Administrator-only conversion of an eligible legacy request record with revision protection.'
-                : `${name[0]?.toUpperCase()}${name.slice(1)} managed records.`,
-          arguments: [
-            INSTALLATION_ARGUMENT,
-            COLLECTION_ARGUMENT,
-            ...(name === 'list' || name === 'create' || name === 'export' ? [] : [RECORD_ARGUMENT]),
-          ],
-          flags: [
-            ...RECORD_FLAGS,
-            ...(name === 'list' ? RECORD_QUERY_FLAGS : []),
-            ...(name === 'update'
-              ? [
-                  {
-                    ...OPTIONAL_FLAG,
-                    name: 'unset',
-                    type: 'string' as const,
-                    value: '<fields>',
-                    summary:
-                      'Comma-separated optional field keys to remove; cannot overlap --data. May be used without --data.',
-                  },
-                ]
-              : []),
-          ],
-          jsonOutput: { mode: 'single' as const },
-        })),
-      ],
-    },
+    SOLUTION_RECORDS,
     {
       name: 'sources',
       summary: 'Inspect and control one external collection source.',

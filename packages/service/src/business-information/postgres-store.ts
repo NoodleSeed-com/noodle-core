@@ -14,6 +14,7 @@ import {
   type PostgresInstallationStoreOptions,
 } from './postgres-installations.js';
 import { PostgresBusinessInvitations } from './postgres-invitations.js';
+import { PostgresNativeRecordLifecycle } from './postgres-native-lifecycle.js';
 import {
   PostgresManagedRequestStore,
   type PostgresManagedRequestStoreOptions,
@@ -33,6 +34,7 @@ export interface PostgresBusinessInformationStoreOptions
 export class PostgresBusinessInformationStore implements BusinessInformationStore {
   readonly staff = new BusinessStaffAuthority((scope, subject) => this.getGrant(scope, subject));
   readonly pages: PostgresBusinessPages;
+  readonly nativeLifecycle: PostgresNativeRecordLifecycle;
   readonly #principals = new BusinessPrincipalAuthority();
   readonly #pool: Pool;
   readonly #installations: PostgresInstallationStore;
@@ -52,6 +54,12 @@ export class PostgresBusinessInformationStore implements BusinessInformationStor
       throw new Error('Postgres business information persistence requires a payload cipher');
     }
     this.#pool = pool;
+    this.nativeLifecycle = new PostgresNativeRecordLifecycle(
+      pool,
+      this.staff,
+      this.#principals,
+      options.now,
+    );
     this.pages = new PostgresBusinessPages(pool, cipher, this.#principals, this.staff);
     this.#installations = new PostgresInstallationStore(pool, options);
     this.#invitations = new PostgresBusinessInvitations(pool, options);

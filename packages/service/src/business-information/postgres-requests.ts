@@ -30,6 +30,7 @@ import {
 import { decodeCursor, encodeCursor, scopeKey } from './pagination.js';
 import { lockInstallationApplication } from './postgres-application-lifecycle.js';
 import { validAssignee } from './postgres-assignees.js';
+import { lockNativeIntakePolicy } from './postgres-native-lifecycle.js';
 import { listPostgresNativeRecords } from './postgres-native-query.js';
 import {
   type ActivityRow,
@@ -103,7 +104,7 @@ export class PostgresManagedRequestStore implements ManagedRequestStore {
     const installation = await this.#requiredInstallation(input.scope);
     validateCollectionEnabled(installation, input.collectionKey);
     const digest = idempotencyDigest(input.idempotencyKey);
-    const candidate = initialRecord({
+    let candidate = initialRecord({
       installation,
       collectionKey: input.collectionKey,
       id: this.#id(),
@@ -126,22 +127,10 @@ export class PostgresManagedRequestStore implements ManagedRequestStore {
         };
       }
       const application = await lockInstallationApplication(client, input.scope);
-      const intake = await client.query<{
-        readonly intake_active: boolean;
-        readonly application_generation: string | null;
-      }>(
-        `SELECT intake_active,application_generation FROM business_solution_installations
-           WHERE org_slug=$1 AND app_slug=$2 AND environment=$3 AND installation_id=$4
-           FOR SHARE`,
-        [
-          candidate.scope.org,
-          candidate.scope.app,
-          candidate.scope.env,
-          candidate.scope.installationId,
-        ],
-      );
-      const state = intake.rows[0];
-      if (state === undefined) throw new Error('solution installation was not found');
+      const state = await lockNativeIntakePolicy(client, candidate.scope);
+      // A migration may have won after the initial source read. The locked policy owns creation.
+      if (state.native_record_lifecycle === 'explicit_erasure')
+        candidate = { ...candidate, retentionExpiresAt: null };
       if (
         ((input.origin.kind === 'embedded' || input.publicInput === true) &&
           !state.intake_active) ||
@@ -366,7 +355,8 @@ export class PostgresManagedRequestStore implements ManagedRequestStore {
       if (
         current === undefined ||
         current.deletedAt !== undefined ||
-        Date.parse(current.retentionExpiresAt) <= this.#now().getTime()
+        (current.retentionExpiresAt !== null &&
+          Date.parse(current.retentionExpiresAt) <= this.#now().getTime())
       )
         return { ok: false, reason: 'not_found', currentRevision: current?.revision ?? 0 };
       if (current.revision !== input.expectedRevision)
@@ -533,8 +523,8 @@ export class PostgresManagedRequestStore implements ManagedRequestStore {
     if (input.includeDeleted !== true) clauses.push('deleted_at IS NULL');
     add(
       input.includeDeleted === true
-        ? '(deleted_at IS NOT NULL OR retention_expires_at>?)'
-        : 'retention_expires_at>?',
+        ? '(deleted_at IS NOT NULL OR retention_expires_at IS NULL OR retention_expires_at>?)'
+        : '(retention_expires_at IS NULL OR retention_expires_at>?)',
       input.retentionAt,
     );
     if (input.status !== undefined) add('status=?', input.status);
@@ -645,7 +635,11 @@ export class PostgresManagedRequestStore implements ManagedRequestStore {
     record: ManagedRequestRecord,
     now: Date,
   ): Promise<ManagedRequestRecord> {
-    if (record.deletedAt !== undefined || record.retentionExpiresAt > now.toISOString()) {
+    if (
+      record.deletedAt !== undefined ||
+      record.retentionExpiresAt === null ||
+      record.retentionExpiresAt > now.toISOString()
+    ) {
       return record;
     }
     const erased = deletedRecord(record, 'system:retention', now, 'retention_expired');

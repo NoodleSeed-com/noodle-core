@@ -8,6 +8,7 @@ import type {
 import { builtInDefinitionAtRelease } from '../src/business-information/profiles.js';
 import { describeNativeRecordQueries } from './business-information-query-suite.js';
 import { describeNativeRecordRetention } from './business-information-retention-suite.js';
+import { describeNativeRecordLifecycle } from './native-record-lifecycle-suite.js';
 
 export interface StoreHarness {
   readonly store: BusinessInformationStore;
@@ -17,6 +18,7 @@ export interface StoreHarness {
 export function describeBusinessInformationStore(makeHarness: () => Promise<StoreHarness>): void {
   describeNativeRecordQueries(makeHarness);
   describeNativeRecordRetention(makeHarness);
+  describeNativeRecordLifecycle(makeHarness);
   const uniqueScope = (suffix = randomUUID()): InstallationScope => ({
     org: `org-${suffix}`,
     app: 'operations',

@@ -253,9 +253,12 @@ export function initialRecord(input: {
     ...(collection.behavior?.kind === 'request' ? { status: 'new' as const } : {}),
     origin: normalizeOrigin(input.origin),
     revision: 1,
-    retentionExpiresAt: new Date(
-      input.now.getTime() + input.installation.retentionDays * 24 * 60 * 60 * 1000,
-    ).toISOString(),
+    retentionExpiresAt:
+      input.installation.nativeRecordLifecycle === 'explicit_erasure'
+        ? null
+        : new Date(
+            input.now.getTime() + input.installation.retentionDays * 24 * 60 * 60 * 1000,
+          ).toISOString(),
     createdAt,
     createdBySubject: actor,
     updatedAt: createdAt,

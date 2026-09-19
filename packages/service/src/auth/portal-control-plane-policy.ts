@@ -81,6 +81,7 @@ function portalOperationAllowed(method: string, path: string): boolean {
     return ['GET', 'PATCH'].includes(method);
   if (operation === 'activate') return method === 'POST';
   if (operation === 'notice') return ['GET', 'PUT'].includes(method);
+  if (operation === 'record-lifecycle') return ['GET', 'POST'].includes(method);
   if (/^(activity(?:\/(?:export|preview))?|assignees|connections)$/.test(operation))
     return method === 'GET';
   if (/^connections\/[^/]+\/(connect|disconnect)$/.test(operation)) return method === 'POST';
