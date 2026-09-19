@@ -3,6 +3,7 @@ import {
   compileManifest,
   InMemoryCatalog,
 } from '@noodle-borg/compiler';
+import { resolveManagedOrigins } from '@noodle-borg/runtime';
 import { describe, expect, it } from 'vitest';
 import { managedSolutionManifest } from '../src/business-information/managed-solution-executable.js';
 import {
@@ -42,5 +43,34 @@ describe('curated managed solution executables', () => {
     const old = builtInDefinitionAtRelease('travel', 2);
     expect(old.variables).toBeUndefined();
     expect(() => managedSolutionManifest(old)).toThrow('executable');
+  });
+  it('serves a hosted page without a customer website and optionally adds an embed on the same surface', () => {
+    const manifest = managedSolutionManifest(builtInDefinition('travel'), 'https://portal.example');
+    const compiled = compileManifest(manifest, {
+      catalog: new InMemoryCatalog([BUILTIN_RECORD_CATALOG_CONNECTOR]),
+    });
+    expect(compiled.ok, JSON.stringify(compiled)).toBe(true);
+    if (!compiled.ok) return;
+    for (const website of [undefined, 'https://customer.example']) {
+      const resolved = resolveManagedOrigins(
+        compiled.artifact,
+        website ? { WEBSITE_ORIGIN: JSON.stringify(website) } : {},
+        { allowUnconfiguredPortal: true },
+      );
+      expect(resolved.ok, JSON.stringify(resolved)).toBe(true);
+      if (!resolved.ok) continue;
+      const expected = [...(website ? [website] : []), 'https://portal.example'];
+      expect(resolved.artifact.server.assistant?.allowedOrigins).toEqual(expected);
+      expect(resolved.artifact.server.assistant?.surfaces).toMatchObject([
+        { mode: 'public', origins: expected },
+      ]);
+    }
+  });
+  it.each([
+    'https://portal.example/path',
+    'https://user@portal.example',
+    'http://public.example',
+  ])('rejects an unsafe operator page origin: %s', (origin) => {
+    expect(() => managedSolutionManifest(builtInDefinition('travel'), origin)).toThrow('origin');
   });
 });

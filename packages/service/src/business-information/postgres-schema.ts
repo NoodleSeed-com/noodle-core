@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { builtInManagedReleaseDefinitions } from './managed-releases.js';
 import { ensureBusinessNoticeSchema } from './postgres-business-notice.js';
+import { ensureBusinessPageSchema } from './postgres-business-pages.js';
 import { ensureInstallationCapacity } from './postgres-installation-capacity.js';
 import { ensureNativeStorageBudget } from './postgres-storage-budget.js';
 
@@ -34,6 +35,7 @@ export async function ensureBusinessInformationSchema(pool: Pool): Promise<void>
   );
   await ensureInstallationCapacity(pool);
   await ensureBusinessNoticeSchema(pool);
+  await ensureBusinessPageSchema(pool);
   await pool.query(
     `ALTER TABLE business_solution_installations ADD COLUMN IF NOT EXISTS application_generation text`,
   );

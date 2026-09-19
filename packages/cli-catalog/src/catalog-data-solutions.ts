@@ -1,5 +1,6 @@
 /** Solution installation/operator catalog. Imports only dependency-free sibling data. */
 
+import { SOLUTION_DRAFTS } from './catalog-data-solution-drafts.js';
 import {
   AUTH_TOKEN,
   EXPECTED_REVISION,
@@ -12,6 +13,7 @@ import {
   SERVICE,
   SOLUTION_COMMON_FLAGS,
 } from './catalog-data-solution-flags.js';
+import { SOLUTION_PAGE } from './catalog-data-solution-page.js';
 import type { CommandSpec, FlagSpec } from './catalog-types.js';
 
 const APP: FlagSpec = {
@@ -149,6 +151,8 @@ export const CATALOG_SOLUTIONS: CommandSpec = {
   arguments: [],
   flags: [],
   subcommands: [
+    SOLUTION_DRAFTS,
+    SOLUTION_PAGE,
     {
       name: 'installation-options',
       summary: 'List organizations currently authorized to install solutions.',

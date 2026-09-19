@@ -19,8 +19,10 @@ import {
 import { runSolutionActivity } from './solutions-activity.js';
 import { runSolutionConnections } from './solutions-connections.js';
 import { runSolutionOperations } from './solutions-coordination.js';
+import { runSolutionDrafts } from './solutions-drafts.js';
 import { runSolutionInstallationOptions } from './solutions-installation-options.js';
 import { runSolutionOnboarding } from './solutions-onboarding.js';
+import { runSolutionPage } from './solutions-page.js';
 
 export interface SolutionsCommandOptions {
   readonly fetchImpl?: typeof fetch;
@@ -80,7 +82,7 @@ function commandUsage(message: string, json: boolean): number {
     'solutions',
     usageError(
       message,
-      'noodle solutions catalog | installation-options | agreement | notice | list | install | inspect | activate | pause | resume | grants | invitations | records | sources | connections | activity | operations',
+      'noodle solutions catalog | installation-options | agreement | notice | drafts | page | list | install | inspect | activate | pause | resume | grants | invitations | records | sources | connections | activity | operations',
     ),
     json,
   );
@@ -185,6 +187,8 @@ export async function runSolutions(
   home: ConfigLocation,
   options: SolutionsCommandOptions = {},
 ): Promise<number> {
+  if (rest[0] === 'drafts') return runSolutionDrafts(rest.slice(1), env, home, options);
+  if (rest[0] === 'page') return runSolutionPage(rest.slice(1), env, home, options);
   if (rest[0] === 'agreement' || rest[0] === 'notice')
     return runSolutionOnboarding(rest[0], rest.slice(1), env, home, options);
   if (rest[0] === 'operations') return runSolutionOperations(rest.slice(1), env, home, options);

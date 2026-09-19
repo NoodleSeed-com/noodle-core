@@ -1,6 +1,7 @@
 import type { ArtifactVariableDeclaration, ManagedCollectionControls } from '@noodle-borg/compiler';
 import type { ManagedRecordQuery } from '@noodle-borg/wire-contracts';
 import type { BusinessNoticeStore } from './business-notice.js';
+import type { BusinessPageStore } from './business-page.js';
 import type { BusinessPrincipalProvider } from './principal-authority.js';
 
 export type JsonPrimitive = string | number | boolean | null;
@@ -487,6 +488,7 @@ export interface BusinessInformationStore
     BusinessNoticeStore,
     BusinessGrantStore,
     ManagedRequestStore {
+  readonly pages: BusinessPageStore;
   configurePrincipalAuthority(provider: BusinessPrincipalProvider | undefined): void;
   listEligibleAssignees(scope: InstallationScope): Promise<readonly BusinessGrant[]>;
 }

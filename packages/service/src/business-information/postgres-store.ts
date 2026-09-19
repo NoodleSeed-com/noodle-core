@@ -8,6 +8,7 @@ import type {
   SolutionInstallationStore,
 } from './contracts.js';
 import { getBusinessNoticeRow, setBusinessNoticeRow } from './postgres-business-notice.js';
+import { PostgresBusinessPages } from './postgres-business-pages.js';
 import {
   PostgresInstallationStore,
   type PostgresInstallationStoreOptions,
@@ -29,6 +30,7 @@ export interface PostgresBusinessInformationStoreOptions
 
 /** Hosted authoritative adapter. Construction fails closed unless a payload cipher is supplied. */
 export class PostgresBusinessInformationStore implements BusinessInformationStore {
+  readonly pages: PostgresBusinessPages;
   readonly #principals = new BusinessPrincipalAuthority();
   readonly #pool: Pool;
   readonly #installations: PostgresInstallationStore;
@@ -48,6 +50,7 @@ export class PostgresBusinessInformationStore implements BusinessInformationStor
       throw new Error('Postgres business information persistence requires a payload cipher');
     }
     this.#pool = pool;
+    this.pages = new PostgresBusinessPages(pool, cipher, this.#principals);
     this.#installations = new PostgresInstallationStore(pool, options);
     this.#invitations = new PostgresBusinessInvitations(pool, options);
     this.#requests = new PostgresManagedRequestStore(

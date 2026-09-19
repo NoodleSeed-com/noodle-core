@@ -9,11 +9,26 @@ import { InMemoryOAuthStore } from '../src/oauth/store.js';
 const resource = 'https://service.example';
 const base = '/v1/orgs/acme/solution-installations/installed';
 const authorized = [
+  ['GET', `${base}/page`],
+  ['PUT', `${base}/page`],
+  ['POST', `${base}/page/publish`],
+  ['POST', `${base}/page/unpublish`],
   ['GET', '/v1/whoami'],
   ['GET', '/v1/whoami?scope=identity'],
   ['GET', '/v1/me/solution-installations'],
   ['GET', '/v1/me/solution-installation-options'],
   ['GET', '/v1/solutions/catalog'],
+  ['GET', '/v1/orgs/acme/apps/assistant/drafts'],
+  ['POST', '/v1/orgs/acme/apps/assistant/drafts'],
+  ['GET', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838'],
+  ['PATCH', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838'],
+  ['DELETE', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838'],
+  ['POST', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838/undo'],
+  ['GET', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838/history'],
+  [
+    'GET',
+    '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838/diff?from=1&to=2',
+  ],
   ['GET', '/v1/orgs/acme/billing'],
   ['GET', '/v1/orgs/acme/agreement'],
   ['POST', '/v1/orgs/acme/agreement'],
@@ -50,6 +65,15 @@ const authorized = [
   ['POST', `${base}/collections/items/source/refresh`],
 ] as const;
 const denied = [
+  ['DELETE', `${base}/page`],
+  ['GET', `${base}/page/publish`],
+  ['POST', `${base}/page/publish/extra`],
+  ['POST', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838/diff'],
+  ['DELETE', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838/history'],
+  ['POST', '/v1/orgs/acme/apps/assistant/drafts/id/deploy'],
+  ['GET', '/v1/orgs/acme/apps/assistant/drafts/id/secrets'],
+  ['POST', '/v1/orgs/acme/apps/assistant/drafts/id/publish'],
+  ['PUT', '/v1/orgs/acme/apps/assistant/drafts'],
   ['POST', '/v1/orgs/acme/apps/demo/envs/prod/deploy'],
   ['GET', `${base}/activate`],
   ['PATCH', `${base}/activate`],

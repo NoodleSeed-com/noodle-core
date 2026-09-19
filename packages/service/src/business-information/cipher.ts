@@ -106,7 +106,10 @@ function validateStoredContent(value: unknown): StoredRecordContent {
   };
 }
 
-function validateSealedPayload(value: unknown): SealedPayload {
+export function validateSealedPayload(
+  value: unknown,
+  maximumCiphertextCharacters = 512 * 1024,
+): SealedPayload {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error('payload cipher returned an invalid envelope');
   }
@@ -123,6 +126,6 @@ function validateSealedPayload(value: unknown): SealedPayload {
     version: 1,
     algorithm: validateScalar('cipher algorithm', input.algorithm, 128),
     keyId: validateScalar('cipher key id', input.keyId, 256),
-    ciphertext: validateScalar('ciphertext', input.ciphertext, 512 * 1024),
+    ciphertext: validateScalar('ciphertext', input.ciphertext, maximumCiphertextCharacters),
   };
 }

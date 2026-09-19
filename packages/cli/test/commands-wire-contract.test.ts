@@ -67,7 +67,23 @@ describe('commands --json public wire contract', () => {
 
     expect(envelope.data.commands).toHaveLength(65);
     const paths = leafPaths(envelope.data.commands);
-    expect(paths).toHaveLength(283);
+    expect(paths).toHaveLength(295);
+    expect(paths.filter((path) => path.startsWith('solutions page '))).toEqual([
+      'solutions page show',
+      'solutions page save',
+      'solutions page publish',
+      'solutions page unpublish',
+    ]);
+    expect(paths.filter((path) => path.startsWith('solutions drafts '))).toEqual([
+      'solutions drafts history',
+      'solutions drafts diff',
+      'solutions drafts list',
+      'solutions drafts show',
+      'solutions drafts create',
+      'solutions drafts edit',
+      'solutions drafts undo',
+      'solutions drafts delete',
+    ]);
     expect(paths.filter((path) => path.startsWith('capabilities '))).toEqual([
       'capabilities inspect',
       'capabilities configure',

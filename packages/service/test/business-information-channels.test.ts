@@ -116,6 +116,14 @@ const patch = async (body: unknown, token = 'owner') =>
   });
 
 describe('business channel projection and authority', () => {
+  it('projects a canonical hosted-page URL only when explicitly configured', async () => {
+    expect((await (await read()).json()).data.businessPageUrl).toBeUndefined();
+    deps = { ...deps, pageOrigin: 'https://portal.example' };
+    const installation = await store.getInstallation(scope);
+    expect((await (await read()).json()).data.businessPageUrl).toBe(
+      `https://portal.example/b/${installation!.publicId}`,
+    );
+  });
   it('shows actual runtime MCP and stable assistant embed identity rather than form URLs', async () => {
     const embed = await embeds.ensure({ ...scope, surfaceMode: 'public', now: new Date() });
     await counters.consume({ key: `turns:${embed.embedId}`, limit: 100 }, new Date());

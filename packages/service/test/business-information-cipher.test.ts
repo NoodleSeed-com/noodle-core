@@ -1,5 +1,6 @@
 import { SecretBox, staticMasterKeyProvider } from '@noodle-borg/runtime';
 import { describe, expect, it } from 'vitest';
+import { validateSealedPayload } from '../src/business-information/cipher.js';
 import { SecretBoxPayloadCipher } from '../src/business-information-cipher.js';
 
 const context = {
@@ -27,5 +28,19 @@ describe('SecretBoxPayloadCipher', () => {
       'context mismatch',
     );
     expect(sealed.ciphertext).not.toContain('private');
+  });
+
+  it('keeps the record envelope bound when another owner needs a larger explicit bound', () => {
+    const envelope = {
+      version: 1,
+      algorithm: 'fixture',
+      keyId: 'key',
+      ciphertext: 'x'.repeat(512 * 1024 + 1),
+    };
+    expect(() => validateSealedPayload(envelope)).toThrow('ciphertext');
+    expect(validateSealedPayload(envelope, 1024 * 1024).ciphertext.length).toBe(512 * 1024 + 1);
+    expect(() =>
+      validateSealedPayload({ ...envelope, ciphertext: 'line\nbreak' }, 1024 * 1024),
+    ).toThrow('ciphertext');
   });
 });

@@ -188,7 +188,11 @@ export async function activateSolutionInstallation(
     }
     return { ok: true, deploymentId };
   };
-  const source = await executableSource(installation, dependencies.registry);
+  const source = await executableSource(
+    installation,
+    dependencies.registry,
+    dependencies.options.businessPageOrigin,
+  );
   if (!source.ok) return source;
   const current = await dependencies.registry.getActiveByTenant(tenant);
   const declarations =
@@ -262,6 +266,7 @@ type ExecutableSource = Pick<
 async function executableSource(
   installation: SolutionInstallation,
   registry: ServerRegistry,
+  hostedPageOrigin?: string,
 ): Promise<
   | { readonly ok: true; readonly value: ExecutableSource }
   | Extract<SolutionInstallationActivationResult, { ok: false }>
@@ -271,7 +276,9 @@ async function executableSource(
     return {
       ok: true,
       value: {
-        manifest: JSON.stringify(managedSolutionManifest(installation.definition)),
+        manifest: JSON.stringify(
+          managedSolutionManifest(installation.definition, hostedPageOrigin),
+        ),
         accessMode: 'public',
         serverVersion: '1',
       },

@@ -1,4 +1,9 @@
 import type { ControlPlaneAuthResult, DeployAuthGate } from '@noodle-borg/control-plane/portable';
+import { applicationDraftMethods, parseApplicationDraftPath } from '../application-drafts/paths.js';
+import {
+  businessPageMethods,
+  parseBusinessPagePath,
+} from '../business-information/business-page-paths.js';
 import type { OAuthStore } from '../oauth/store.js';
 
 /** Restrict only verified Noodle tokens; registration purpose never comes from caller metadata. */
@@ -42,6 +47,10 @@ function denied(message: string): ControlPlaneAuthResult {
 }
 
 function portalOperationAllowed(method: string, path: string): boolean {
+  const page = parseBusinessPagePath(path);
+  if (page) return businessPageMethods(page).includes(method);
+  const draft = parseApplicationDraftPath(path);
+  if (draft) return applicationDraftMethods(draft).includes(method);
   if (
     method === 'GET' &&
     [

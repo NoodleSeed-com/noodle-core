@@ -23,7 +23,7 @@ import { createArchivePreflight } from './archive-preflight.js';
 import { ArchiveSweeper, resolveArchiveRetentionDays } from './archive-sweeper.js';
 import { serveLocalAsset } from './assets.js';
 import { assistantRouteDependencies } from './assistant-composition.js';
-import { resolveBuildInfo, serviceInfoPayload } from './build-info.js';
+import { resolveBuildInfo } from './build-info.js';
 import {
   createBusinessInformationRuntime,
   resolvePrivateInstallationDefinition,
@@ -91,6 +91,7 @@ import { dispatchProtectedResourceMetadata } from './routes/protected-resource-m
 import { dispatchResourceReads } from './routes/resource-read-dispatch.js';
 import { handleRollback } from './routes/rollback.js';
 import { createServicePrincipalDispatcher } from './routes/service-principals-dispatch.js';
+import { createServiceProbeDispatcher } from './routes/service-probes.js';
 import { dispatchWhatsAppRoutes } from './routes/whatsapp.js';
 import { servicePrincipalDataPlaneHooks } from './service-principal-data-plane.js';
 import { InMemoryAlertRuleStore } from './store/alert-rules.js';
@@ -281,19 +282,16 @@ export function createServiceHandler(
     installations: businessInformationStore,
     activity,
   });
+  const dispatchProbe = createServiceProbeDispatcher({
+    tls,
+    moduleHost,
+    buildInfo,
+    options,
+    whatsapp,
+  });
   return (req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    // Liveness/readiness probes: un-gated and **not** HTTPS-enforced — Cloud Run's internal probe is plain
-    // HTTP, so enforcing HTTPS here would `426` the probe and the revision would never go healthy (ADR 0034).
-    // `/healthz` is a pure liveness 200 (no store touch); `/readyz` reflects the injected readiness probe.
-    if (req.method === 'GET' && (url.pathname === '/healthz' || url.pathname === '/readyz')) {
-      applySecurityHeaders(res, tls);
-      if (url.pathname === '/healthz') return sendJson(res, 200, { status: 'ok' });
-      void Promise.resolve(moduleHost.ready())
-        .then((ready) => sendJson(res, ready ? 200 : 503, { status: ready ? 'ready' : 'unready' }))
-        .catch(() => sendJson(res, 503, { status: 'unready' }));
-      return;
-    }
+    if (dispatchProbe(req, res, url)) return;
     if (options.developerMcp === true && url.pathname === DEVELOPER_MCP_PATH) {
       const mount = createDeveloperMcpMountOptions({
         registry,
@@ -308,17 +306,6 @@ export function createServiceHandler(
         respondRouteError(logger, res, 'developer.mcp.failed', error),
       );
       return;
-    }
-
-    // Deployed-version visibility (ADR 0080): un-gated, non-HTTPS-enforced like the probes so the
-    // post-deploy smoke can confirm exactly which commit is live. Non-sensitive fields only.
-    if (req.method === 'GET' && url.pathname === '/v1/service/info') {
-      applySecurityHeaders(res, tls);
-      return sendJson(
-        res,
-        200,
-        serviceInfoPayload(buildInfo, options.developerMcp === true, whatsapp !== undefined),
-      );
     }
 
     if (url.pathname.startsWith('/v1/') && rejectIncompatibleCli(req, res, buildInfo, tls)) return;
@@ -392,6 +379,10 @@ export function createServiceHandler(
       businessInformationStore !== undefined &&
       options.businessInformationEnabled !== false &&
       dispatchBusinessInformationRoutes(req, res, url, {
+        authoring: options.businessAuthoring,
+        pageOrigin: options.businessPageOrigin,
+        pageServiceUrl: options.publicBaseUrl,
+        maxDraftBody: maxDeployBody,
         ...(whatsapp ? { readWhatsApp: whatsapp.projection.bind(whatsapp) } : {}),
         store: businessInformationStore,
         ...(businessOnboarding ? { businessOnboarding } : {}),

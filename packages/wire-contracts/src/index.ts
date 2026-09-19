@@ -21,6 +21,7 @@ export * from './billing-org-transfer.js';
 export * from './billing-read.js';
 export * from './business-information.js';
 export * from './business-information-query.js';
+export * from './business-page.js';
 export * from './config.js';
 export * from './control-plane.js';
 export * from './deployment-package.js';
@@ -275,8 +276,10 @@ export function formatWireError(error: z.ZodError): string {
 export * from '@noodle-borg/managed-capabilities/contracts';
 export * from './application-activity.js';
 export * from './application-connections.js';
+export * from './application-drafts.js';
 export * from './application-onboarding.js';
 export * from './billing-catalog.js';
+export * from './business-workspaces.js';
 export * from './deployment-deletion.js';
 export * from './operation-coordination.js';
 export {

@@ -16,6 +16,7 @@ import type {
   RequestPage,
   SolutionInstallation,
 } from './contracts.js';
+import { InMemoryBusinessPages } from './in-memory-business-pages.js';
 import {
   InMemoryInstallationLifecycle,
   type InstallationApplicationResolver,
@@ -78,6 +79,7 @@ export type { InMemoryBusinessInformationStoreOptions } from './in-memory-store-
 
 /** Process-local development/test adapter. Hosted services must use the PostgreSQL adapter. */
 export class InMemoryBusinessInformationStore implements BusinessInformationStore {
+  readonly pages: InMemoryBusinessPages;
   readonly #installations = new Map<string, SolutionInstallation>();
   readonly #installationIds = new Map<string, string>();
   readonly #publicIds = new Map<string, string>();
@@ -101,6 +103,7 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
     this.#id = options.id ?? randomUUID;
     this.#publicId = options.publicId ?? (() => `sol_${randomUUID().replaceAll('-', '')}`);
     this.#managedDefinition = options.managedDefinition;
+    this.pages = new InMemoryBusinessPages(this, this.#locks, this.#principals, this.#now);
     this.#lifecycle = new InMemoryInstallationLifecycle({
       installations: this.#installations,
       getGrant: (scope, subject) => this.#grants.get(grantKey(scope, subject)),

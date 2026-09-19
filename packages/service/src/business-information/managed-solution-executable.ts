@@ -9,7 +9,20 @@ import { managedSolutionBlueprint } from './managed-solution-blueprints.js';
 /** System-owned manifest data for an explicitly curated solution, admitted by the ordinary compiler. */
 export function managedSolutionManifest(
   definition: SolutionDefinitionSnapshot,
+  hostedPageOrigin?: string,
 ): Record<string, unknown> {
+  if (hostedPageOrigin !== undefined) {
+    const url = new URL(hostedPageOrigin);
+    if (
+      url.origin !== hostedPageOrigin ||
+      !(
+        url.protocol === 'https:' ||
+        (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+      )
+    )
+      throw new Error('Invalid hosted page origin');
+  }
+  const origins = ['${env.WEBSITE_ORIGIN}', ...(hostedPageOrigin ? [hostedPageOrigin] : [])];
   const ref = definition.reference;
   const blueprint =
     ref.kind === 'managed' ? managedSolutionBlueprint(ref.definitionId, ref.release) : undefined;
@@ -49,11 +62,11 @@ export function managedSolutionManifest(
       })),
       assistant: {
         model: { kind: 'noodle-managed' },
-        allowedOrigins: ['${env.WEBSITE_ORIGIN}'],
+        allowedOrigins: origins,
         surfaces: [
           {
             mode: 'public',
-            origins: ['${env.WEBSITE_ORIGIN}'],
+            origins,
             capabilities: [{ kind: 'tool', name: blueprint.tool }],
           },
         ],

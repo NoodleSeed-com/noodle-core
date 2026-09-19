@@ -56,6 +56,13 @@ import type { ConfigStore, ControlPlaneStore } from './store.js';
 import type { InvitationEmailSender, WelcomeEmailSender } from './welcome-email.js';
 
 export interface ServiceOptions {
+  /** Canonical Portal origin for hosted-page publication. Absent disables publication/public reads. */
+  readonly businessPageOrigin?: string;
+  /** Explicit versioned business authority; absent keeps browser source-authoring routes disabled. */
+  readonly businessAuthoring?: {
+    readonly workspaces: import('./business-workspaces/store.js').BusinessWorkspaceStore;
+    readonly drafts: import('./application-drafts/store.js').ApplicationDraftStore;
+  };
   /** Logged messaging custody and explicitly managed background worker, absent disables channel routes. */
   readonly whatsapp?: import('./channels/runtime.js').WhatsAppServiceOptions;
   /** Deployment-owned agreement authority. Hosted composition supplies an empty policy until documents are approved. */

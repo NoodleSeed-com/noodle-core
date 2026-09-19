@@ -53,6 +53,7 @@ export const ApplicationChannelsProjectionSchema = z
     revision: z.number().int().positive(),
     active: z.boolean(),
     canEdit: z.boolean(),
+    businessPageUrl: httpUrl.optional(),
     deploymentId: z.string().min(1).max(256).optional(),
     mcp,
     assistant,

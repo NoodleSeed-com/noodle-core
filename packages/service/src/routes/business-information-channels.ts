@@ -42,6 +42,7 @@ export interface BusinessChannelRouteDeps
   ) => Promise<NonNullable<ApplicationChannelsProjection['whatsapp']>>;
   readonly resolveEndpointBase: ResolveEndpointBase;
   readonly resolveEndpointUrlOptions?: ResolveEndpointUrlOptions;
+  readonly pageOrigin?: string | undefined;
 }
 
 /** Business grants project the existing MCP/assistant channel authority without developer permissions. */
@@ -118,6 +119,7 @@ export async function projectBusinessChannels(
     | 'resolveEndpointUrlOptions'
     | 'now'
     | 'readWhatsApp'
+    | 'pageOrigin'
   >,
 ): Promise<ApplicationChannelsProjection> {
   const tenant = {
@@ -132,6 +134,9 @@ export async function projectBusinessChannels(
     revision: installation.revision,
     active: installation.intakeActive,
     canEdit,
+    ...(deps.pageOrigin
+      ? { businessPageUrl: `${deps.pageOrigin}/b/${installation.publicId}` }
+      : {}),
     ...(whatsapp
       ? {
           whatsapp: {
