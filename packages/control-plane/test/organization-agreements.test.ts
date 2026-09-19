@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { InMemoryAtomicState } from '../src/in-memory-atomic-state.js';
 import { InMemoryControlPlaneStore } from '../src/in-memory-control-plane-store.js';
+import { InMemoryOrganizationStore } from '../src/in-memory-organization-store.js';
 import {
   agreementDocumentDigest,
   validateAgreementDocuments,
@@ -32,6 +33,27 @@ async function setup() {
 }
 
 describe('organization agreement acceptance', () => {
+  it('keeps legacy ownership check and receipt publication indivisible without a shared context', async () => {
+    const store = new InMemoryOrganizationStore();
+    await store.createOrg({ slug: 'legacy' });
+    await store.addOrgMember({
+      org: 'legacy',
+      subject: 'owner',
+      email: 'owner@example.test',
+      role: 'owner',
+    });
+    const input = { org: 'legacy', actorSubject: 'owner', documents };
+    const acceptance = store.acceptOrganizationAgreement(input);
+    await Promise.resolve();
+    const removal = store.removeOrgMember({ org: 'legacy', subject: 'owner' });
+    const observed = store.getOrganizationAgreement('legacy', documents.version);
+    const [receipt, , immediatelyVisible] = await Promise.all([acceptance, removal, observed]);
+    // A revocation must not finish before an earlier authorized acceptance becomes observable.
+    expect(immediatelyVisible).toEqual(receipt);
+    await expect(store.acceptOrganizationAgreement(input)).rejects.toMatchObject({
+      code: 'agreement_owner_required',
+    });
+  });
   agreementOwnerAuthorityConformance(async () => ({
     store: await setup(),
     org: 'first',

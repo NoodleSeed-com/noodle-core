@@ -126,9 +126,10 @@ export class InMemoryOrganizationAgreements implements OrganizationAgreementStor
         throw new OrganizationAgreementError('agreement_owner_required');
       return commit();
     };
-    return this.transactions.run(async () =>
-      authority ? authority.run(org, input.actorSubject, commit, legacy) : legacy(),
-    );
+    // Legacy check + publication is one synchronous operation; an enclosing context still stages maps.
+    return authority
+      ? this.transactions.run(() => authority.run(org, input.actorSubject, commit, legacy))
+      : legacy();
   }
 
   private commit(input: AcceptOrganizationAgreementInput): OrganizationAgreementAcceptance {
