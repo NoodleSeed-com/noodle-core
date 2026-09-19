@@ -264,7 +264,7 @@ function rethrowPersonalWorkspaceOwnerMutation(error: unknown): never {
 }
 
 export async function getOrgMemberRow(
-  pool: Pool,
+  pool: Pick<Pool, 'query'>,
   input: { readonly org: string; readonly subject: string },
 ): Promise<OrgMemberRecord | undefined> {
   const { rows } = await pool.query<OrgMemberRow>(

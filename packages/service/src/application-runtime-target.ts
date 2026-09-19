@@ -174,7 +174,12 @@ export function createApplicationServingRuntime(
   const businessInformationStore = options.businessInformationStore;
   const businessOnboarding =
     options.businessOnboarding !== undefined && businessInformationStore
-      ? new BusinessOnboarding(options.businessOnboarding, controlPlane, businessInformationStore)
+      ? new BusinessOnboarding(
+          options.businessOnboarding,
+          controlPlane,
+          businessInformationStore,
+          options.businessAuthoring?.workspaces,
+        )
       : undefined;
   const activateInstallation: SolutionInstallationActivator = (input) =>
     activateSolutionInstallation(input, {

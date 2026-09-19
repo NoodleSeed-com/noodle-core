@@ -28,9 +28,14 @@ export async function handleOrganizationAgreement(
   deps: BusinessInformationRouteDeps,
 ): Promise<void> {
   if (req.method !== 'GET' && req.method !== 'POST') return methodNotAllowed(res);
+  res.setHeader('cache-control', 'private, no-store');
   const identity = await requireIdentity(req, res, deps);
   if (identity === false) return;
-  if (!(await canManageMembers(deps.controlPlane, org, identity)))
+  const selected = await deps.workspaces?.authorize(org, identity.subject, 'settings:manage');
+  if (
+    selected === 'denied' ||
+    (selected !== 'allowed' && !(await canManageMembers(deps.controlPlane, org, identity)))
+  )
     return sendForbidden(res, 'organization owner required');
   if (!(await admitBusinessTarget(res, { org }))) return;
   const onboarding: BusinessOnboarding | undefined = deps.businessOnboarding;

@@ -18,6 +18,7 @@ import { InMemoryMcpSubdomainClaimStore } from './mcp-subdomain-claims.js';
 import {
   type AcceptOrganizationAgreementInput,
   InMemoryOrganizationAgreements,
+  type OrganizationAgreementOwnerAuthority,
 } from './organization-agreements.js';
 import {
   domainFromEmail,
@@ -68,8 +69,11 @@ export class InMemoryOrganizationStore {
     return this.#agreements.getOrganizationAgreement(org, version);
   }
 
-  acceptOrganizationAgreement(input: AcceptOrganizationAgreementInput) {
-    return this.#agreements.acceptOrganizationAgreement(input);
+  acceptOrganizationAgreement(
+    input: AcceptOrganizationAgreementInput,
+    authority?: OrganizationAgreementOwnerAuthority,
+  ) {
+    return this.#agreements.acceptOrganizationAgreement(input, authority);
   }
 
   hasOrg(org: string): boolean {

@@ -1,10 +1,11 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import {
   type AcceptOrganizationAgreementInput,
   type AgreementDocuments,
   agreementDocumentDigest,
   type OrganizationAgreementAcceptance,
   OrganizationAgreementError,
+  type OrganizationAgreementOwnerAuthority,
   validateAgreementDocuments,
 } from './organization-agreements.js';
 import { validateSlug } from './validation.js';
@@ -62,19 +63,31 @@ export async function getOrganizationAgreementRow(
 export async function acceptOrganizationAgreementRow(
   pool: Pool,
   input: AcceptOrganizationAgreementInput,
+  options: {
+    readonly authority?: OrganizationAgreementOwnerAuthority;
+    /** Host may join its active authority transaction. Never start a second connection within it. */
+    readonly transaction?: <T>(
+      work: (client: Pick<PoolClient, 'query'>) => Promise<T>,
+    ) => Promise<T>;
+  } = {},
 ): Promise<OrganizationAgreementAcceptance> {
   const org = validateSlug('org', input.org);
   const documents = validateAgreementDocuments(input.documents);
   const documentDigest = agreementDocumentDigest(documents);
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const { rows: members } = await client.query<{ role: string }>(
-      'SELECT role FROM org_members WHERE org_slug=$1 AND subject=$2 FOR UPDATE',
-      [org, input.actorSubject],
-    );
-    if (members[0]?.role !== 'owner')
-      throw new OrganizationAgreementError('agreement_owner_required');
+  const transaction =
+    options.transaction ??
+    (<T>(work: (client: Pick<PoolClient, 'query'>) => Promise<T>) => ownTransaction(pool, work));
+  const legacy = () =>
+    transaction(async (client) => {
+      const { rows: members } = await client.query<{ role: string }>(
+        'SELECT role FROM org_members WHERE org_slug=$1 AND subject=$2 FOR UPDATE',
+        [org, input.actorSubject],
+      );
+      if (members[0]?.role !== 'owner')
+        throw new OrganizationAgreementError('agreement_owner_required');
+      return commit(client);
+    });
+  const commit = async (client: Pick<PoolClient, 'query'>) => {
     await client.query(
       `INSERT INTO organization_agreement_documents (version, document_digest, documents)
       VALUES ($1,$2,$3::jsonb) ON CONFLICT (version) DO NOTHING`,
@@ -93,7 +106,21 @@ export async function acceptOrganizationAgreementRow(
     );
     const { rows } = await client.query<AcceptanceRow>(ACCEPTANCE_SELECT, [org, documents.version]);
     if (!rows[0]) throw new Error('Agreement receipt unavailable');
-    const result = receipt(rows[0]);
+    return receipt(rows[0]);
+  };
+  return options.authority
+    ? options.authority.run(org, input.actorSubject, () => transaction(commit), legacy)
+    : legacy();
+}
+
+async function ownTransaction<T>(
+  pool: Pool,
+  work: (client: Pick<PoolClient, 'query'>) => Promise<T>,
+): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await work(client);
     await client.query('COMMIT');
     return result;
   } catch (error) {

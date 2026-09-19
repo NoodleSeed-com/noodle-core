@@ -88,7 +88,7 @@ import {
   rowToRecord,
 } from './postgres-rows.js';
 import { ensureArtifactSchema } from './postgres-schema.js';
-import { postgresQueryExecutor } from './postgres-transaction.js';
+import { postgresQueryExecutor, withPostgresTransaction } from './postgres-transaction.js';
 import { validateDeploymentListFilter } from './records.js';
 
 /**
@@ -465,8 +465,14 @@ export class PostgresArtifactStore
     );
   }
 
-  acceptOrganizationAgreement(input: controlPlaneRows.AcceptOrganizationAgreementInput) {
-    return controlPlaneRows.acceptOrganizationAgreementRow(this.#pool, input);
+  acceptOrganizationAgreement(
+    input: controlPlaneRows.AcceptOrganizationAgreementInput,
+    authority?: controlPlaneRows.OrganizationAgreementOwnerAuthority,
+  ) {
+    return controlPlaneRows.acceptOrganizationAgreementRow(this.#pool, input, {
+      ...(authority ? { authority } : {}),
+      transaction: (work) => withPostgresTransaction(this.#pool, work),
+    });
   }
 
   async listOrgs(): Promise<readonly OrgRecord[]> {
@@ -502,7 +508,7 @@ export class PostgresArtifactStore
     org: string;
     subject: string;
   }): Promise<OrgMemberRecord | undefined> {
-    return controlPlaneRows.getOrgMemberRow(this.#pool, input);
+    return controlPlaneRows.getOrgMemberRow(postgresQueryExecutor(this.#pool), input);
   }
 
   async listOrgMembers(org: string): Promise<readonly OrgMemberRecord[]> {

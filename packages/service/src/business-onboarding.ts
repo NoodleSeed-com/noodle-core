@@ -13,6 +13,7 @@ import type {
   BusinessInformationStore,
   SolutionInstallation,
 } from './business-information/contracts.js';
+import type { BusinessWorkspaceStore } from './business-workspaces/store.js';
 
 export interface BusinessOnboardingOptions {
   /** Only deployment-approved exact document identities. Empty policy keeps hosted activation closed. */
@@ -40,12 +41,33 @@ export class BusinessOnboarding {
     options: BusinessOnboardingOptions,
     private readonly organizations: OrganizationStore,
     private readonly installations: BusinessInformationStore,
+    private readonly workspaces?: BusinessWorkspaceStore,
   ) {
     this.#documents = options.documents ? validateAgreementDocuments(options.documents) : undefined;
   }
 
   async status(org: string, subject: string): Promise<OrganizationAgreementStatus> {
-    const canAccept = (await this.organizations.getOrgMember({ org, subject }))?.role === 'owner';
+    const legacy = async () =>
+      this.readStatus(
+        org,
+        (await this.organizations.getOrgMember({ org, subject }))?.role === 'owner',
+      );
+    const workspaces = this.workspaces;
+    if (!workspaces) return legacy();
+    return workspaces.runAuthorized(
+      org,
+      subject,
+      'settings:manage',
+      async () =>
+        this.readStatus(
+          org,
+          (await workspaces.authorize(org, subject, 'owners:manage')) === 'allowed',
+        ),
+      legacy,
+    );
+  }
+
+  private async readStatus(org: string, canAccept: boolean): Promise<OrganizationAgreementStatus> {
     const documents = this.#documents;
     if (!documents) return { canAccept, accepted: false, required: null };
     const documentDigest = agreementDocumentDigest(documents);
@@ -82,7 +104,16 @@ export class BusinessOnboarding {
       throw new OrganizationAgreementError('agreement_version_conflict');
     const documents = this.#documents;
     if (!documents) throw new BusinessSetupError();
-    await this.organizations.acceptOrganizationAgreement({ org, actorSubject: subject, documents });
+    const workspaces = this.workspaces;
+    await this.organizations.acceptOrganizationAgreement(
+      { org, actorSubject: subject, documents },
+      workspaces
+        ? {
+            run: (selectedOrg, actor, commit, legacy) =>
+              workspaces.runAuthorized(selectedOrg, actor, 'owners:manage', commit, legacy),
+          }
+        : undefined,
+    );
     return this.status(org, subject);
   }
 

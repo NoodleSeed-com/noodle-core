@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
@@ -5,6 +6,7 @@ import {
   getOrganizationAgreementRow,
 } from '../src/postgres-organization-agreements.js';
 import { ensureOrganizationSchema } from '../src/postgres-schema.js';
+import { agreementOwnerAuthorityConformance } from './agreement-owner-authority-conformance.js';
 
 const connectionString = process.env.DATABASE_URL_TEST;
 const schema = `organization_agreements_${process.pid}`;
@@ -18,6 +20,24 @@ const documents = {
 describe.skipIf(!connectionString)('durable organization agreement acceptance', () => {
   let admin: Pool;
   let pool: Pool;
+  agreementOwnerAuthorityConformance(async () => {
+    const org = `authority-${randomUUID()}`;
+    await pool.query('INSERT INTO orgs (slug) VALUES ($1)', [org]);
+    await pool.query(
+      "INSERT INTO org_members (org_slug,subject,email,role) VALUES ($1,'legacy-owner','legacy@example.test','owner')",
+      [org],
+    );
+    return {
+      org,
+      legacyOwner: 'legacy-owner',
+      store: {
+        getOrganizationAgreement: (selected, version) =>
+          getOrganizationAgreementRow(pool, selected, version),
+        acceptOrganizationAgreement: (input, authority) =>
+          acceptOrganizationAgreementRow(pool, input, authority ? { authority } : {}),
+      },
+    };
+  });
   beforeAll(async () => {
     admin = new Pool({ connectionString });
     await admin.query(`CREATE SCHEMA ${schema}`);
@@ -57,7 +77,7 @@ describe.skipIf(!connectionString)('durable organization agreement acceptance', 
     expect(
       (
         await pool.query<{ count: string }>(
-          'SELECT count(*)::text AS count FROM organization_agreement_acceptances',
+          "SELECT count(*)::text AS count FROM organization_agreement_acceptances WHERE org_slug='first'",
         )
       ).rows[0]?.count,
     ).toBe('1');

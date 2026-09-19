@@ -4,6 +4,7 @@ import {
   agreementDocumentDigest,
   validateAgreementDocuments,
 } from '../src/organization-agreements.js';
+import { agreementOwnerAuthorityConformance } from './agreement-owner-authority-conformance.js';
 
 const documents = {
   version: 'beta-2026-09',
@@ -30,6 +31,11 @@ async function setup() {
 }
 
 describe('organization agreement acceptance', () => {
+  agreementOwnerAuthorityConformance(async () => ({
+    store: await setup(),
+    org: 'first',
+    legacyOwner: 'first-owner',
+  }));
   it('records exact documents and server time once, isolated by organization', async () => {
     const store = await setup();
     expect(await store.getOrganizationAgreement('first', documents.version)).toBeUndefined();

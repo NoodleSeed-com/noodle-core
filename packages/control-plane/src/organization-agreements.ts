@@ -37,7 +37,20 @@ export interface OrganizationAgreementStore {
   /** Repeats live exact-owner authorization atomically; equal acceptance preserves the first receipt. */
   acceptOrganizationAgreement(
     input: AcceptOrganizationAgreementInput,
+    authority?: OrganizationAgreementOwnerAuthority,
   ): Promise<OrganizationAgreementAcceptance>;
+}
+
+/** Trusted host policy, never request data. The selected owner authority must fence the local commit.
+ * Legacy may be selected only when no versioned authority exists, never after denial or an outage.
+ */
+export interface OrganizationAgreementOwnerAuthority {
+  run<T>(
+    org: string,
+    actor: string,
+    commit: () => Promise<T>,
+    legacy: () => Promise<T>,
+  ): Promise<T>;
 }
 
 export class OrganizationAgreementError extends Error {
@@ -99,10 +112,20 @@ export class InMemoryOrganizationAgreements implements OrganizationAgreementStor
 
   async acceptOrganizationAgreement(
     input: AcceptOrganizationAgreementInput,
+    authority?: OrganizationAgreementOwnerAuthority,
   ): Promise<OrganizationAgreementAcceptance> {
     const org = validateSlug('org', input.org);
-    if (!this.isOwner(org, input.actorSubject))
-      throw new OrganizationAgreementError('agreement_owner_required');
+    const commit = () => Promise.resolve(this.commit({ ...input, org }));
+    const legacy = () => {
+      if (!this.isOwner(org, input.actorSubject))
+        throw new OrganizationAgreementError('agreement_owner_required');
+      return commit();
+    };
+    return authority ? authority.run(org, input.actorSubject, commit, legacy) : legacy();
+  }
+
+  private commit(input: AcceptOrganizationAgreementInput): OrganizationAgreementAcceptance {
+    const org = input.org;
     const documents = validateAgreementDocuments(input.documents);
     const documentDigest = agreementDocumentDigest(documents);
     const registered = this.#catalog.get(documents.version);

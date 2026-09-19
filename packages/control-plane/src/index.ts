@@ -56,6 +56,7 @@ export {
   agreementDocumentDigest,
   type OrganizationAgreementAcceptance,
   OrganizationAgreementError,
+  type OrganizationAgreementOwnerAuthority,
   type OrganizationAgreementStore,
   validateAgreementDocuments,
 } from './organization-agreements.js';
