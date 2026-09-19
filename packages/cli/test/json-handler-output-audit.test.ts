@@ -187,6 +187,7 @@ const HANDLER_FAMILY_SURFACES = {
   service_doctor: ['service doctor'],
   app_purge: ['service app-purge preview', 'service app-purge apply'],
   solutions: [
+    'solutions workspace list',
     'solutions workspace show',
     'solutions workspace invite',
     'solutions workspace set-role',
@@ -389,6 +390,7 @@ const EXPECTED_EXIT_OVERRIDES = new Map<string, number>([
   ...['audit status', 'service capabilities'].map((surface) => [surface, 4] as const),
   ['solutions catalog', 4],
   ['solutions installation-options', 3],
+  ['solutions workspace list', 3],
   ...[
     'solutions list',
     'solutions install',

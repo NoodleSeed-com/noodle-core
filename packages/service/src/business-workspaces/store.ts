@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   BusinessWorkspaceInvitationRequestSchema,
+  BusinessWorkspaceListQuerySchema,
   BusinessWorkspaceRoleSchema,
 } from '@noodle-borg/wire-contracts';
 import { z } from 'zod';
@@ -41,6 +42,51 @@ export class BusinessWorkspaceStore {
     private readonly backend: BusinessWorkspaceBackend,
     private readonly options: BusinessWorkspaceStoreOptions,
   ) {}
+
+  async listForSubject(subject: string, query: unknown) {
+    if (!WorkspaceSubjectSchema.safeParse(subject).success)
+      throw new BusinessWorkspaceError('invalid_request');
+    const input = parse(BusinessWorkspaceListQuerySchema, query);
+    const after = input.cursor
+      ? Buffer.from(input.cursor, 'base64url').toString('utf8')
+      : undefined;
+    if (
+      after !== undefined &&
+      (!WorkspaceOrgSchema.safeParse(after).success ||
+        Buffer.from(after).toString('base64url') !== input.cursor)
+    )
+      throw new BusinessWorkspaceError('invalid_request');
+    await this.requireActive(subject);
+    const candidates = await this.backend.findMemberships(subject, {
+      ...(after ? { after } : {}),
+      limit: input.limit + 1,
+    });
+    const workspaces = [];
+    for (const org of candidates.slice(0, input.limit)) {
+      try {
+        const state = await this.inspect(org, subject);
+        workspaces.push({
+          org,
+          authorityVersion: state.authorityVersion,
+          revision: state.revision,
+          role: state.role,
+          permissions: state.permissions,
+        });
+      } catch (error) {
+        // A revocation can win after discovery. Retry the page rather than emit an unauthorized cursor.
+        if (!(error instanceof BusinessWorkspaceError) || error.code !== 'forbidden') throw error;
+        throw new Error('workspace membership changed during discovery');
+      }
+    }
+    await this.requireActive(subject);
+    const last = candidates[input.limit - 1];
+    return {
+      workspaces,
+      ...(candidates.length > input.limit && last
+        ? { nextCursor: Buffer.from(last).toString('base64url') }
+        : {}),
+    };
+  }
 
   /** Internal new-organization composition only; legacy activation uses reviewed migration, never this method. */
   async initializeNewWorkspace(input: {

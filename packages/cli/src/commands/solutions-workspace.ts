@@ -3,6 +3,8 @@ import {
   BusinessWorkspaceClientResponseSchema,
   BusinessWorkspaceInvitationRequestSchema,
   BusinessWorkspaceIssuedInvitationClientResponseSchema,
+  BusinessWorkspaceListClientResponseSchema,
+  BusinessWorkspaceListQuerySchema,
   BusinessWorkspaceMutationClientResponseSchema,
   BusinessWorkspaceRevisionRequestSchema,
   BusinessWorkspaceRoleChangeRequestSchema,
@@ -19,6 +21,7 @@ import {
 } from './shared.js';
 
 const operationFlags: Readonly<Record<string, readonly string[]>> = {
+  list: ['cursor', 'limit'],
   show: [],
   invite: ['email', 'role', 'revision'],
   'set-role': ['subject', 'role', 'revision', 'confirm'],
@@ -44,6 +47,8 @@ export async function runSolutionWorkspace(
       '--expected-revision': 'revision',
       '--invitation': 'invitation',
       '--token-from-env': 'tokenEnv',
+      '--cursor': 'cursor',
+      '--limit': 'limit',
     },
     booleans: { '--json': 'json', '--confirm': 'confirm' },
   });
@@ -52,7 +57,7 @@ export async function runSolutionWorkspace(
       command,
       usageError(
         message,
-        'noodle solutions workspace <show|invite|set-role|remove|revoke-invitation|accept> --org <org> [options] [--json]',
+        'noodle solutions workspace list [--cursor <cursor>] [--limit <count>] | <show|invite|set-role|remove|revoke-invitation|accept> --org <org> [options] [--json]',
       ),
       args.json,
     );
@@ -62,9 +67,11 @@ export async function runSolutionWorkspace(
     !operation ||
     !operationFlags[operation] ||
     extra.length ||
-    !/^[a-z0-9][a-z0-9-]{0,62}$/.test(args.org ?? '')
+    (operation !== 'list' && !/^[a-z0-9][a-z0-9-]{0,62}$/.test(args.org ?? ''))
   )
     return invalid('Supply a workspace operation and explicit --org.');
+  if (operation === 'list' && args.org !== undefined)
+    return invalid('Workspace list uses your signed-in identity, not --org.');
   for (const key of [
     'email',
     'role',
@@ -73,17 +80,33 @@ export async function runSolutionWorkspace(
     'invitation',
     'tokenEnv',
     'confirm',
+    'cursor',
+    'limit',
   ] as const)
     if (args[key] && !operationFlags[operation].includes(key))
       return invalid('A flag does not apply to this operation.');
-  if (!['show', 'invite'].includes(operation) && !args.confirm)
+  if (!['list', 'show', 'invite'].includes(operation) && !args.confirm)
     return invalid('--confirm is required for this workspace change.');
-  if (!['show', 'accept'].includes(operation) && !/^[1-9]\d{0,9}$/.test(args.revision ?? ''))
+  if (
+    !['list', 'show', 'accept'].includes(operation) &&
+    !/^[1-9]\d{0,9}$/.test(args.revision ?? '')
+  )
     return invalid('--expected-revision must identify the current workspace revision.');
   const expectedRevision = Number(args.revision);
   let body: unknown;
   let suffix = '',
     method = 'GET';
+  let listQuery = '';
+  if (operation === 'list') {
+    const input = BusinessWorkspaceListQuerySchema.safeParse({
+      limit: args.limit,
+      cursor: args.cursor,
+    });
+    if (!input.success) return invalid('Use a valid cursor and a page size from 1 to 100.');
+    const query = new URLSearchParams({ limit: String(input.data.limit) });
+    if (input.data.cursor) query.set('cursor', input.data.cursor);
+    listQuery = query.toString();
+  }
   if (operation === 'invite') {
     const input = BusinessWorkspaceInvitationRequestSchema.safeParse({
       email: args.email,
@@ -138,7 +161,9 @@ export async function runSolutionWorkspace(
   if (!resolved.token) return printCliFailure(command, authRequired(), args.json);
   try {
     const response = await serviceJson<unknown>(
-      `${resolved.serviceUrl}/v1/orgs/${encodeURIComponent(args.org ?? '')}/business-workspace${suffix}`,
+      operation === 'list'
+        ? `${resolved.serviceUrl}/v1/me/business-workspaces?${listQuery}`
+        : `${resolved.serviceUrl}/v1/orgs/${encodeURIComponent(args.org ?? '')}/business-workspace${suffix}`,
       resolved.token,
       {
         method,
@@ -148,11 +173,13 @@ export async function runSolutionWorkspace(
       options.fetchImpl ?? fetch,
     );
     const schema =
-      operation === 'show'
-        ? BusinessWorkspaceClientResponseSchema
-        : operation === 'invite'
-          ? BusinessWorkspaceIssuedInvitationClientResponseSchema
-          : BusinessWorkspaceMutationClientResponseSchema;
+      operation === 'list'
+        ? BusinessWorkspaceListClientResponseSchema
+        : operation === 'show'
+          ? BusinessWorkspaceClientResponseSchema
+          : operation === 'invite'
+            ? BusinessWorkspaceIssuedInvitationClientResponseSchema
+            : BusinessWorkspaceMutationClientResponseSchema;
     const parsed = schema.safeParse(response);
     if (!parsed.success) throw new Error('The service returned an invalid workspace response.');
     if (args.json) printJsonOk(parsed.data.data);

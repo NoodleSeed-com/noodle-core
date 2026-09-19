@@ -75,7 +75,10 @@ import {
   setProductionEnvironmentRow,
 } from './postgres-envs.js';
 import { PostgresMcpSubdomainStore } from './postgres-mcp-subdomain.js';
-import { provisionPersonalWorkspaceRow } from './postgres-personal-workspace.js';
+import {
+  type PersonalWorkspaceCreated,
+  provisionPersonalWorkspaceRow,
+} from './postgres-personal-workspace.js';
 import {
   DEPLOY_SUMMARY_COLUMNS,
   type DeployRow,
@@ -100,6 +103,8 @@ import { validateDeploymentListFilter } from './records.js';
  * outside this class, keeping it pure SQL and unit-testable against any local Postgres.
  */
 export interface PostgresStoreOptions {
+  /** Optional fresh-only authority participant; runs inside the existing signup transaction. */
+  readonly personalWorkspaceCreated?: PersonalWorkspaceCreated;
   readonly secretBox?: SecretBox;
   readonly now?: () => Date;
   readonly deploymentActivation?:
@@ -119,6 +124,7 @@ export class PostgresArtifactStore
   readonly #now: () => Date;
   readonly #deploymentActivation: () => readonly NamedDeploymentActivationHook[];
   readonly #organizationProvisioning: () => OrganizationProvisioningHook | undefined;
+  readonly #personalWorkspaceCreated: PersonalWorkspaceCreated | undefined;
 
   deleteDeployments(
     ref: TenantRef,
@@ -137,6 +143,7 @@ export class PostgresArtifactStore
     this.#pool = pool;
     this.#secretBox = secretBox;
     this.#now = now;
+    this.#personalWorkspaceCreated = options?.personalWorkspaceCreated;
     const deploymentActivation = options?.deploymentActivation;
     this.#deploymentActivation =
       typeof deploymentActivation === 'function'
@@ -413,6 +420,7 @@ export class PostgresArtifactStore
       input,
       this.#now,
       createOrganizationProvisioningTx(this.#organizationProvisioning),
+      this.#personalWorkspaceCreated,
     );
   }
 

@@ -100,6 +100,27 @@ describe('versioned workspace administration API', () => {
     expect((await request()).status).toBe(409);
     expect((await request('POST', '', { ownerSubject: 'owner' })).status).toBe(405);
   });
+  it('discovers workspace membership without requiring developer organization membership', async () => {
+    const invitation = await invite();
+    await request('POST', '/accept', { token: invitation.token }, 'operator');
+    base = base.replace('/v1/orgs/acme/business-workspace', '/v1/me/business-workspaces');
+    expect((await request('GET', '', undefined, '')).status).toBe(401);
+    const response = await request('GET', '?limit=1', undefined, 'operator');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      data: { workspaces: [{ org: 'acme', role: 'operator' }] },
+    });
+    expect(await (await request('GET', '', undefined, 'super-admin')).json()).toEqual({
+      ok: true,
+      data: { workspaces: [] },
+    });
+    for (const query of ['?subject=owner', '?limit=101', '?limit=1&limit=2'])
+      expect((await request('GET', query)).status).toBe(400);
+    expect((await request('POST', '', {})).status).toBe(405);
+    suspended.add('operator');
+    expect((await request('GET', '', undefined, 'operator')).status).toBe(403);
+  });
   it('defaults to Operator, accepts once with verified identity and enforces revision/last-Owner rules', async () => {
     const invitation = await invite();
     expect(invitation.role).toBe('operator');
@@ -213,5 +234,7 @@ describe('versioned workspace administration API', () => {
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/orgs/acme/business-workspace`;
     expect((await request()).status).toBe(404);
     expect((await request('POST', '/accept', { token: 'x'.repeat(43) })).status).toBe(404);
+    base = base.replace('/v1/orgs/acme/business-workspace', '/v1/me/business-workspaces');
+    expect((await request()).status).toBe(404);
   });
 });

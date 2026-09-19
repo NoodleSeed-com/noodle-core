@@ -17,6 +17,7 @@ const authorized = [
   ['GET', '/v1/whoami?scope=identity'],
   ['GET', '/v1/me/solution-installations'],
   ['GET', '/v1/me/solution-installation-options'],
+  ['GET', '/v1/me/business-workspaces'],
   ['GET', '/v1/orgs/acme/business-workspace'],
   ['PATCH', '/v1/orgs/acme/business-workspace/members'],
   ['POST', '/v1/orgs/acme/business-workspace/invitations'],
@@ -70,6 +71,8 @@ const authorized = [
   ['POST', `${base}/collections/items/source/refresh`],
 ] as const;
 const denied = [
+  ['POST', '/v1/me/business-workspaces'],
+  ['DELETE', '/v1/me/business-workspaces'],
   ['POST', '/v1/orgs/acme/business-workspace'],
   ['DELETE', '/v1/orgs/acme/business-workspace'],
   ['GET', '/v1/orgs/acme/business-workspace/accept'],

@@ -22,6 +22,45 @@ describe('noodle solutions workspace', () => {
     vi.restoreAllMocks();
     rmSync(home, { recursive: true, force: true });
   });
+  it('lists only the signed-in principal workspaces with bounded service pagination', async () => {
+    const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        ok: true,
+        data: {
+          workspaces: [
+            {
+              org: 'acme',
+              authorityVersion: 1,
+              revision: 1,
+              role: 'builder',
+              permissions: ['drafts:read'],
+              future: true,
+            },
+          ],
+          nextCursor: 'YWNtZQ',
+          future: true,
+        },
+      }),
+    );
+    expect(
+      await runSolutions(
+        ['workspace', 'list', '--limit', '1', '--cursor', 'YWFh', '--json'],
+        env,
+        home,
+        { fetchImpl },
+      ),
+    ).toBe(0);
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(
+      'https://service.example/v1/me/business-workspaces?limit=1&cursor=YWFh',
+    );
+    expect(JSON.stringify(vi.mocked(console.log).mock.calls)).not.toContain('future');
+    expect(
+      await runSolutions(['workspace', 'list', '--org', 'acme', '--json'], env, home, {
+        fetchImpl,
+      }),
+    ).toBe(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
   it('inspects live workspace authority and strips additive fields from every response layer', async () => {
     const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({

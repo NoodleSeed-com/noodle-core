@@ -27,6 +27,36 @@ export const BusinessWorkspacePermissionSchema = z.enum([
 ]);
 const revision = z.number().int().positive().max(2147483647);
 const subject = z.string().min(1).max(500);
+const org = z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/);
+const cursor = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]+$/)
+  .max(128);
+export const BusinessWorkspaceListQuerySchema = z.strictObject({
+  cursor: cursor.optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+const membership = z.strictObject({
+  org,
+  authorityVersion: z.literal(1),
+  revision,
+  role: BusinessWorkspaceRoleSchema,
+  permissions: z.array(BusinessWorkspacePermissionSchema).max(13),
+});
+export const BusinessWorkspaceListResponseSchema = z.strictObject({
+  ok: z.literal(true),
+  data: z.strictObject({
+    workspaces: z.array(membership).max(100),
+    nextCursor: cursor.optional(),
+  }),
+});
+export const BusinessWorkspaceListClientResponseSchema = z.object({
+  ok: z.literal(true),
+  data: z.object({
+    workspaces: z.array(membership.strip()).max(100),
+    nextCursor: cursor.optional(),
+  }),
+});
 const member = z.strictObject({
   subject,
   role: BusinessWorkspaceRoleSchema,
@@ -41,7 +71,7 @@ const invitation = z.strictObject({
   expiresAt: z.iso.datetime(),
 });
 const projection = z.strictObject({
-  org: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+  org,
   authorityVersion: z.literal(1),
   revision,
   activatedAt: z.iso.datetime(),

@@ -8,6 +8,11 @@ import {
   type WorkspaceState,
   WorkspaceStateSchema,
 } from './contracts.js';
+import {
+  backfillMembershipIndex,
+  indexWorkspaceMemberships,
+  membershipDigest,
+} from './membership-index.js';
 
 interface Row {
   readonly revision: number;
@@ -35,7 +40,29 @@ export class PostgresBusinessWorkspaceBackend implements BusinessWorkspaceBacken
         event JSONB NOT NULL,
         PRIMARY KEY (org, revision)
       );
+      CREATE TABLE IF NOT EXISTS business_workspace_membership_index (
+        org TEXT NOT NULL REFERENCES business_workspace_authority(org) ON DELETE CASCADE,
+        subject_digest TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK (revision > 0),
+        PRIMARY KEY (org, subject_digest)
+      );
+      CREATE INDEX IF NOT EXISTS business_workspace_membership_subject
+        ON business_workspace_membership_index(subject_digest, org COLLATE "C");
     `);
+    await backfillMembershipIndex(this.pool, (org) => this.read(org));
+  }
+  async findMemberships(
+    subject: string,
+    input: { readonly after?: string; readonly limit: number },
+  ): Promise<readonly string[]> {
+    const { rows } = await postgresQueryExecutor(this.pool).query<{ org: string }>(
+      `SELECT lookup.org FROM business_workspace_membership_index lookup
+       JOIN business_workspace_authority authority ON authority.org = lookup.org AND authority.revision = lookup.revision
+       WHERE subject_digest = $1 AND lookup.org COLLATE "C" > $2 COLLATE "C"
+       ORDER BY lookup.org COLLATE "C" LIMIT $3`,
+      [membershipDigest(subject), input.after ?? '', input.limit],
+    );
+    return rows.map((row) => row.org);
   }
   async read(org: string): Promise<WorkspaceState | undefined> {
     const result = await postgresQueryExecutor(this.pool).query<Row>(
@@ -93,6 +120,7 @@ export class PostgresBusinessWorkspaceBackend implements BusinessWorkspaceBacken
                   [org, state.revision, JSON.stringify(sealed)],
                 );
           if (result.rowCount !== 1) throw new Error('workspace authority conflict');
+          await indexWorkspaceMemberships(client, state);
           await client.query(
             `INSERT INTO business_workspace_authority_events (org, revision, event)
              VALUES ($1, $2, $3::jsonb)`,

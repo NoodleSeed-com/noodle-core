@@ -2,6 +2,7 @@
 import {
   EXPECTED_REVISION,
   OPTIONAL_FLAG,
+  PAGING_FLAGS,
   SOLUTION_COMMON_FLAGS,
 } from './catalog-data-solution-flags.js';
 import type { FlagSpec, SubcommandSpec } from './catalog-types.js';
@@ -35,6 +36,13 @@ export const SOLUTION_WORKSPACE: SubcommandSpec = {
   arguments: [],
   flags: [],
   subcommands: [
+    {
+      name: 'list',
+      summary: 'Discover your current business workspaces without developer organization access.',
+      arguments: [],
+      flags: [...SOLUTION_COMMON_FLAGS.filter((flag) => flag.name !== 'org'), ...PAGING_FLAGS],
+      jsonOutput: { mode: 'single' },
+    },
     {
       name: 'show',
       summary: 'Inspect current workspace members, permissions and pending invitations.',

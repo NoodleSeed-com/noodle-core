@@ -23,6 +23,73 @@ export function describeBusinessWorkspaceStore(
       expect(await store.authorize('acme', 'alice', 'billing:manage')).toBe('allowed');
     });
 
+    it('discovers only current memberships with bounded pages and no invitation or member payload', async () => {
+      const { store, suspended } = await setup();
+      await store.initializeNewWorkspace({ org: 'beta', ownerSubject: 'alice' });
+      await store.initializeNewWorkspace({ org: 'gamma', ownerSubject: 'bob' });
+      const invitation = await store.invite({
+        org: 'acme',
+        actor: 'alice',
+        expectedRevision: 1,
+        email: 'bob@example.test',
+      });
+      await store.accept({
+        org: 'acme',
+        subject: 'bob',
+        verifiedEmail: 'bob@example.test',
+        token: invitation.token,
+      });
+      const page = await store.listForSubject('bob', { limit: 1 });
+      expect(page.workspaces).toEqual([
+        {
+          org: 'acme',
+          authorityVersion: 1,
+          revision: 3,
+          role: 'operator',
+          permissions: WORKSPACE_ROLE_PERMISSIONS.operator,
+        },
+      ]);
+      expect(page.nextCursor).toBeDefined();
+      const next = await store.listForSubject('bob', { limit: 1, cursor: page.nextCursor });
+      expect(next.workspaces.map((item) => item.org)).toEqual(['gamma']);
+      expect(next.nextCursor).toBeUndefined();
+      expect(JSON.stringify(page)).not.toContain('bob@example.test');
+      expect(JSON.stringify(page)).not.toContain(invitation.token);
+      await store.changeRole({
+        org: 'acme',
+        actor: 'alice',
+        subject: 'bob',
+        role: null,
+        expectedRevision: 3,
+      });
+      expect((await store.listForSubject('bob', {})).workspaces.map((item) => item.org)).toEqual([
+        'gamma',
+      ]);
+      expect((await store.listForSubject('stranger', {})).workspaces).toEqual([]);
+      suspended.add('bob');
+      await expect(store.listForSubject('bob', {})).rejects.toMatchObject({ code: 'forbidden' });
+    });
+
+    it('rejects malformed discovery input without trusting cursors as authority', async () => {
+      const { store } = await setup();
+      for (const query of [
+        { limit: 0 },
+        { limit: 101 },
+        { cursor: 'invalid==' },
+        { cursor: Buffer.from('../private').toString('base64url') },
+      ])
+        await expect(store.listForSubject('alice', query)).rejects.toMatchObject({
+          code: 'invalid_request',
+        });
+      expect(
+        (
+          await store.listForSubject('stranger', {
+            cursor: Buffer.from('acme').toString('base64url'),
+          })
+        ).workspaces,
+      ).toEqual([]);
+    });
+
     it('returns validation failures as rejected promises for every public mutation', async () => {
       const { store } = await setup();
       const actions = [

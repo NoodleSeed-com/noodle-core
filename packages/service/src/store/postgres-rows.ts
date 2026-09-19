@@ -286,6 +286,7 @@ export function isPostgresStoreOptions(
     ('secretBox' in value ||
       'now' in value ||
       'deploymentActivation' in value ||
+      'personalWorkspaceCreated' in value ||
       'organizationProvisioning' in value)
   );
 }

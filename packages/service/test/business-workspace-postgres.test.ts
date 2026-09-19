@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PostgresApplicationDraftBackend } from '../src/application-drafts/postgres.js';
 import { ApplicationDraftStore } from '../src/application-drafts/store.js';
 import { SecretBoxPayloadCipher } from '../src/business-information-cipher.js';
+import { membershipDigest } from '../src/business-workspaces/membership-index.js';
 import { PostgresBusinessWorkspaceBackend } from '../src/business-workspaces/postgres.js';
 import { BusinessWorkspaceStore } from '../src/business-workspaces/store.js';
 import { withPostgresTransaction } from '../src/store/postgres-transaction.js';
@@ -140,5 +141,50 @@ describe.skipIf(databaseUrl === undefined)('PostgreSQL workspace authority', () 
       (await pool.query('SELECT * FROM business_workspace_authority_events WHERE org = $1', [org]))
         .rowCount,
     ).toBe(0);
+    expect(
+      (await pool.query('SELECT * FROM business_workspace_membership_index WHERE org = $1', [org]))
+        .rowCount,
+    ).toBe(0);
+  });
+
+  it('rebuilds missing discovery generations from encrypted authority without changing roles or audit', async () => {
+    const store = new BusinessWorkspaceStore(backend, options);
+    const org = `org-${randomUUID()}`;
+    await store.initializeNewWorkspace({ org, ownerSubject: 'index-owner' });
+    await pool.query('DELETE FROM business_workspace_membership_index WHERE org = $1', [org]);
+    expect((await store.listForSubject('index-owner', {})).workspaces).toEqual([]);
+    await backend.ensureSchema();
+    expect((await store.listForSubject('index-owner', {})).workspaces).toEqual([
+      expect.objectContaining({ org, revision: 1, role: 'owner' }),
+    ]);
+    const index = await pool.query(
+      'SELECT * FROM business_workspace_membership_index WHERE org = $1',
+      [org],
+    );
+    expect(JSON.stringify(index.rows)).not.toContain('index-owner');
+    expect(index.rows[0]?.subject_digest).toBe(membershipDigest('index-owner'));
+    expect(
+      (await pool.query('SELECT * FROM business_workspace_authority_events WHERE org = $1', [org]))
+        .rowCount,
+    ).toBe(1);
+  });
+
+  it('never treats a forged or stale discovery index as membership authority', async () => {
+    const store = new BusinessWorkspaceStore(backend, options);
+    const org = `org-${randomUUID()}`;
+    await store.initializeNewWorkspace({ org, ownerSubject: 'actual-owner' });
+    await pool.query(
+      'INSERT INTO business_workspace_membership_index (org, subject_digest, revision) VALUES ($1, $2, 1)',
+      [org, membershipDigest('outsider')],
+    );
+    await expect(store.listForSubject('outsider', {})).rejects.toThrow('membership changed');
+    expect(await store.authorize(org, 'outsider', 'records:read')).toBe('denied');
+    await pool.query('UPDATE business_workspace_membership_index SET revision = 2 WHERE org = $1', [
+      org,
+    ]);
+    expect((await store.listForSubject('outsider', {})).workspaces).toEqual([]);
+    await backend.ensureSchema();
+    expect((await store.listForSubject('outsider', {})).workspaces).toEqual([]);
+    expect((await store.listForSubject('actual-owner', {})).workspaces[0]?.role).toBe('owner');
   });
 });

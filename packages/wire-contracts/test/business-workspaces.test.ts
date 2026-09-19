@@ -3,6 +3,9 @@ import {
   BusinessWorkspaceAcceptRequestSchema,
   BusinessWorkspaceClientResponseSchema,
   BusinessWorkspaceInvitationRequestSchema,
+  BusinessWorkspaceListClientResponseSchema,
+  BusinessWorkspaceListQuerySchema,
+  BusinessWorkspaceListResponseSchema,
   BusinessWorkspaceResponseSchema,
 } from '../src/business-workspaces.js';
 
@@ -17,6 +20,34 @@ const state = {
   members: [{ subject: 'owner', role: 'owner', joinedAt: now }],
   invitations: [],
 };
+it('bounds discovery queries and strips additive metadata without accepting malformed memberships', () => {
+  expect(BusinessWorkspaceListQuerySchema.parse({})).toEqual({ limit: 50 });
+  for (const query of [{ limit: 101 }, { limit: 0 }, { subject: 'owner' }, { cursor: '' }])
+    expect(BusinessWorkspaceListQuerySchema.safeParse(query).success).toBe(false);
+  const membership = {
+    org: 'acme',
+    authorityVersion: 1,
+    revision: 1,
+    role: 'owner',
+    permissions: ['team:manage'],
+  };
+  const response = {
+    ok: true,
+    data: { workspaces: [{ ...membership, future: true }], nextCursor: 'YWNtZQ', future: true },
+    future: true,
+  };
+  expect(BusinessWorkspaceListResponseSchema.safeParse(response).success).toBe(false);
+  expect(BusinessWorkspaceListClientResponseSchema.parse(response)).toEqual({
+    ok: true,
+    data: { workspaces: [membership], nextCursor: 'YWNtZQ' },
+  });
+  expect(
+    BusinessWorkspaceListClientResponseSchema.safeParse({
+      ok: true,
+      data: { workspaces: [{ ...membership, role: 'manager' }] },
+    }).success,
+  ).toBe(false);
+});
 it('uses strict authoritative schemas and strips additive client fields at every object layer', () => {
   const response = {
     ok: true,

@@ -15,6 +15,20 @@ export class InMemoryBusinessWorkspaceBackend implements BusinessWorkspaceBacken
     private readonly locks = new BusinessMemoryLocks(),
     private readonly now: () => Date = () => new Date(),
   ) {}
+  async findMemberships(
+    subject: string,
+    input: { readonly after?: string; readonly limit: number },
+  ): Promise<readonly string[]> {
+    return [...this.#states.values()]
+      .filter(
+        (state) =>
+          (!input.after || state.org > input.after) &&
+          state.members.some((member) => member.subject === subject),
+      )
+      .map((state) => state.org)
+      .sort()
+      .slice(0, input.limit);
+  }
   async read(org: string): Promise<WorkspaceState | undefined> {
     return structuredClone(this.#states.get(org));
   }

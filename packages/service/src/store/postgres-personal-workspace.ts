@@ -7,6 +7,13 @@ import {
   validateUserOwnedOrgSlug,
 } from '@noodle-borg/control-plane';
 import type { Pool, PoolClient } from 'pg';
+import { withPostgresTransaction } from './postgres-transaction.js';
+
+/** Fresh-only participant: must use this pool's borrowed transaction; never repair legacy authority. */
+export type PersonalWorkspaceCreated = (input: {
+  readonly org: string;
+  readonly ownerSubject: string;
+}) => Promise<void>;
 
 /** Atomically binds one canonical principal to one immutable personal organization. */
 export async function provisionPersonalWorkspaceRow(
@@ -14,11 +21,10 @@ export async function provisionPersonalWorkspaceRow(
   input: PersonalWorkspaceProvisionInput,
   now: () => Date,
   provisionOrganization: OrganizationProvisioningTx = async () => undefined,
+  personalWorkspaceCreated?: PersonalWorkspaceCreated,
 ): Promise<PersonalWorkspaceProvisionResult> {
   const requestedSlug = validateUserOwnedOrgSlug(input.slug);
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
+  return withPostgresTransaction(pool, async (client) => {
     await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [
       `personal-workspace:${input.subject}`,
     ]);
@@ -28,7 +34,6 @@ export async function provisionPersonalWorkspaceRow(
       // commercial provisioning so an already-authorized billing transfer remains authoritative.
       await ensureOwnerMembership(client, binding.org_slug, input);
       await provision(client, binding.org_slug, input, now, provisionOrganization);
-      await client.query('COMMIT');
       return { org: orgFromRow(binding), created: false };
     }
 
@@ -43,7 +48,6 @@ export async function provisionPersonalWorkspaceRow(
       await ensureOwnerMembership(client, legacy.slug, input);
       await provision(client, legacy.slug, input, now, provisionOrganization);
       await insertBinding(client, input.subject, legacy.slug);
-      await client.query('COMMIT');
       return { org: orgFromRow(legacy), created: false };
     }
 
@@ -71,6 +75,7 @@ export async function provisionPersonalWorkspaceRow(
       },
       createdAt,
     );
+    await personalWorkspaceCreated?.({ org: requestedSlug, ownerSubject: input.subject });
     await client.query(
       `INSERT INTO welcome_email_outbox
          (subject, org_slug, email, first_name, created_at, next_attempt_at)
@@ -79,14 +84,8 @@ export async function provisionPersonalWorkspaceRow(
       [input.subject, requestedSlug, input.email.toLowerCase(), input.firstName ?? null, createdAt],
     );
     await insertBinding(client, input.subject, requestedSlug);
-    await client.query('COMMIT');
     return { org: orgFromRow(org), created: true };
-  } catch (error) {
-    await client.query('ROLLBACK').catch(() => undefined);
-    throw error;
-  } finally {
-    client.release();
-  }
+  });
 }
 
 async function provision(

@@ -4,6 +4,7 @@ import {
   BusinessWorkspaceAcceptRequestSchema,
   BusinessWorkspaceInvitationRequestSchema,
   BusinessWorkspaceIssuedInvitationResponseSchema,
+  BusinessWorkspaceListResponseSchema,
   BusinessWorkspaceMutationResponseSchema,
   BusinessWorkspaceResponseSchema,
   BusinessWorkspaceRevisionRequestSchema,
@@ -54,6 +55,20 @@ export async function handleBusinessWorkspaceRoute(
 }
 
 async function handle(req: IncomingMessage, res: ServerResponse, url: URL, deps: Deps) {
+  if (url.pathname === '/v1/me/business-workspaces') {
+    const identity = await authorizeBusinessApi(req, res, deps);
+    if (!identity) return;
+    if (req.method !== 'GET') {
+      res.setHeader('allow', 'GET');
+      return sendJson(res, 405, { error: 'method not allowed' });
+    }
+    if (new Set(url.searchParams.keys()).size !== [...url.searchParams].length) return invalid(res);
+    const data = await deps.workspaces.listForSubject(
+      identity.subject,
+      Object.fromEntries(url.searchParams),
+    );
+    return sendJson(res, 200, BusinessWorkspaceListResponseSchema.parse({ ok: true, data }));
+  }
   const ref = parseBusinessWorkspacePath(url.pathname);
   if (!ref) return sendJson(res, 404, { error: 'not found' });
   const identity = await authorizeBusinessApi(req, res, deps);

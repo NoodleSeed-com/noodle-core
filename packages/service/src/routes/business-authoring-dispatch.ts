@@ -18,7 +18,8 @@ export function dispatchBusinessAuthoringRoutes(
   deps: Omit<ApplicationDraftRouteDeps, 'drafts' | 'workspaces'> & { readonly tls: TlsPosture },
 ): boolean {
   if (!authoring) return false;
-  const workspace = parseBusinessWorkspacePath(url.pathname);
+  const workspace =
+    url.pathname === '/v1/me/business-workspaces' || parseBusinessWorkspacePath(url.pathname);
   if (!workspace && !parseApplicationDraftPath(url.pathname)) return false;
   applySecurityHeaders(res, deps.tls);
   if (!enforceHttps(req, res, deps.tls)) {

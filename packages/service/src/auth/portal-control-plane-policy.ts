@@ -63,6 +63,7 @@ function portalOperationAllowed(method: string, path: string): boolean {
       '/v1/whoami',
       '/v1/me/solution-installations',
       '/v1/me/solution-installation-options',
+      '/v1/me/business-workspaces',
       '/v1/solutions/catalog',
     ].includes(path)
   )

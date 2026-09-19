@@ -60,6 +60,11 @@ export interface BusinessWorkspaceTransaction {
   save(state: WorkspaceState, event: WorkspaceAuditEvent): Promise<void>;
 }
 export interface BusinessWorkspaceBackend {
+  /** Candidate lookup only; the encrypted workspace state remains permission authority. */
+  findMemberships(
+    subject: string,
+    input: { readonly after?: string; readonly limit: number },
+  ): Promise<readonly string[]>;
   /** Snapshot read; inherits a caller's authority transaction when one is already active. */
   read(org: string): Promise<WorkspaceState | undefined>;
   /** Uses the same organization authority lock as draft writes and publication. */

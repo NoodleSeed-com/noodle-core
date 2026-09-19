@@ -67,8 +67,9 @@ describe('commands --json public wire contract', () => {
 
     expect(envelope.data.commands).toHaveLength(65);
     const paths = leafPaths(envelope.data.commands);
-    expect(paths).toHaveLength(301);
+    expect(paths).toHaveLength(302);
     expect(paths.filter((path) => path.startsWith('solutions workspace '))).toEqual([
+      'solutions workspace list',
       'solutions workspace show',
       'solutions workspace invite',
       'solutions workspace set-role',

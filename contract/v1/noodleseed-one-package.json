@@ -330,6 +330,7 @@
       "solutions page publish",
       "solutions page unpublish",
       "solutions workspace",
+      "solutions workspace list",
       "solutions workspace show",
       "solutions workspace invite",
       "solutions workspace set-role",
