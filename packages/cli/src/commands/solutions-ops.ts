@@ -9,80 +9,29 @@ import {
 import type { ConfigLocation } from '../config.js';
 import { resolveControlPlaneToken, serviceJson } from '../control-plane.js';
 import { EXIT, printJsonOk } from './output.js';
-import {
-  authRequired,
-  parseCommandFlags,
-  printCliFailure,
-  serviceFailure,
-  usageError,
-} from './shared.js';
+import { authRequired, printCliFailure, serviceFailure, usageError } from './shared.js';
 import { runSolutionActivity } from './solutions-activity.js';
 import { runSolutionConnections } from './solutions-connections.js';
 import { runSolutionOperations } from './solutions-coordination.js';
 import { runSolutionDrafts } from './solutions-drafts.js';
 import { runSolutionInstallationOptions } from './solutions-installation-options.js';
 import { runSolutionOnboarding } from './solutions-onboarding.js';
+import { parseArgs } from './solutions-ops-args.js';
 import { runSolutionPage } from './solutions-page.js';
+import { runSolutionWorkspace } from './solutions-workspace.js';
 
 export interface SolutionsCommandOptions {
   readonly fetchImpl?: typeof fetch;
 }
 
-const VALUES = {
-  '--service': 'service',
-  '--auth-token': 'authToken',
-  '--org': 'org',
-  '--app': 'app',
-  '--env': 'env',
-  '--retention-days': 'retentionDays',
-  '--display-name': 'displayName',
-  '--privacy-url': 'privacyUrl',
-  '--support-url': 'supportUrl',
-  '--role': 'role',
-  '--subject': 'subject',
-  '--email': 'email',
-  '--expected-revision': 'expectedRevision',
-  '--status': 'status',
-  '--filters': 'filters',
-  '--sort-field': 'sortField',
-  '--sort-direction': 'sortDirection',
-  '--created-at-from': 'createdAtFrom',
-  '--created-at-to': 'createdAtTo',
-  '--assignee': 'assignee',
-  '--data': 'data',
-  '--unset': 'unset',
-  '--note': 'note',
-  '--idempotency-key': 'idempotencyKey',
-  '--cursor': 'cursor',
-  '--limit': 'limit',
-  '--publisher-org': 'publisherOrg',
-  '--definition-app': 'definitionApp',
-  '--definition-env': 'definitionEnv',
-  '--deployment': 'deploymentId',
-  '--binding-reference': 'bindingReference',
-  '--binding-generation': 'bindingGeneration',
-  '--configuration-reference': 'configurationReference',
-} as const;
-
-const BOOLEANS = {
-  '--json': 'json',
-  '--include-deleted': 'includeDeleted',
-  '--enable': 'enable',
-  '--replace': 'replace',
-} as const;
-
 type Args = ReturnType<typeof parseArgs>;
-
-function parseArgs(rest: readonly string[]) {
-  return parseCommandFlags(rest, { values: VALUES, booleans: BOOLEANS });
-}
 
 function commandUsage(message: string, json: boolean): number {
   return printCliFailure(
     'solutions',
     usageError(
       message,
-      'noodle solutions catalog | installation-options | agreement | notice | drafts | page | list | install | inspect | activate | pause | resume | grants | invitations | records | sources | connections | activity | operations',
+      'noodle solutions catalog | installation-options | agreement | notice | drafts | page | workspace | list | install | inspect | activate | pause | resume | grants | invitations | records | sources | connections | activity | operations',
     ),
     json,
   );
@@ -189,6 +138,7 @@ export async function runSolutions(
 ): Promise<number> {
   if (rest[0] === 'drafts') return runSolutionDrafts(rest.slice(1), env, home, options);
   if (rest[0] === 'page') return runSolutionPage(rest.slice(1), env, home, options);
+  if (rest[0] === 'workspace') return runSolutionWorkspace(rest.slice(1), env, home, options);
   if (rest[0] === 'agreement' || rest[0] === 'notice')
     return runSolutionOnboarding(rest[0], rest.slice(1), env, home, options);
   if (rest[0] === 'operations') return runSolutionOperations(rest.slice(1), env, home, options);

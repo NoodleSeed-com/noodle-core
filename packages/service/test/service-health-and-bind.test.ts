@@ -8,6 +8,7 @@ import {
   ServerRegistry,
   serveService,
 } from '../src/index.js';
+import { createServiceProbeDispatcher } from '../src/routes/service-probes.js';
 
 const OWNER_TOKEN = 'OWNER';
 
@@ -227,6 +228,35 @@ describe('health probes (ADR 0034)', () => {
 
   it('GET /readyz defaults to 200 when no probe is configured', async () => {
     expect((await fetch(`${base}/readyz`)).status).toBe(200);
+  });
+
+  it('contains synchronous readiness failures as a generic 503', async () => {
+    const dispatch = createServiceProbeDispatcher({
+      tls: {},
+      buildInfo: resolveBuildInfo(),
+      options: {},
+      whatsapp: undefined,
+      moduleHost: {
+        ready: () => {
+          throw new Error('private startup detail');
+        },
+      },
+    });
+    const srv = await listen((req, res) => {
+      try {
+        dispatch(req, res, new URL(req.url ?? '/', 'http://localhost'));
+      } catch {
+        res.writeHead(500);
+        res.end();
+      }
+    });
+    try {
+      const response = await fetch(`${srv.url}/readyz`);
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual({ status: 'unready' });
+    } finally {
+      await srv.close();
+    }
   });
 });
 

@@ -59,6 +59,7 @@ import { handleAppArchive, handleAppRestore } from './routes/archive.js';
 import { handleAssetPreflight } from './routes/asset-control-plane.js';
 import { dispatchAssistantRoutes } from './routes/assistant-dispatch.js';
 import { dispatchAuthDiscoveryRoute } from './routes/auth-discovery.js';
+import { dispatchBusinessAuthoringRoutes } from './routes/business-authoring-dispatch.js';
 import { dispatchBusinessInformationRoutes } from './routes/business-information-dispatch.js';
 import { dispatchConfigValueRequest } from './routes/config-values-dispatch.js';
 import {
@@ -376,13 +377,20 @@ export function createServiceHandler(
     }
     if (servicePrincipalDispatcher?.(req, res, url)) return;
     if (
+      dispatchBusinessAuthoringRoutes(req, res, url, options.businessAuthoring, {
+        gate,
+        publicCounters,
+        maxBody: maxDeployBody,
+        tls,
+      })
+    )
+      return;
+    if (
       businessInformationStore !== undefined &&
       options.businessInformationEnabled !== false &&
       dispatchBusinessInformationRoutes(req, res, url, {
-        authoring: options.businessAuthoring,
         pageOrigin: options.businessPageOrigin,
         pageServiceUrl: options.publicBaseUrl,
-        maxDraftBody: maxDeployBody,
         ...(whatsapp ? { readWhatsApp: whatsapp.projection.bind(whatsapp) } : {}),
         store: businessInformationStore,
         ...(businessOnboarding ? { businessOnboarding } : {}),

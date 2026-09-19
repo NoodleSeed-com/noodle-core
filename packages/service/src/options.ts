@@ -62,6 +62,8 @@ export interface ServiceOptions {
   readonly businessAuthoring?: {
     readonly workspaces: import('./business-workspaces/store.js').BusinessWorkspaceStore;
     readonly drafts: import('./application-drafts/store.js').ApplicationDraftStore;
+    /** Canonical active-principal evidence; absence disables invitation acceptance, never trusts form/email claims. */
+    readonly verifiedEmail?: (subject: string, claimedEmail: string) => Promise<string | undefined>;
   };
   /** Logged messaging custody and explicitly managed background worker, absent disables channel routes. */
   readonly whatsapp?: import('./channels/runtime.js').WhatsAppServiceOptions;

@@ -11,7 +11,10 @@ import { BusinessWorkspaceStore } from '../src/business-workspaces/store.js';
 import { ServerRegistry } from '../src/registry.js';
 import { createServiceHandler } from '../src/service.js';
 
-describe('authenticated application draft API', () => {
+describe.each([
+  true,
+  false,
+])('authenticated application draft API (managed records enabled=%s)', (businessInformationEnabled) => {
   let server: Server;
   let base: string;
   let workspaces: BusinessWorkspaceStore;
@@ -46,6 +49,7 @@ describe('authenticated application draft API', () => {
     server = createServer(
       createServiceHandler(new ServerRegistry(), {
         businessAuthoring: { drafts, workspaces },
+        businessInformationEnabled,
         admissionCounters: publicCounters,
         maxDeployBodyBytes: 2 * 1024 * 1024,
         deployGate: {
@@ -92,6 +96,8 @@ describe('authenticated application draft API', () => {
   }
 
   it('requires staff authority even for super-admin and never returns customer source on rejection', async () => {
+    if (!businessInformationEnabled)
+      expect((await fetch(`${new URL(base).origin}/v1/solutions/catalog`)).status).toBe(404);
     expect((await request('GET', '', undefined, '')).status).toBe(401);
     for (const actor of ['stranger', 'super-admin']) {
       const response = await request('POST', '', { source, environment: 'prod' }, actor);

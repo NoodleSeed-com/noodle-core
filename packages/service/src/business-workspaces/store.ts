@@ -43,7 +43,7 @@ export class BusinessWorkspaceStore {
   ) {}
 
   /** Internal new-organization composition only; legacy activation uses reviewed migration, never this method. */
-  initializeNewWorkspace(input: {
+  async initializeNewWorkspace(input: {
     readonly org: string;
     readonly ownerSubject: string;
   }): Promise<WorkspaceState> {
@@ -116,7 +116,7 @@ export class BusinessWorkspaceStore {
     });
   }
 
-  changeRole(
+  async changeRole(
     input: Mutation & {
       readonly subject: string;
       readonly role: z.infer<typeof BusinessWorkspaceRoleSchema> | null;
@@ -165,7 +165,7 @@ export class BusinessWorkspaceStore {
     });
   }
 
-  invite(
+  async invite(
     input: Mutation & {
       readonly email: string;
       readonly role?: z.infer<typeof BusinessWorkspaceRoleSchema>;
@@ -207,7 +207,7 @@ export class BusinessWorkspaceStore {
   }
 
   /** Caller supplies the authenticated canonical identity's verified email, never form input. */
-  accept(input: {
+  async accept(input: {
     readonly org: string;
     readonly subject: string;
     readonly verifiedEmail: string;
@@ -250,7 +250,7 @@ export class BusinessWorkspaceStore {
     });
   }
 
-  revokeInvitation(input: Mutation & { readonly invitationId: string }) {
+  async revokeInvitation(input: Mutation & { readonly invitationId: string }) {
     if (!z.uuid().safeParse(input.invitationId).success)
       throw new BusinessWorkspaceError('invalid_request');
     return this.mutate(input, async (tx, state) => {

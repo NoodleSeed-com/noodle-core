@@ -14,6 +14,7 @@ import {
   SOLUTION_COMMON_FLAGS,
 } from './catalog-data-solution-flags.js';
 import { SOLUTION_PAGE } from './catalog-data-solution-page.js';
+import { SOLUTION_WORKSPACE } from './catalog-data-solution-workspace.js';
 import type { CommandSpec, FlagSpec } from './catalog-types.js';
 
 const APP: FlagSpec = {
@@ -153,6 +154,7 @@ export const CATALOG_SOLUTIONS: CommandSpec = {
   subcommands: [
     SOLUTION_DRAFTS,
     SOLUTION_PAGE,
+    SOLUTION_WORKSPACE,
     {
       name: 'installation-options',
       summary: 'List organizations currently authorized to install solutions.',

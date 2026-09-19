@@ -4,6 +4,10 @@ import {
   businessPageMethods,
   parseBusinessPagePath,
 } from '../business-information/business-page-paths.js';
+import {
+  businessWorkspaceMethod,
+  parseBusinessWorkspacePath,
+} from '../business-workspaces/paths.js';
 import type { OAuthStore } from '../oauth/store.js';
 
 /** Restrict only verified Noodle tokens; registration purpose never comes from caller metadata. */
@@ -47,6 +51,8 @@ function denied(message: string): ControlPlaneAuthResult {
 }
 
 function portalOperationAllowed(method: string, path: string): boolean {
+  const workspace = parseBusinessWorkspacePath(path);
+  if (workspace) return method === businessWorkspaceMethod(workspace);
   const page = parseBusinessPagePath(path);
   if (page) return businessPageMethods(page).includes(method);
   const draft = parseApplicationDraftPath(path);

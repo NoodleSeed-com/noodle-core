@@ -32,7 +32,8 @@ function handleServiceProbe(
   if (req.method === 'GET' && (url.pathname === '/healthz' || url.pathname === '/readyz')) {
     applySecurityHeaders(res, tls);
     if (url.pathname === '/healthz') return sendJson(res, 200, { status: 'ok' });
-    void Promise.resolve(moduleHost.ready())
+    void Promise.resolve()
+      .then(() => moduleHost.ready())
       .then((ready) => sendJson(res, ready ? 200 : 503, { status: ready ? 'ready' : 'unready' }))
       .catch(() => sendJson(res, 503, { status: 'unready' }));
     return;

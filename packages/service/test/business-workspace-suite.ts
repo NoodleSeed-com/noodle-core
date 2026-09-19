@@ -23,6 +23,42 @@ export function describeBusinessWorkspaceStore(
       expect(await store.authorize('acme', 'alice', 'billing:manage')).toBe('allowed');
     });
 
+    it('returns validation failures as rejected promises for every public mutation', async () => {
+      const { store } = await setup();
+      const actions = [
+        () => store.initializeNewWorkspace({ org: '', ownerSubject: 'alice' }),
+        () =>
+          store.changeRole({
+            org: 'acme',
+            actor: 'alice',
+            expectedRevision: 0,
+            subject: 'bob',
+            role: 'viewer',
+          }),
+        () => store.invite({ org: 'acme', actor: 'alice', expectedRevision: 1, email: 'invalid' }),
+        () =>
+          store.accept({
+            org: 'acme',
+            subject: 'bob',
+            verifiedEmail: 'bob@example.test',
+            token: 'invalid',
+          }),
+        () =>
+          store.revokeInvitation({
+            org: 'acme',
+            actor: 'alice',
+            expectedRevision: 1,
+            invitationId: 'invalid',
+          }),
+      ];
+      for (const action of actions) {
+        const pending = action();
+        expect(pending).toBeInstanceOf(Promise);
+        await expect(pending).rejects.toHaveProperty('code');
+      }
+      expect((await store.inspect('acme', 'alice')).revision).toBe(1);
+    });
+
     it('initialization is idempotent and never repairs or replaces an existing owner', async () => {
       const { store } = await setup();
       await store.initializeNewWorkspace({ org: 'acme', ownerSubject: 'alice' });

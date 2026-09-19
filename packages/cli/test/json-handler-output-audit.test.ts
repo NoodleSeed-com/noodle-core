@@ -187,6 +187,12 @@ const HANDLER_FAMILY_SURFACES = {
   service_doctor: ['service doctor'],
   app_purge: ['service app-purge preview', 'service app-purge apply'],
   solutions: [
+    'solutions workspace show',
+    'solutions workspace invite',
+    'solutions workspace set-role',
+    'solutions workspace remove',
+    'solutions workspace revoke-invitation',
+    'solutions workspace accept',
     'solutions page show',
     'solutions page save',
     'solutions page publish',

@@ -1,19 +1,10 @@
-import type { BusinessWorkspaceRole } from '@noodle-borg/wire-contracts';
+import type {
+  BusinessWorkspacePermissionSchema,
+  BusinessWorkspaceRole,
+} from '@noodle-borg/wire-contracts';
+import type { z } from 'zod';
 
-export type WorkspacePermission =
-  | 'records:read'
-  | 'records:write'
-  | 'records:export'
-  | 'records:erase'
-  | 'drafts:read'
-  | 'drafts:edit'
-  | 'drafts:preview'
-  | 'applications:publish'
-  | 'settings:manage'
-  | 'team:manage'
-  | 'owners:manage'
-  | 'billing:manage'
-  | 'workspace:delete';
+export type WorkspacePermission = z.infer<typeof BusinessWorkspacePermissionSchema>;
 const operate = ['records:read', 'records:write'] as const;
 const build = ['drafts:read', 'drafts:edit', 'drafts:preview'] as const;
 const administer = [

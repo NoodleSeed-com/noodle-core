@@ -1,7 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { OrganizationAgreementError } from '@noodle-borg/control-plane/portable';
 import { type Logger, sendJson, type TlsPosture } from '@noodle-borg/transport-http';
-import { parseApplicationDraftPath } from '../application-drafts/paths.js';
 import { BusinessNoticeError } from '../business-information/business-notice.js';
 import { parseBusinessPagePath } from '../business-information/business-page-paths.js';
 import { InstallationCapacityError } from '../business-information/installation-capacity.js';
@@ -9,8 +8,6 @@ import { NativeStorageLimitError } from '../business-information/native-storage-
 import { SourceCredentialError } from '../business-information/source-credential-fence.js';
 import { SourceCapacityError } from '../business-information/source-custody-budget.js';
 import { respondRouteError } from '../http-util.js';
-import type { ServiceOptions } from '../options.js';
-import { handleApplicationDraftRoute } from './application-drafts.js';
 import {
   type BusinessInformationRouteDeps,
   handleBusinessGrants,
@@ -58,8 +55,6 @@ export interface BusinessInformationDispatchDeps
     BusinessConnectionRouteDeps,
     Partial<Omit<BusinessChannelRouteDeps, keyof BusinessInformationRouteDeps>> {
   readonly logger: Logger;
-  readonly authoring?: ServiceOptions['businessAuthoring'];
-  readonly maxDraftBody?: number;
   readonly pageOrigin?: string | undefined;
   readonly pageServiceUrl?: string | undefined;
   readonly tls: TlsPosture;
@@ -88,10 +83,6 @@ export function dispatchBusinessInformationRoutes(
         ? handleBusinessPage(req, res, pageRef, pageDeps)
         : handlePublicBusinessPage(req, res, publicPage![1]!, pageDeps),
     );
-  }
-  if (deps.authoring && parseApplicationDraftPath(url.pathname)) {
-    const draftDeps = { ...deps, ...deps.authoring, maxBody: deps.maxDraftBody ?? deps.maxBody };
-    return run(req, res, deps, () => handleApplicationDraftRoute(req, res, url, draftDeps));
   }
   const agreement = /^\/v1\/orgs\/([a-z0-9][a-z0-9-]{0,62})\/agreement$/.exec(url.pathname);
   if (agreement?.[1])
