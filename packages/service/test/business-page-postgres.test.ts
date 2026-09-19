@@ -4,8 +4,12 @@ import { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PostgresBusinessInformationStore } from '../src/business-information/postgres-store.js';
 import { SecretBoxPayloadCipher } from '../src/business-information-cipher.js';
+import { PostgresBusinessWorkspaceBackend } from '../src/business-workspaces/postgres.js';
+import { BusinessWorkspaceStore } from '../src/business-workspaces/store.js';
+import { PostgresArtifactStore } from '../src/store/postgres.js';
 import { withPostgresTransaction } from '../src/store/postgres-transaction.js';
 import { businessPageConformance, pageContent } from './business-page-conformance.js';
+import { businessWorkspaceAdminConformance } from './business-workspace-admin-suite.js';
 
 const connectionString = process.env.DATABASE_URL_TEST;
 describe.skipIf(!connectionString)('PostgreSQL hosted business pages', () => {
@@ -21,10 +25,14 @@ describe.skipIf(!connectionString)('PostgreSQL hosted business pages', () => {
     new SecretBox(staticMasterKeyProvider(Buffer.alloc(32, 11).toString('base64'))),
   );
   const store = new PostgresBusinessInformationStore(pool, cipher);
+  const workspaceBackend = new PostgresBusinessWorkspaceBackend(pool, cipher);
+  const config = new PostgresArtifactStore(pool);
   beforeAll(async () => {
     await admin.query(`CREATE SCHEMA ${schema}`);
     await store.ensureSchema();
     await store.ensureSchema();
+    await workspaceBackend.ensureSchema();
+    await config.ensureSchema();
   });
   afterAll(async () => {
     await pool.end();
@@ -32,6 +40,66 @@ describe.skipIf(!connectionString)('PostgreSQL hosted business pages', () => {
     await admin.end();
   });
   businessPageConformance(async () => store);
+  businessWorkspaceAdminConformance(async () => ({
+    business: new PostgresBusinessInformationStore(pool, cipher),
+    backend: workspaceBackend,
+  }));
+  it('rolls back workspace-authorized page, notice and configuration changes together on one connection', async () => {
+    const business = new PostgresBusinessInformationStore(pool, cipher);
+    const workspaces = new BusinessWorkspaceStore(workspaceBackend, {
+      isIdentityActive: async () => true,
+    });
+    const scope = {
+      org: 'admin-rollback',
+      app: 'assistant',
+      env: 'prod',
+      installationId: 'native',
+    };
+    await config.createOrg({ slug: scope.org });
+    await business.createInstallation({
+      scope,
+      profileKey: 'travel',
+      managedCollections: ['travel_requests'],
+      actorSubject: 'legacy',
+    });
+    await workspaces.initializeNewWorkspace({ org: scope.org, ownerSubject: 'owner' });
+    business.staff.configure(workspaces);
+    await expect(
+      withPostgresTransaction(pool, async () => {
+        await business.setBusinessNotice({
+          scope,
+          actorSubject: 'owner',
+          expectedRevision: 0,
+          notice: {
+            displayName: 'Uncommitted',
+            privacyUrl: 'https://example.test/privacy',
+            supportUrl: 'mailto:help@example.test',
+          },
+        });
+        await business.pages.update({
+          scope,
+          actorSubject: 'owner',
+          change: { operation: 'save', expectedRevision: 0, content: pageContent },
+        });
+        await business.staff.run(scope, 'owner', 'installation:administer', () =>
+          config.transactConfig(scope.org, async (transaction) => {
+            await transaction.setConfigValue({
+              kind: 'variable',
+              scope: { level: 'org', org: scope.org },
+              name: 'BUSINESS_NAME',
+              value: 'Uncommitted',
+            });
+          }),
+        );
+        expect((await business.pages.get(scope))?.revision).toBe(1);
+        expect((await business.getBusinessNotice(scope))?.revision).toBe(1);
+        throw new Error('rollback-native-admin');
+      }),
+    ).rejects.toThrow('rollback-native-admin');
+    expect(await business.pages.get(scope)).toBeUndefined();
+    expect(await business.getBusinessNotice(scope)).toBeUndefined();
+    expect(await config.listConfigValues('variable', { level: 'org', org: scope.org })).toEqual([]);
+  });
   const scope = { org: 'durable-page', app: 'travel', env: 'prod', installationId: 'private-page' };
   async function seed() {
     await store.createInstallation({

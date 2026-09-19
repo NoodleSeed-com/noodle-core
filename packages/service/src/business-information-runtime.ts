@@ -25,6 +25,7 @@ export function createBusinessInformationRuntime(
     (options.businessInformationEnabled === false
       ? undefined
       : new InMemoryBusinessInformationStore());
+  businessInformationStore?.staff.configure(options.businessAuthoring?.workspaces);
   if (businessInformationStore)
     registry.setApplicationLifecycleObserver((org, app, at, retired) =>
       businessInformationStore.pauseApplication(org, app, at, retired),

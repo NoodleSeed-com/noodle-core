@@ -27,13 +27,15 @@ export async function installationProjection(
   deps: BusinessInformationRouteDeps,
 ): Promise<ReturnType<typeof installationToWire>> {
   const state = (await deps.readInstallationActivation?.(installation)) ?? 'unavailable';
+  const access = await deps.workspaces?.resolveAccess(installation.scope.org, identity.subject);
   const canRetry =
     state === 'pending' &&
     deps.activateInstallation !== undefined &&
     role === 'administrator' &&
     (await canManageMembers(deps.controlPlane, installation.scope.org, identity));
   return {
-    ...installationToWire(installation, role),
+    ...installationToWire(installation, access?.role ?? role),
+    ...(access ? { authorityVersion: 1 as const } : {}),
     activation: state === 'pending' ? { state, canRetry } : { state, canRetry: false },
   };
 }

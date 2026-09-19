@@ -6,6 +6,7 @@ import {
   type SolutionInstallation,
 } from '../business-information/portable.js';
 import type { BusinessInformationRouteDeps } from './business-information.js';
+import { runBusinessStaffOperation } from './business-information-access.js';
 
 export async function createNativeRecord(
   res: ServerResponse,
@@ -30,11 +31,28 @@ export async function createNativeRecord(
       actorSubject: input.actorSubject,
     };
     if (input.admit) {
-      const receipt = await deps.store.probeRequest(request);
+      const receipt =
+        input.origin.kind === 'portal'
+          ? await runBusinessStaffOperation(
+              deps,
+              request.scope,
+              input.actorSubject,
+              'records:create',
+              () => deps.store.probeRequest(request),
+            )
+          : await deps.store.probeRequest(request);
       if (receipt.disposition !== 'missing') return receipt;
       if (!(await input.admit())) return undefined;
     }
-    return await deps.store.createRequest(request);
+    return input.origin.kind === 'portal'
+      ? await runBusinessStaffOperation(
+          deps,
+          request.scope,
+          input.actorSubject,
+          'records:create',
+          () => deps.store.createRequest(request),
+        )
+      : await deps.store.createRequest(request);
   } catch (error) {
     if (!(error instanceof PayloadValidationError)) throw error;
     sendJson(res, 400, { error: error.message, code: error.code });

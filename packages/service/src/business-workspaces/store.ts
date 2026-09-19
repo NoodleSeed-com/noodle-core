@@ -3,9 +3,11 @@ import {
   BusinessWorkspaceInvitationRequestSchema,
   BusinessWorkspaceListQuerySchema,
   BusinessWorkspaceRoleSchema,
+  type EligibleBusinessAssignee,
 } from '@noodle-borg/wire-contracts';
 import { z } from 'zod';
 import {
+  type BusinessWorkspaceAccess,
   type BusinessWorkspaceBackend,
   BusinessWorkspaceError,
   type BusinessWorkspaceTransaction,
@@ -136,6 +138,81 @@ export class BusinessWorkspaceStore {
     return member && WORKSPACE_ROLE_PERMISSIONS[member.role].includes(permission)
       ? 'allowed'
       : 'denied';
+  }
+
+  /** Undefined means retained legacy authority, never a versioned workspace with a missing member. */
+  async resolveAccess(org: string, subject: string): Promise<BusinessWorkspaceAccess | undefined> {
+    validateIdentity(org, subject);
+    await this.requireActive(subject);
+    const state = await this.backend.read(org);
+    if (!state) return undefined;
+    const member = state.members.find((item) => item.subject === subject);
+    if (!member) throw new BusinessWorkspaceError('forbidden');
+    return {
+      authorityVersion: 1,
+      revision: state.revision,
+      subject,
+      role: member.role,
+      permissions: WORKSPACE_ROLE_PERMISSIONS[member.role],
+    };
+  }
+
+  /** Minimal assignment choices; not a team directory or a second identity profile store. */
+  async listEligibleAssignees(
+    org: string,
+    actor: string,
+  ): Promise<readonly EligibleBusinessAssignee[] | undefined> {
+    validateIdentity(org, actor);
+    return this.backend.run(org, async (tx) => {
+      await this.requireActive(actor);
+      const state = await tx.get();
+      if (!state) return undefined;
+      const member = state.members.find((item) => item.subject === actor);
+      if (!member || !WORKSPACE_ROLE_PERMISSIONS[member.role].includes('records:write'))
+        throw new BusinessWorkspaceError('forbidden');
+      const result: EligibleBusinessAssignee[] = [];
+      for (const candidate of state.members) {
+        if (
+          (candidate.role === 'owner' ||
+            candidate.role === 'administrator' ||
+            candidate.role === 'operator') &&
+          (await this.options.isIdentityActive(candidate.subject))
+        )
+          result.push({ subject: candidate.subject, role: candidate.role, authorityVersion: 1 });
+        if (result.length === 100) break;
+      }
+      return result;
+    });
+  }
+
+  /** Commit a local authoritative effect under the same lock/transaction as membership changes.
+   * The callback must use this backend's transaction-aware stores, never send an HTTP response or
+   * perform a remote side effect. External operations use their own dispatch/confirmation boundary.
+   */
+  async runAuthorized<T>(
+    org: string,
+    actor: string,
+    permission: WorkspacePermission | null,
+    operation: () => Promise<T>,
+    legacy?: () => Promise<T>,
+  ): Promise<T> {
+    validateIdentity(org, actor);
+    return this.backend.run(org, async (tx) => {
+      const state = await tx.get();
+      await this.requireActive(actor);
+      if (!state) {
+        if (legacy) return legacy();
+        throw new BusinessWorkspaceError('legacy_authority');
+      }
+      const member = state.members.find((item) => item.subject === actor);
+      if (
+        !member ||
+        permission === null ||
+        !WORKSPACE_ROLE_PERMISSIONS[member.role].includes(permission)
+      )
+        throw new BusinessWorkspaceError('forbidden');
+      return operation();
+    });
   }
 
   async inspect(org: string, actor: string) {

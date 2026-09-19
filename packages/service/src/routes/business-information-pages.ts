@@ -100,7 +100,13 @@ export async function handleBusinessPage(
   );
   if (!authorized) return;
   try {
-    let record = await deps.store.pages.get(authorized.scope);
+    let record = await deps.store.staff.run(
+      authorized.scope,
+      identity.subject,
+      'installation:administer',
+      () => deps.store.pages.get(authorized.scope),
+      () => new BusinessPageError('business_page_forbidden'),
+    );
     if (req.method !== 'GET') {
       const body = await readJsonBody(req, Math.min(deps.maxBody, 256 * 1024));
       if (!body.ok) return sendJson(res, body.status, { error: body.error });

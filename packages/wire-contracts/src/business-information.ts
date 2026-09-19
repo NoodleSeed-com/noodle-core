@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BusinessWorkspaceRoleSchema } from './business-workspaces.js';
 import { BusinessNoticeSchema } from './solution-onboarding.js';
 
 /** Public Noodle-authored profiles. B2B SaaS uses the private-definition path. */
@@ -206,6 +207,21 @@ export const SolutionInstallationActivationSchema = z.discriminatedUnion('state'
 ]);
 export type SolutionInstallationActivation = z.infer<typeof SolutionInstallationActivationSchema>;
 
+/** Selected authority version determines the role vocabulary; never infer or merge versions. */
+export const BusinessInstallationAccessSchema = z
+  .object({
+    currentRole: z.union([BusinessGrantRoleSchema, BusinessWorkspaceRoleSchema]),
+    authorityVersion: z.literal(1).optional(),
+  })
+  .refine(
+    (value) =>
+      (value.authorityVersion === 1
+        ? BusinessWorkspaceRoleSchema
+        : BusinessGrantRoleSchema
+      ).safeParse(value.currentRole).success,
+    { message: 'Role does not match the selected authority version' },
+  );
+
 const installationShape = {
   activation: SolutionInstallationActivationSchema.optional(),
   id,
@@ -215,7 +231,7 @@ const installationShape = {
   retentionDays: ManagedRecordRetentionDaysSchema,
   publicId: id,
   active: z.boolean(),
-  currentRole: BusinessGrantRoleSchema,
+  ...BusinessInstallationAccessSchema.shape,
   revision: positiveRevision,
   createdAt: instant,
   updatedAt: instant,
@@ -250,13 +266,17 @@ export const ResolvedSolutionDefinitionSchema = z.discriminatedUnion('kind', [
 ]);
 export type ResolvedSolutionDefinition = z.infer<typeof ResolvedSolutionDefinitionSchema>;
 
-export const SolutionInstallationSchema = z.strictObject({
-  ...installationShape,
-  definition: ResolvedSolutionDefinitionSchema,
-  collections: z.array(ManagedCollectionProfileSchema).max(16),
-  /** Historical persisted key retained only while legacy installations are backfilled. */
-  profileId: LegacySolutionProfileIdSchema.optional(),
-});
+export const SolutionInstallationSchema = z
+  .strictObject({
+    ...installationShape,
+    definition: ResolvedSolutionDefinitionSchema,
+    collections: z.array(ManagedCollectionProfileSchema).max(16),
+    /** Historical persisted key retained only while legacy installations are backfilled. */
+    profileId: LegacySolutionProfileIdSchema.optional(),
+  })
+  .refine((value) => BusinessInstallationAccessSchema.safeParse(value).success, {
+    message: 'Invalid installation access projection',
+  });
 export type SolutionInstallation = z.infer<typeof SolutionInstallationSchema>;
 
 export const SolutionInstallationResponseSchema = z.strictObject({
@@ -377,16 +397,36 @@ export type BusinessInvitationAcceptResponse = z.infer<
   typeof BusinessInvitationAcceptResponseSchema
 >;
 
-export const EligibleBusinessAssigneeSchema = z.strictObject({
+const legacyAssignee = z.strictObject({
   subject: id,
   email: z.email().max(254),
   role: z.enum(['administrator', 'manager', 'operator']),
 });
+const workspaceAssignee = z.strictObject({
+  subject: z.string().min(1).max(500),
+  email: z.email().max(254).optional(),
+  role: z.enum(['owner', 'administrator', 'operator']),
+  authorityVersion: z.literal(1),
+});
+export const EligibleBusinessAssigneeSchema = z.union([legacyAssignee, workspaceAssignee]);
 export type EligibleBusinessAssignee = z.infer<typeof EligibleBusinessAssigneeSchema>;
 
 export const EligibleBusinessAssigneeListResponseSchema = z.strictObject({
   ok: z.literal(true),
   data: z.strictObject({ assignees: z.array(EligibleBusinessAssigneeSchema).max(100) }),
+});
+export const EligibleBusinessAssigneeListClientResponseSchema = z.object({
+  ok: z.literal(true),
+  data: z.object({
+    assignees: z
+      .array(
+        z.union([
+          workspaceAssignee.strip(),
+          legacyAssignee.extend({ authorityVersion: z.never().optional() }).strip(),
+        ]),
+      )
+      .max(100),
+  }),
 });
 export type EligibleBusinessAssigneeListResponse = z.infer<
   typeof EligibleBusinessAssigneeListResponseSchema

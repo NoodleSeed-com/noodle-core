@@ -5,7 +5,6 @@ import {
   validatedNotice,
 } from './business-notice.js';
 import type {
-  BusinessGrant,
   BusinessInformationStore,
   InstallationMutationResult,
   InstallationScope,
@@ -14,6 +13,8 @@ import type {
 import type { ManagedDefinitionResolver } from './managed-releases.js';
 import { effectiveInstallation, validateExpectedRevision } from './model.js';
 import { scopeKey } from './pagination.js';
+import type { BusinessPrincipalAuthority } from './principal-authority.js';
+import type { BusinessStaffAuthority } from './staff-authority.js';
 import { validateScalar, validateScope } from './validation.js';
 
 export type InstallationApplicationResolver = (scope: InstallationScope) => Promise<
@@ -32,16 +33,19 @@ export class InMemoryInstallationLifecycle {
   readonly #managedDefinition: ManagedDefinitionResolver | undefined;
   #application: InstallationApplicationResolver | undefined;
   readonly #notices = new Map<string, BusinessNoticeRecord>();
-  readonly #getGrant: (scope: InstallationScope, subject: string) => BusinessGrant | undefined;
+  readonly #staff: BusinessStaffAuthority;
+  readonly #principals: BusinessPrincipalAuthority;
   constructor(input: {
     installations: Map<string, SolutionInstallation>;
-    getGrant: (scope: InstallationScope, subject: string) => BusinessGrant | undefined;
+    staff: BusinessStaffAuthority;
+    principals: BusinessPrincipalAuthority;
     withLock: <T>(key: string, operation: () => Promise<T>) => Promise<T>;
     now: () => Date;
     managedDefinition: ManagedDefinitionResolver | undefined;
   }) {
     this.#installations = input.installations;
-    this.#getGrant = input.getGrant;
+    this.#staff = input.staff;
+    this.#principals = input.principals;
     this.#withLock = input.withLock;
     this.#now = input.now;
     this.#managedDefinition = input.managedDefinition;
@@ -70,23 +74,32 @@ export class InMemoryInstallationLifecycle {
   async setBusinessNotice(input: BusinessNoticeInput): Promise<BusinessNoticeRecord> {
     const scope = validateScope(input.scope);
     const notice = validatedNotice(input);
-    return this.#withLock(`grants:${scopeKey(scope)}`, async () => {
-      const grant = this.#getGrant(scope, input.actorSubject);
-      if (grant?.role !== 'administrator' || grant.revokedAt)
-        throw new BusinessNoticeError('business_notice_forbidden');
-      const key = scopeKey(scope);
-      const current = this.#notices.get(key);
-      if ((current?.revision ?? 0) !== input.expectedRevision)
-        throw new BusinessNoticeError('business_notice_conflict');
-      const record = {
-        notice,
-        revision: input.expectedRevision + 1,
-        updatedAt: this.#now().toISOString(),
-        updatedBySubject: input.actorSubject,
-      };
-      this.#notices.set(key, record);
-      return structuredClone(record);
-    });
+    return this.#staff.run(
+      scope,
+      input.actorSubject,
+      'installation:administer',
+      () =>
+        this.#withLock(`grants:${scopeKey(scope)}`, async () => {
+          if (
+            !(await this.#staff.allows(scope, input.actorSubject, 'installation:administer')) ||
+            !(await this.#principals.allows(input.actorSubject))
+          )
+            throw new BusinessNoticeError('business_notice_forbidden');
+          const key = scopeKey(scope);
+          const current = this.#notices.get(key);
+          if ((current?.revision ?? 0) !== input.expectedRevision)
+            throw new BusinessNoticeError('business_notice_conflict');
+          const record = {
+            notice,
+            revision: input.expectedRevision + 1,
+            updatedAt: this.#now().toISOString(),
+            updatedBySubject: input.actorSubject,
+          };
+          this.#notices.set(key, record);
+          return structuredClone(record);
+        }),
+      () => new BusinessNoticeError('business_notice_forbidden'),
+    );
   }
 
   configureApplicationLifecycle(resolve: InstallationApplicationResolver) {

@@ -86,12 +86,18 @@ export async function handleBusinessChannels(
         code: 'business_setup_required',
         error: 'Complete business setup before publishing agent channels.',
       });
-    const result = await deps.store.setIntakeState({
-      scope: authorized.scope,
-      expectedRevision: parsed.data.expectedRevision,
-      active: parsed.data.active,
-      actorSubject: identity.subject,
-    });
+    const result = await deps.store.staff.run(
+      authorized.scope,
+      identity.subject,
+      'installation:administer',
+      () =>
+        deps.store.setIntakeState({
+          scope: authorized.scope,
+          expectedRevision: parsed.data.expectedRevision,
+          active: parsed.data.active,
+          actorSubject: identity.subject,
+        }),
+    );
     if (!result.ok) return mutationFailure(res, result);
     installation = result.installation;
   }

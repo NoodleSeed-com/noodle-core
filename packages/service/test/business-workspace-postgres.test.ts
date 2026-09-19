@@ -4,6 +4,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PostgresApplicationDraftBackend } from '../src/application-drafts/postgres.js';
 import { ApplicationDraftStore } from '../src/application-drafts/store.js';
+import { PostgresBusinessInformationStore } from '../src/business-information/postgres-store.js';
 import { SecretBoxPayloadCipher } from '../src/business-information-cipher.js';
 import { membershipDigest } from '../src/business-workspaces/membership-index.js';
 import { PostgresBusinessWorkspaceBackend } from '../src/business-workspaces/postgres.js';
@@ -26,12 +27,15 @@ describe.skipIf(databaseUrl === undefined)('PostgreSQL workspace authority', () 
   );
   const backend = new PostgresBusinessWorkspaceBackend(pool, cipher);
   const draftBackend = new PostgresApplicationDraftBackend(pool, cipher);
+  const business = new PostgresBusinessInformationStore(pool, cipher);
   const options = { isIdentityActive: async () => true };
   beforeAll(async () => {
     await admin.query(`CREATE SCHEMA ${schema}`);
     await backend.ensureSchema();
     await backend.ensureSchema();
     await draftBackend.ensureSchema();
+    await business.ensureSchema();
+    business.staff.configure(new BusinessWorkspaceStore(backend, options));
   });
   afterAll(async () => {
     await pool.end();
@@ -145,6 +149,60 @@ describe.skipIf(databaseUrl === undefined)('PostgreSQL workspace authority', () 
       (await pool.query('SELECT * FROM business_workspace_membership_index WHERE org = $1', [org]))
         .rowCount,
     ).toBe(0);
+  });
+
+  it('commits native effects on the borrowed authority connection and rolls failed effects back', async () => {
+    const store = new BusinessWorkspaceStore(backend, options);
+    const org = `org-${randomUUID()}`;
+    const scope = { org, app: 'assistant', env: 'prod', installationId: 'native' };
+    await store.initializeNewWorkspace({ org, ownerSubject: 'owner' });
+    await business.createInstallation({
+      scope,
+      profileKey: 'travel',
+      managedCollections: ['travel_requests'],
+      actorSubject: 'legacy-admin',
+    });
+    const input = {
+      scope,
+      collectionKey: 'travel_requests',
+      idempotencyKey: 'request-one',
+      payload: { request_type: 'service', summary: 'A native enquiry' },
+      origin: { kind: 'portal' as const },
+      actorSubject: 'owner',
+    };
+    await expect(
+      store.runAuthorized(org, 'owner', 'records:write', async () => {
+        await business.createRequest(input);
+        throw new Error('test effect failed');
+      }),
+    ).rejects.toThrow('test effect failed');
+    expect(
+      (await business.listRequests({ scope, collectionKey: 'travel_requests' })).records,
+    ).toHaveLength(0);
+    const saved = await store.runAuthorized(org, 'owner', 'records:write', () =>
+      business.createRequest(input),
+    );
+    expect(saved.disposition).toBe('created');
+    if (saved.disposition !== 'created') throw new Error('expected created native record');
+    const assigned = await store.runAuthorized(org, 'owner', 'records:write', () =>
+      business.mutateRequest({
+        scope,
+        collectionKey: 'travel_requests',
+        id: saved.record.id,
+        expectedRevision: 1,
+        actorSubject: 'owner',
+        operation: { kind: 'assign', assigneeSubject: 'owner' },
+      }),
+    );
+    expect(assigned.ok).toBe(true);
+    expect(
+      (await business.listRequests({ scope, collectionKey: 'travel_requests' })).records,
+    ).toHaveLength(1);
+    await expect(
+      store.runAuthorized(org, 'legacy-admin', 'records:write', () =>
+        business.createRequest(input),
+      ),
+    ).rejects.toMatchObject({ code: 'forbidden' });
   });
 
   it('rebuilds missing discovery generations from encrypted authority without changing roles or audit', async () => {

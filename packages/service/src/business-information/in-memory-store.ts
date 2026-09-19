@@ -67,6 +67,7 @@ import {
   BusinessPrincipalAuthority,
   type BusinessPrincipalProvider,
 } from './principal-authority.js';
+import { BusinessStaffAuthority } from './staff-authority.js';
 import {
   boundedExportPageSize,
   boundedPageSize,
@@ -79,6 +80,7 @@ export type { InMemoryBusinessInformationStoreOptions } from './in-memory-store-
 
 /** Process-local development/test adapter. Hosted services must use the PostgreSQL adapter. */
 export class InMemoryBusinessInformationStore implements BusinessInformationStore {
+  readonly staff = new BusinessStaffAuthority((scope, subject) => this.getGrant(scope, subject));
   readonly pages: InMemoryBusinessPages;
   readonly #installations = new Map<string, SolutionInstallation>();
   readonly #installationIds = new Map<string, string>();
@@ -106,7 +108,8 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
     this.pages = new InMemoryBusinessPages(this, this.#locks, this.#principals, this.#now);
     this.#lifecycle = new InMemoryInstallationLifecycle({
       installations: this.#installations,
-      getGrant: (scope, subject) => this.#grants.get(grantKey(scope, subject)),
+      staff: this.staff,
+      principals: this.#principals,
       withLock: (key, operation) => this.#locks.run(key, operation),
       now: this.#now,
       managedDefinition: this.#managedDefinition,
@@ -125,8 +128,10 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
     this.#principals.configure(provider);
   }
 
-  async listEligibleAssignees(scope: InstallationScope) {
-    return this.#principals.eligible(await this.listGrants(scope));
+  async listEligibleAssignees(scope: InstallationScope, actor: string) {
+    return this.staff.eligibleAssignees(scope, actor, async () =>
+      this.#principals.eligible(await this.listGrants(scope)),
+    );
   }
 
   getBusinessNotice(scope: InstallationScope) {
@@ -554,12 +559,13 @@ export class InMemoryBusinessInformationStore implements BusinessInformationStor
           return { ok: false, reason: 'invalid_transition', currentRevision: current.revision };
         }
         if (input.operation.kind === 'assign' && input.operation.assigneeSubject !== undefined) {
-          const assignee = this.#grants.get(grantKey(input.scope, input.operation.assigneeSubject));
           if (
-            assignee === undefined ||
-            assignee.revokedAt !== undefined ||
-            assignee.role === 'viewer' ||
-            !(await this.#principals.allows(assignee.subject))
+            !(await this.staff.allows(
+              input.scope,
+              input.operation.assigneeSubject,
+              'records:assign',
+            )) ||
+            !(await this.#principals.allows(input.operation.assigneeSubject))
           ) {
             return { ok: false, reason: 'invalid_assignee', currentRevision: current.revision };
           }

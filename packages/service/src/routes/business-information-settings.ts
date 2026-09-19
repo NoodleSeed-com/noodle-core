@@ -54,13 +54,21 @@ export async function handleBusinessSettings(
   res.setHeader('cache-control', 'private, no-store');
   try {
     if (req.method === 'GET') {
-      await settings.initialize(target);
+      const data = await deps.store.staff.run(
+        authorized.scope,
+        identity.subject,
+        'records:read',
+        async () => {
+          await settings.initialize(target);
+          return settings.read(target, canEdit);
+        },
+      );
       return sendJson(
         res,
         200,
         ApplicationSettingsResponseSchema.parse({
           ok: true,
-          data: await settings.read(target, canEdit),
+          data,
         }),
       );
     }
@@ -70,11 +78,17 @@ export async function handleBusinessSettings(
     if (!parsed.success)
       return sendJson(res, 400, { code: 'settings_invalid', error: 'Invalid settings update.' });
     const registry = deps.registry;
-    const data = await settings.save(
-      target,
-      parsed.data,
+    const data = await deps.store.staff.run(
+      authorized.scope,
       identity.subject,
-      registry ? () => resolveSettingsTargets(registry, target.scope, deps.store) : undefined,
+      'installation:administer',
+      () =>
+        settings.save(
+          target,
+          parsed.data,
+          identity.subject,
+          registry ? () => resolveSettingsTargets(registry, target.scope, deps.store) : undefined,
+        ),
     );
     await deps.audit?.emit({
       eventType: 'config.variable.business_settings_changed',

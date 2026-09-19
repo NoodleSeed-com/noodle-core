@@ -7,6 +7,7 @@ import { InstallationCapacityError } from '../business-information/installation-
 import { NativeStorageLimitError } from '../business-information/native-storage-budget.js';
 import { SourceCredentialError } from '../business-information/source-credential-fence.js';
 import { SourceCapacityError } from '../business-information/source-custody-budget.js';
+import { BusinessWorkspaceError } from '../business-workspaces/contracts.js';
 import { respondRouteError } from '../http-util.js';
 import {
   type BusinessInformationRouteDeps,
@@ -204,6 +205,13 @@ function respondBusinessError(
   event: string,
   error: unknown,
 ): void {
+  if (error instanceof BusinessWorkspaceError) {
+    sendJson(res, error.code === 'forbidden' ? 403 : 409, {
+      error: 'Business access changed. Refresh before continuing.',
+      code: error.code,
+    });
+    return;
+  }
   if (error instanceof OrganizationAgreementError || error instanceof BusinessNoticeError) {
     const forbidden =
       error.code === 'agreement_owner_required' || error.code === 'business_notice_forbidden';

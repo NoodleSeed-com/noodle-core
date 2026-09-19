@@ -125,7 +125,7 @@ export function collectionToWire(collection: InstalledCollectionDefinition): Wir
 
 export function installationToWire(
   installation: SolutionInstallation,
-  currentRole: BusinessGrant['role'],
+  currentRole: WireInstallation['currentRole'],
 ): WireInstallation {
   return {
     id: installation.scope.installationId,

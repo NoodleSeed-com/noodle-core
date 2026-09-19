@@ -6,7 +6,10 @@ import {
   BusinessInvitationRevokeRequestSchema,
   formatWireError,
 } from '@noodle-borg/wire-contracts';
-import type { SolutionInstallation } from '../business-information/contracts.js';
+import type {
+  BusinessStaffGrant,
+  SolutionInstallation,
+} from '../business-information/contracts.js';
 import { hashToken } from '../oauth/tokens.js';
 import {
   type BusinessInformationRouteDeps,
@@ -36,7 +39,12 @@ export async function handleMySolutionInstallations(
     return sendJson(res, 400, { error: 'cursor is invalid' });
   }
   const limit = paging.value.limit ?? 100;
-  const joined = [...(await deps.store.listInstallationsForSubject(identity.subject))]
+  const current: { installation: SolutionInstallation; grant: BusinessStaffGrant }[] = [];
+  for (const { installation } of await deps.store.listInstallationsForSubject(identity.subject)) {
+    const grant = await deps.store.staff.resolve(installation.scope, identity.subject);
+    if (grant && !grant.revokedAt) current.push({ installation, grant });
+  }
+  const joined = current
     .sort((left, right) => compareDiscoveryRows(left, right))
     .filter((item) => after === undefined || discoveryOrderKey(item) > after)
     .slice(0, limit + 1);
@@ -236,13 +244,11 @@ export async function handleEligibleBusinessAssignees(
     deps,
   );
   if (authorized === undefined) return;
-  const grants = await deps.store.listEligibleAssignees(authorized.scope);
+  const assignees = await deps.store.listEligibleAssignees(authorized.scope, identity.subject);
   sendJson(res, 200, {
     ok: true,
     data: {
-      assignees: grants
-        .map((grant) => ({ subject: grant.subject, email: grant.email, role: grant.role }))
-        .slice(0, 100),
+      assignees: assignees.slice(0, 100),
     },
   });
 }

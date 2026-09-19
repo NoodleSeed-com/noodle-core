@@ -13,6 +13,7 @@ import type {
   BusinessGrant,
   BusinessPermission,
   BusinessRole,
+  BusinessStaffGrant,
   InstallationScope,
   InstalledCollectionDefinition,
   ManagedRequestActivity,
@@ -38,6 +39,8 @@ import {
   validateScalar,
   validateScope,
 } from './validation.js';
+
+import { workspacePermissionForBusinessOperation } from './workspace-permissions.js';
 
 const ROLE_PERMISSIONS: Readonly<Record<BusinessRole, readonly BusinessPermission[]>> = {
   administrator: [
@@ -79,9 +82,13 @@ export function permissionsForBusinessRole(role: BusinessRole): readonly Busines
 }
 
 export function businessGrantAllows(
-  grant: BusinessGrant | undefined,
+  grant: BusinessStaffGrant | undefined,
   permission: BusinessPermission,
 ): boolean {
+  if (grant?.authorityVersion === 1) {
+    const mapped = workspacePermissionForBusinessOperation(permission);
+    return mapped !== undefined && grant.permissions.includes(mapped);
+  }
   return (
     grant !== undefined &&
     grant.revokedAt === undefined &&

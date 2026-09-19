@@ -18,7 +18,7 @@ export class InMemoryBusinessPages implements BusinessPageStore {
   constructor(
     private readonly business: Pick<
       BusinessInformationStore,
-      'getInstallation' | 'getGrant' | 'getBusinessNotice'
+      'getInstallation' | 'staff' | 'getBusinessNotice'
     >,
     private readonly locks: BusinessMemoryLocks,
     private readonly principals: BusinessPrincipalAuthority,
@@ -34,26 +34,31 @@ export class InMemoryBusinessPages implements BusinessPageStore {
     const scope = validateScope(input.scope);
     const actorSubject = validateScalar('page actor', input.actorSubject, 500);
     const key = scopeKey(scope);
-    return this.locks.run(`grants:${key}`, () =>
-      this.locks.run(`intake:${key}`, async () => {
-        const grant = await this.business.getGrant(scope, actorSubject);
-        if (
-          !(await this.business.getInstallation(scope)) ||
-          grant?.role !== 'administrator' ||
-          grant.revokedAt ||
-          !(await this.principals.allows(actorSubject))
-        )
-          throw new BusinessPageError('business_page_forbidden');
-        const next = await nextBusinessPage(
-          this.#records.get(key),
-          { ...input, scope, actorSubject },
-          this.now().toISOString(),
-          await this.business.getBusinessNotice(scope),
-          assertReady,
-        );
-        this.#records.set(key, structuredClone(next));
-        return next;
-      }),
+    return this.business.staff.run(
+      scope,
+      actorSubject,
+      'installation:administer',
+      () =>
+        this.locks.run(`grants:${key}`, () =>
+          this.locks.run(`intake:${key}`, async () => {
+            if (
+              !(await this.business.getInstallation(scope)) ||
+              !(await this.business.staff.allows(scope, actorSubject, 'installation:administer')) ||
+              !(await this.principals.allows(actorSubject))
+            )
+              throw new BusinessPageError('business_page_forbidden');
+            const next = await nextBusinessPage(
+              this.#records.get(key),
+              { ...input, scope, actorSubject },
+              this.now().toISOString(),
+              await this.business.getBusinessNotice(scope),
+              assertReady,
+            );
+            this.#records.set(key, structuredClone(next));
+            return next;
+          }),
+        ),
+      () => new BusinessPageError('business_page_forbidden'),
     );
   }
 }

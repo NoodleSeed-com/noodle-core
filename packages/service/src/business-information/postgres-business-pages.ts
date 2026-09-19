@@ -13,6 +13,7 @@ import { validateSealedPayload } from './cipher.js';
 import type { InstallationScope, PayloadCipher } from './contracts.js';
 import { getBusinessNoticeRow } from './postgres-business-notice.js';
 import type { BusinessPrincipalAuthority } from './principal-authority.js';
+import type { BusinessStaffAuthority } from './staff-authority.js';
 import { validateScalar, validateScope } from './validation.js';
 
 const where = 'org_slug=$1 AND app_slug=$2 AND environment=$3 AND installation_id=$4';
@@ -49,6 +50,7 @@ export class PostgresBusinessPages implements BusinessPageStore {
     private readonly pool: Pool,
     private readonly cipher: PayloadCipher,
     private readonly principals: BusinessPrincipalAuthority,
+    private readonly staff: BusinessStaffAuthority,
   ) {}
   async get(input: InstallationScope): Promise<BusinessPageRecord | undefined> {
     const scope = validateScope(input);
@@ -78,44 +80,50 @@ export class PostgresBusinessPages implements BusinessPageStore {
   ): Promise<BusinessPageRecord> {
     const scope = validateScope(input.scope);
     const actorSubject = validateScalar('page actor', input.actorSubject, 500);
-    return withPostgresTransaction(this.pool, async (client) => {
-      const installation = await client.query(
-        `SELECT installation_id FROM business_solution_installations WHERE ${where} FOR UPDATE`,
-        values(scope),
-      );
-      const grants = await client.query<{ role: string; revoked_at: Date | null }>(
-        `SELECT role,revoked_at FROM business_installation_grants WHERE ${where} AND subject=$5 FOR UPDATE`,
-        [...values(scope), actorSubject],
-      );
-      if (
-        !installation.rows[0] ||
-        grants.rows[0]?.role !== 'administrator' ||
-        grants.rows[0].revoked_at ||
-        !(await this.principals.allows(actorSubject, client))
-      )
-        throw new BusinessPageError('business_page_forbidden');
-      const current = await this.get(scope);
-      const clock = await client.query<{ now: Date }>('SELECT clock_timestamp() AS now');
-      const next = await nextBusinessPage(
-        current,
-        { ...input, scope, actorSubject },
-        clock.rows[0]!.now.toISOString(),
-        await getBusinessNoticeRow(this.pool, scope),
-        assertReady,
-      );
-      const sealed = validateSealedPayload(
-        await this.cipher.seal(
-          new TextEncoder().encode(JSON.stringify(next)),
-          context(scope, next.revision),
-        ),
-      );
-      await client.query(
-        `INSERT INTO business_installation_pages
+    return this.staff.run(
+      scope,
+      actorSubject,
+      'installation:administer',
+      () =>
+        withPostgresTransaction(this.pool, async (client) => {
+          const installation = await client.query(
+            `SELECT installation_id FROM business_solution_installations WHERE ${where} FOR UPDATE`,
+            values(scope),
+          );
+          await client.query(
+            `SELECT role,revoked_at FROM business_installation_grants WHERE ${where} AND subject=$5 FOR UPDATE`,
+            [...values(scope), actorSubject],
+          );
+          if (
+            !installation.rows[0] ||
+            !(await this.staff.allows(scope, actorSubject, 'installation:administer')) ||
+            !(await this.principals.allows(actorSubject, client))
+          )
+            throw new BusinessPageError('business_page_forbidden');
+          const current = await this.get(scope);
+          const clock = await client.query<{ now: Date }>('SELECT clock_timestamp() AS now');
+          const next = await nextBusinessPage(
+            current,
+            { ...input, scope, actorSubject },
+            clock.rows[0]!.now.toISOString(),
+            await getBusinessNoticeRow(this.pool, scope),
+            assertReady,
+          );
+          const sealed = validateSealedPayload(
+            await this.cipher.seal(
+              new TextEncoder().encode(JSON.stringify(next)),
+              context(scope, next.revision),
+            ),
+          );
+          await client.query(
+            `INSERT INTO business_installation_pages
         (org_slug,app_slug,environment,installation_id,revision,sealed_page) VALUES ($1,$2,$3,$4,$5,$6::jsonb)
         ON CONFLICT (org_slug,app_slug,environment,installation_id) DO UPDATE SET revision=EXCLUDED.revision,sealed_page=EXCLUDED.sealed_page`,
-        [...values(scope), next.revision, JSON.stringify(sealed)],
-      );
-      return next;
-    });
+            [...values(scope), next.revision, JSON.stringify(sealed)],
+          );
+          return next;
+        }),
+      () => new BusinessPageError('business_page_forbidden'),
+    );
   }
 }

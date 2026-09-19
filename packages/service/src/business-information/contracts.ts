@@ -1,8 +1,10 @@
 import type { ArtifactVariableDeclaration, ManagedCollectionControls } from '@noodle-borg/compiler';
-import type { ManagedRecordQuery } from '@noodle-borg/wire-contracts';
+import type { EligibleBusinessAssignee, ManagedRecordQuery } from '@noodle-borg/wire-contracts';
+import type { BusinessWorkspaceAccess } from '../business-workspaces/contracts.js';
 import type { BusinessNoticeStore } from './business-notice.js';
 import type { BusinessPageStore } from './business-page.js';
 import type { BusinessPrincipalProvider } from './principal-authority.js';
+import type { BusinessStaffAuthority } from './staff-authority.js';
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[];
@@ -122,6 +124,7 @@ export interface SolutionInstallation {
 }
 
 export interface BusinessGrant {
+  readonly authorityVersion?: never;
   readonly scope: InstallationScope;
   readonly subject: string;
   readonly email?: string;
@@ -133,6 +136,14 @@ export interface BusinessGrant {
   readonly updatedBySubject: string;
   readonly revokedAt?: string;
 }
+
+/** Request-scoped access projection. Versioned access is never persisted as an installation grant. */
+export type BusinessStaffGrant =
+  | BusinessGrant
+  | (BusinessWorkspaceAccess & {
+      readonly scope: InstallationScope;
+      readonly revokedAt?: never;
+    });
 
 export interface BusinessInvitation {
   readonly scope: InstallationScope;
@@ -489,6 +500,10 @@ export interface BusinessInformationStore
     BusinessGrantStore,
     ManagedRequestStore {
   readonly pages: BusinessPageStore;
+  readonly staff: BusinessStaffAuthority;
   configurePrincipalAuthority(provider: BusinessPrincipalProvider | undefined): void;
-  listEligibleAssignees(scope: InstallationScope): Promise<readonly BusinessGrant[]>;
+  listEligibleAssignees(
+    scope: InstallationScope,
+    actor: string,
+  ): Promise<readonly EligibleBusinessAssignee[]>;
 }

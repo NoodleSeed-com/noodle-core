@@ -2,12 +2,14 @@ import type { PoolClient } from 'pg';
 import { createModuleSqlTransaction } from '../modules/context.js';
 import type { ManagedRequestRecord } from './contracts.js';
 import type { BusinessPrincipalAuthority } from './principal-authority.js';
+import type { BusinessStaffAuthority } from './staff-authority.js';
 
 export async function validAssignee(
   client: PoolClient,
   scope: ManagedRequestRecord['scope'],
   subject: string,
   principals: BusinessPrincipalAuthority,
+  staff?: BusinessStaffAuthority,
 ): Promise<boolean> {
   if (!(await principals.allows(subject, createModuleSqlTransaction(client)))) return false;
   const result = await client.query<{ role: string; revoked_at: Date | null }>(
@@ -17,5 +19,6 @@ export async function validAssignee(
     [scope.org, scope.app, scope.env, scope.installationId, subject],
   );
   const grant = result.rows[0];
+  if (staff) return staff.allows(scope, subject, 'records:assign');
   return grant !== undefined && grant.revoked_at === null && grant.role !== 'viewer';
 }

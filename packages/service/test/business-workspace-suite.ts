@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { BusinessWorkspaceBackend } from '../src/business-workspaces/contracts.js';
 import { WORKSPACE_ROLE_PERMISSIONS } from '../src/business-workspaces/permissions.js';
 import { BusinessWorkspaceStore } from '../src/business-workspaces/store.js';
@@ -21,6 +21,101 @@ export function describeBusinessWorkspaceStore(
       expect(await store.authorize('legacy', 'alice', 'drafts:edit')).toBe('legacy');
       expect(await store.authorize('acme', 'unknown', 'drafts:edit')).toBe('denied');
       expect(await store.authorize('acme', 'alice', 'billing:manage')).toBe('allowed');
+    });
+
+    it('runs protected business work only under current versioned authority, never legacy inference', async () => {
+      const { store, suspended } = await setup();
+      const work = vi.fn(async () => 'completed');
+      expect(await store.runAuthorized('acme', 'alice', 'applications:publish', work)).toBe(
+        'completed',
+      );
+      expect(work).toHaveBeenCalledTimes(1);
+      for (const [org, actor, code] of [
+        ['legacy', 'alice', 'legacy_authority'],
+        ['acme', 'stranger', 'forbidden'],
+        ['other', 'alice', 'legacy_authority'],
+      ]) {
+        await expect(
+          store.runAuthorized(org as string, actor as string, 'records:write', work),
+        ).rejects.toMatchObject({ code });
+      }
+      suspended.add('alice');
+      await expect(
+        store.runAuthorized('acme', 'alice', 'records:write', work),
+      ).rejects.toMatchObject({ code: 'forbidden' });
+      expect(work).toHaveBeenCalledTimes(1);
+    });
+
+    it('serializes an authorized operation with revocation and denies subsequent replay', async () => {
+      const { store } = await setup();
+      const invitation = await store.invite({
+        org: 'acme',
+        actor: 'alice',
+        expectedRevision: 1,
+        email: 'bob@example.test',
+      });
+      await store.accept({
+        org: 'acme',
+        subject: 'bob',
+        verifiedEmail: 'bob@example.test',
+        token: invitation.token,
+      });
+      const started = Promise.withResolvers<void>();
+      const finish = Promise.withResolvers<void>();
+      const work = vi.fn(async () => {
+        started.resolve();
+        await finish.promise;
+        return 'saved';
+      });
+      const operation = store.runAuthorized('acme', 'bob', 'records:write', work);
+      await started.promise;
+      const revoke = store.changeRole({
+        org: 'acme',
+        actor: 'alice',
+        expectedRevision: 3,
+        subject: 'bob',
+        role: null,
+      });
+      finish.resolve();
+      expect(await operation).toBe('saved');
+      await revoke;
+      await expect(store.runAuthorized('acme', 'bob', 'records:write', work)).rejects.toMatchObject(
+        { code: 'forbidden' },
+      );
+      expect(work).toHaveBeenCalledTimes(1);
+    });
+
+    it('lists current active handling roles without disclosing invitation identity or using legacy fallback', async () => {
+      const { store, suspended } = await setup();
+      for (const role of ['administrator', 'builder', 'operator', 'viewer'] as const) {
+        const invitation = await store.invite({
+          org: 'acme',
+          actor: 'alice',
+          expectedRevision: (await store.inspect('acme', 'alice')).revision,
+          email: `${role}@example.test`,
+          role,
+        });
+        await store.accept({
+          org: 'acme',
+          subject: role,
+          token: invitation.token,
+          verifiedEmail: `${role}@example.test`,
+        });
+      }
+      expect(await store.listEligibleAssignees('acme', 'operator')).toEqual([
+        { subject: 'alice', role: 'owner', authorityVersion: 1 },
+        { subject: 'administrator', role: 'administrator', authorityVersion: 1 },
+        { subject: 'operator', role: 'operator', authorityVersion: 1 },
+      ]);
+      suspended.add('operator');
+      expect(
+        (await store.listEligibleAssignees('acme', 'alice'))?.map((item) => item.subject),
+      ).toEqual(['alice', 'administrator']);
+      for (const actor of ['viewer', 'builder', 'operator', 'stranger'])
+        await expect(store.listEligibleAssignees('acme', actor)).rejects.toMatchObject({
+          code: 'forbidden',
+        });
+      expect(await store.listEligibleAssignees('legacy', 'alice')).toBeUndefined();
     });
 
     it('discovers only current memberships with bounded pages and no invitation or member payload', async () => {

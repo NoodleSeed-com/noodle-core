@@ -1,6 +1,15 @@
 import { SLUG_PATTERN, validateSlug } from '@noodle-borg/control-plane/portable';
 import { BusinessWorkspaceRoleSchema } from '@noodle-borg/wire-contracts';
 import { z } from 'zod';
+import type { WorkspacePermission } from './permissions.js';
+
+export interface BusinessWorkspaceAccess {
+  readonly authorityVersion: 1;
+  readonly revision: number;
+  readonly subject: string;
+  readonly role: z.infer<typeof BusinessWorkspaceRoleSchema>;
+  readonly permissions: readonly WorkspacePermission[];
+}
 
 export const WorkspaceSubjectSchema = z.string().min(1).max(500);
 export const WorkspaceOrgSchema = z

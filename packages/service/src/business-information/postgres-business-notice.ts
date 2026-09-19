@@ -8,6 +8,8 @@ import {
   validatedNotice,
 } from './business-notice.js';
 import type { InstallationScope } from './contracts.js';
+import type { BusinessPrincipalAuthority } from './principal-authority.js';
+import type { BusinessStaffAuthority } from './staff-authority.js';
 import { validateScope } from './validation.js';
 
 export async function ensureBusinessNoticeSchema(pool: Pool): Promise<void> {
@@ -52,36 +54,48 @@ export async function getBusinessNoticeRow(
 export async function setBusinessNoticeRow(
   pool: Pool,
   input: BusinessNoticeInput,
+  staff: BusinessStaffAuthority,
+  principals: BusinessPrincipalAuthority,
 ): Promise<BusinessNoticeRecord> {
   const notice = validatedNotice(input);
   const values = scopeValues(input.scope);
-  return withPostgresTransaction(pool, async (client) => {
-    // Lock the installation to serialize different administrators creating the first notice.
-    await client.query(
-      `SELECT installation_id FROM business_solution_installations WHERE ${WHERE} FOR UPDATE`,
-      values,
-    );
-    const grants = await client.query<{ role: string; revoked_at: Date | null }>(
-      `SELECT role,revoked_at FROM business_installation_grants WHERE ${WHERE} AND subject=$5 FOR UPDATE`,
-      [...values, input.actorSubject],
-    );
-    if (grants.rows[0]?.role !== 'administrator' || grants.rows[0].revoked_at)
-      throw new BusinessNoticeError('business_notice_forbidden');
-    const current = await client.query<NoticeRow>(
-      `SELECT * FROM business_installation_notices WHERE ${WHERE}`,
-      values,
-    );
-    if (Number(current.rows[0]?.revision ?? 0) !== input.expectedRevision)
-      throw new BusinessNoticeError('business_notice_conflict');
-    const updated = await client.query<NoticeRow>(
-      `INSERT INTO business_installation_notices
+  return staff.run(
+    input.scope,
+    input.actorSubject,
+    'installation:administer',
+    () =>
+      withPostgresTransaction(pool, async (client) => {
+        // Lock the installation to serialize different administrators creating the first notice.
+        await client.query(
+          `SELECT installation_id FROM business_solution_installations WHERE ${WHERE} FOR UPDATE`,
+          values,
+        );
+        await client.query(
+          `SELECT role,revoked_at FROM business_installation_grants WHERE ${WHERE} AND subject=$5 FOR UPDATE`,
+          [...values, input.actorSubject],
+        );
+        if (
+          !(await staff.allows(input.scope, input.actorSubject, 'installation:administer')) ||
+          !(await principals.allows(input.actorSubject, client))
+        )
+          throw new BusinessNoticeError('business_notice_forbidden');
+        const current = await client.query<NoticeRow>(
+          `SELECT * FROM business_installation_notices WHERE ${WHERE}`,
+          values,
+        );
+        if (Number(current.rows[0]?.revision ?? 0) !== input.expectedRevision)
+          throw new BusinessNoticeError('business_notice_conflict');
+        const updated = await client.query<NoticeRow>(
+          `INSERT INTO business_installation_notices
       (org_slug,app_slug,environment,installation_id,notice,revision,updated_at,updated_by_subject)
       VALUES ($1,$2,$3,$4,$5::jsonb,$6,clock_timestamp(),$7)
       ON CONFLICT (org_slug,app_slug,environment,installation_id) DO UPDATE SET
         notice=EXCLUDED.notice,revision=EXCLUDED.revision,updated_at=EXCLUDED.updated_at,updated_by_subject=EXCLUDED.updated_by_subject RETURNING *`,
-      [...values, JSON.stringify(notice), input.expectedRevision + 1, input.actorSubject],
-    );
-    if (!updated.rows[0]) throw new Error('Business notice unavailable');
-    return record(updated.rows[0]);
-  });
+          [...values, JSON.stringify(notice), input.expectedRevision + 1, input.actorSubject],
+        );
+        if (!updated.rows[0]) throw new Error('Business notice unavailable');
+        return record(updated.rows[0]);
+      }),
+    () => new BusinessNoticeError('business_notice_forbidden'),
+  );
 }

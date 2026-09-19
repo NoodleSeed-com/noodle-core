@@ -65,6 +65,7 @@ export class PostgresManagedRequestStore implements ManagedRequestStore {
     installations: SolutionInstallationStore,
     options: PostgresManagedRequestStoreOptions = {},
     principals = new BusinessPrincipalAuthority(),
+    private readonly staff?: import('./staff-authority.js').BusinessStaffAuthority,
   ) {
     this.#principals = principals;
     this.#pool = pool;
@@ -300,6 +301,7 @@ export class PostgresManagedRequestStore implements ManagedRequestStore {
           input.scope,
           input.operation.assigneeSubject,
           this.#principals,
+          this.staff,
         ))
       ) {
         return { ok: false, reason: 'invalid_assignee', currentRevision: current.revision };

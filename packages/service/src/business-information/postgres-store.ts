@@ -23,6 +23,7 @@ import {
   BusinessPrincipalAuthority,
   type BusinessPrincipalProvider,
 } from './principal-authority.js';
+import { BusinessStaffAuthority } from './staff-authority.js';
 
 export interface PostgresBusinessInformationStoreOptions
   extends PostgresInstallationStoreOptions,
@@ -30,6 +31,7 @@ export interface PostgresBusinessInformationStoreOptions
 
 /** Hosted authoritative adapter. Construction fails closed unless a payload cipher is supplied. */
 export class PostgresBusinessInformationStore implements BusinessInformationStore {
+  readonly staff = new BusinessStaffAuthority((scope, subject) => this.getGrant(scope, subject));
   readonly pages: PostgresBusinessPages;
   readonly #principals = new BusinessPrincipalAuthority();
   readonly #pool: Pool;
@@ -50,7 +52,7 @@ export class PostgresBusinessInformationStore implements BusinessInformationStor
       throw new Error('Postgres business information persistence requires a payload cipher');
     }
     this.#pool = pool;
-    this.pages = new PostgresBusinessPages(pool, cipher, this.#principals);
+    this.pages = new PostgresBusinessPages(pool, cipher, this.#principals, this.staff);
     this.#installations = new PostgresInstallationStore(pool, options);
     this.#invitations = new PostgresBusinessInvitations(pool, options);
     this.#requests = new PostgresManagedRequestStore(
@@ -59,6 +61,7 @@ export class PostgresBusinessInformationStore implements BusinessInformationStor
       this.#installations,
       options,
       this.#principals,
+      this.staff,
     );
   }
 
@@ -66,8 +69,13 @@ export class PostgresBusinessInformationStore implements BusinessInformationStor
     this.#principals.configure(provider);
   }
 
-  async listEligibleAssignees(scope: Parameters<BusinessGrantStore['listGrants']>[0]) {
-    return this.#principals.eligible(await this.listGrants(scope));
+  async listEligibleAssignees(
+    scope: Parameters<BusinessGrantStore['listGrants']>[0],
+    actor: string,
+  ) {
+    return this.staff.eligibleAssignees(scope, actor, async () =>
+      this.#principals.eligible(await this.listGrants(scope)),
+    );
   }
 
   ensureSchema(): Promise<void> {
@@ -78,7 +86,7 @@ export class PostgresBusinessInformationStore implements BusinessInformationStor
     return getBusinessNoticeRow(this.#pool, scope);
   }
   setBusinessNotice(input: BusinessNoticeInput) {
-    return setBusinessNoticeRow(this.#pool, input);
+    return setBusinessNoticeRow(this.#pool, input, this.staff, this.#principals);
   }
 
   bindApplication(

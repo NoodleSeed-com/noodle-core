@@ -7,6 +7,7 @@ import {
   OrganizationAgreementResponseSchema,
 } from '@noodle-borg/wire-contracts';
 import { admitBusinessTarget } from '../business-api-admission.js';
+import { businessGrantAllows } from '../business-information/model.js';
 import type { BusinessOnboarding } from '../business-onboarding.js';
 import { sendForbidden } from '../http-util.js';
 import {
@@ -83,7 +84,7 @@ export async function handleBusinessNotice(
       data: {
         revision: record?.revision ?? 0,
         notice: record?.notice ?? null,
-        canEdit: authorized.grant.role === 'administrator',
+        canEdit: businessGrantAllows(authorized.grant, 'installation:administer'),
       },
     }),
   );

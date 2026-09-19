@@ -74,9 +74,9 @@ describe('canonical principal assignment authority', () => {
         if (subject === suspended) throw new PlatformIdentityError('principal_suspended');
       }),
     );
-    expect((await store.listEligibleAssignees(scope)).map((grant) => grant.subject)).toEqual([
-      'active',
-    ]);
+    expect(
+      (await store.listEligibleAssignees(scope, 'owner')).map((grant) => grant.subject),
+    ).toEqual(['active']);
     expect(await assign('inactive')).toMatchObject({ ok: false, reason: 'invalid_assignee' });
     expect(await assign('active')).toMatchObject({ ok: true, record: { revision: 2 } });
     suspended = 'active';
@@ -97,17 +97,18 @@ describe('canonical principal assignment authority', () => {
       }),
     );
     await expect(assign('active')).rejects.toThrow('identity unavailable');
-    await expect(store.listEligibleAssignees(scope)).rejects.toThrow('identity unavailable');
+    await expect(store.listEligibleAssignees(scope, 'owner')).rejects.toThrow(
+      'identity unavailable',
+    );
     expect(await store.getRequest(scope, 'travel_requests', accepted.record.id)).toMatchObject({
       revision: 1,
     });
   });
   it('keeps ordinary portable identity semantics when no canonical provider is configured', async () => {
     const { store, scope, assign } = await setup();
-    expect((await store.listEligibleAssignees(scope)).map((grant) => grant.subject)).toEqual([
-      'active',
-      'inactive',
-    ]);
+    expect(
+      (await store.listEligibleAssignees(scope, 'owner')).map((grant) => grant.subject),
+    ).toEqual(['active', 'inactive']);
     expect(await assign('active')).toMatchObject({ ok: true });
   });
 });

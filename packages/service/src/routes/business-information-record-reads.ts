@@ -16,11 +16,14 @@ export async function sendNativeRecordActivity(
   collection: string,
   id: string,
   store: BusinessInformationStore,
+  actor: string,
 ): Promise<void> {
   const paging = parseBusinessPaging(url, 100);
   if (!paging.ok) return sendJson(res, 400, { error: paging.error });
   const history = await cursorRequest(res, () =>
-    store.listActivity(scope, collection, id, paging.value),
+    store.staff.run(scope, actor, 'records:read', () =>
+      store.listActivity(scope, collection, id, paging.value),
+    ),
   );
   if (history === undefined) return;
   return sendJson(res, 200, {

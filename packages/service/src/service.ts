@@ -393,6 +393,7 @@ export function createServiceHandler(
         pageServiceUrl: options.publicBaseUrl,
         ...(whatsapp ? { readWhatsApp: whatsapp.projection.bind(whatsapp) } : {}),
         store: businessInformationStore,
+        ...(options.businessAuthoring ? { workspaces: options.businessAuthoring.workspaces } : {}),
         ...(businessOnboarding ? { businessOnboarding } : {}),
         activateInstallation,
         readInstallationActivation,
