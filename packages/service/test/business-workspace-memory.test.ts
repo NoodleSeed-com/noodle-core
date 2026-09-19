@@ -4,6 +4,12 @@ import { BusinessWorkspaceStore } from '../src/business-workspaces/store.js';
 import { describeBusinessWorkspaceStore } from './business-workspace-suite.js';
 
 describeBusinessWorkspaceStore(async () => new InMemoryBusinessWorkspaceBackend());
+describe('shared local transaction composition', () => {
+  describeBusinessWorkspaceStore(
+    async () =>
+      new InMemoryBusinessWorkspaceBackend(undefined, undefined, new InMemoryAtomicState()),
+  );
+});
 
 describe('workspace invitation lifetime', () => {
   it('expires invitations at the absolute deadline and does not persist bearer tokens', async () => {
@@ -31,3 +37,5 @@ describe('workspace invitation lifetime', () => {
     expect((await store.inspect('acme', 'owner')).invitations).toEqual([]);
   });
 });
+
+import { InMemoryAtomicState } from '@noodle-borg/control-plane/portable';

@@ -14,6 +14,7 @@ import type {
   SignupAllowlistKind,
   SignupAllowlistRecord,
 } from './contracts.js';
+import type { InMemoryAtomicState } from './in-memory-atomic-state.js';
 import { InMemoryMcpSubdomainClaimStore } from './mcp-subdomain-claims.js';
 import {
   type AcceptOrganizationAgreementInput,
@@ -37,6 +38,7 @@ import {
 } from './validation.js';
 
 interface InMemoryOrganizationStoreOptions {
+  readonly transactions?: InMemoryAtomicState;
   readonly now?: () => Date;
   readonly orgs?: Map<string, OrgRecord>;
   readonly members?: Map<string, OrgMemberRecord>;
@@ -55,10 +57,12 @@ export class InMemoryOrganizationStore {
   readonly #agreements: InMemoryOrganizationAgreements;
 
   constructor(options: InMemoryOrganizationStoreOptions = {}) {
+    if (options.transactions && (options.orgs || options.members))
+      throw new Error('atomic organization state cannot use externally mutable maps');
     this.#now = options.now ?? (() => new Date());
-    this.#orgs = options.orgs ?? new Map();
-    this.#members = options.members ?? new Map();
-    this.#mcpSubdomainClaims = new InMemoryMcpSubdomainClaimStore(this.#now);
+    this.#orgs = options.orgs ?? options.transactions?.map() ?? new Map();
+    this.#members = options.members ?? options.transactions?.map() ?? new Map();
+    this.#mcpSubdomainClaims = new InMemoryMcpSubdomainClaimStore(this.#now, options.transactions);
     this.#agreements = new InMemoryOrganizationAgreements(
       (org, subject) => this.isExactOwner(org, subject),
       this.#now,

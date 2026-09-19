@@ -6,6 +6,7 @@ import type {
   McpSubdomainSetting,
   OrganizationStore,
 } from './contracts.js';
+import type { InMemoryAtomicState } from './in-memory-atomic-state.js';
 import { isSystemOwnedOrgSlug, validateMcpSubdomain, validateSlug } from './validation.js';
 
 const MCP_SUBDOMAIN_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
@@ -48,16 +49,21 @@ interface InMemoryMutationRecord {
 
 /** In-memory parity for active claim reads and organization-creation defaults. */
 export class InMemoryMcpSubdomainClaimStore {
-  readonly #activeByOrg = new Map<string, ActiveMcpSubdomainClaim>();
-  readonly #activeBySubdomain = new Map<string, ActiveMcpSubdomainClaim>();
-  readonly #claimedSubdomains = new Set<string>();
-  readonly #lastChangedAtByOrg = new Map<string, string>();
-  readonly #mutations = new Map<string, InMemoryMutationRecord>();
+  readonly #activeByOrg: Map<string, ActiveMcpSubdomainClaim>;
+  readonly #activeBySubdomain: Map<string, ActiveMcpSubdomainClaim>;
+  readonly #claimedSubdomains: Map<string, true>;
+  readonly #lastChangedAtByOrg: Map<string, string>;
+  readonly #mutations: Map<string, InMemoryMutationRecord>;
   readonly #now: () => Date;
   #mutationTail: Promise<void> = Promise.resolve();
 
-  constructor(now: () => Date = () => new Date()) {
+  constructor(now: () => Date = () => new Date(), transactions?: InMemoryAtomicState) {
     this.#now = now;
+    this.#activeByOrg = transactions?.map() ?? new Map();
+    this.#activeBySubdomain = transactions?.map() ?? new Map();
+    this.#claimedSubdomains = transactions?.map() ?? new Map();
+    this.#lastChangedAtByOrg = transactions?.map() ?? new Map();
+    this.#mutations = transactions?.map() ?? new Map();
   }
 
   ensureDefaultMcpSubdomain(org: string): ActiveMcpSubdomainClaim | undefined {
@@ -76,7 +82,7 @@ export class InMemoryMcpSubdomainClaimStore {
     };
     this.#activeByOrg.set(orgSlug, record);
     this.#activeBySubdomain.set(mcpSubdomain, record);
-    this.#claimedSubdomains.add(mcpSubdomain);
+    this.#claimedSubdomains.set(mcpSubdomain, true);
     return record;
   }
 
@@ -153,7 +159,7 @@ export class InMemoryMcpSubdomainClaimStore {
       this.#activeBySubdomain.delete(current.mcpSubdomain);
       this.#activeByOrg.set(org, next);
       this.#activeBySubdomain.set(mcpSubdomain, next);
-      this.#claimedSubdomains.add(mcpSubdomain);
+      this.#claimedSubdomains.set(mcpSubdomain, true);
       this.#lastChangedAtByOrg.set(org, changedAt);
       const result: McpSubdomainMutationResult = {
         orgSlug: org,

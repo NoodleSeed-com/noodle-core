@@ -32,6 +32,7 @@ export {
   type ControlPlaneAuthResult,
   type DeployAuthGate,
 } from './deploy-auth.js';
+export { InMemoryAtomicState } from './in-memory-atomic-state.js';
 export { InMemoryControlPlaneStore } from './in-memory-control-plane-store.js';
 export {
   bindInMemoryOrganizationStore,

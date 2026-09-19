@@ -1,3 +1,4 @@
+import type { InMemoryAtomicState } from '@noodle-borg/control-plane/portable';
 import { BusinessMemoryLocks } from '../business-information/in-memory-locks.js';
 import {
   type BusinessWorkspaceBackend,
@@ -7,14 +8,23 @@ import {
   WorkspaceStateSchema,
 } from './contracts.js';
 
-/** Local/test adapter only. Share the lock instance with other workspace authorities. */
+/** Local/test only: share legacy locks, or one atomic context with every transaction participant. */
 export class InMemoryBusinessWorkspaceBackend implements BusinessWorkspaceBackend {
-  readonly #states = new Map<string, WorkspaceState>();
-  readonly #events = new Map<string, WorkspaceAuditEvent[]>();
+  readonly #states: Map<string, WorkspaceState>;
+  readonly #events: Map<string, WorkspaceAuditEvent[]>;
+  readonly #locks: BusinessMemoryLocks;
   constructor(
-    private readonly locks = new BusinessMemoryLocks(),
+    locks?: BusinessMemoryLocks,
     private readonly now: () => Date = () => new Date(),
-  ) {}
+    private readonly transactions?: InMemoryAtomicState,
+  ) {
+    // Shared-context composition must not quietly bypass a caller's separate draft authority lock.
+    if (transactions && locks)
+      throw new Error('choose shared memory transactions or legacy workspace locks, not both');
+    this.#locks = locks ?? new BusinessMemoryLocks();
+    this.#states = transactions?.map() ?? new Map();
+    this.#events = transactions?.map() ?? new Map();
+  }
   async findMemberships(
     subject: string,
     input: { readonly after?: string; readonly limit: number },
@@ -33,7 +43,26 @@ export class InMemoryBusinessWorkspaceBackend implements BusinessWorkspaceBacken
     return structuredClone(this.#states.get(org));
   }
   run<T>(org: string, work: (tx: BusinessWorkspaceTransaction) => Promise<T>): Promise<T> {
-    return this.locks.run(`business-workspace:${org}`, async () => {
+    if (this.transactions)
+      return this.transactions.run(async () => {
+        const result = await work({
+          now: this.now().toISOString(),
+          get: () => this.read(org),
+          save: async (value, event) => {
+            const state = WorkspaceStateSchema.parse(value);
+            if (
+              state.org !== org ||
+              state.revision !== (this.#states.get(org)?.revision ?? 0) + 1 ||
+              event.revision !== state.revision
+            )
+              throw new Error('workspace authority conflict');
+            this.#states.set(org, state);
+            this.#events.set(org, [...(this.#events.get(org) ?? []), structuredClone(event)]);
+          },
+        });
+        return structuredClone(result);
+      });
+    const operation = async () => {
       let state = await this.read(org);
       const events = structuredClone(this.#events.get(org) ?? []);
       const result = await work({
@@ -55,6 +84,7 @@ export class InMemoryBusinessWorkspaceBackend implements BusinessWorkspaceBacken
       if (state) this.#states.set(org, structuredClone(state));
       this.#events.set(org, events);
       return structuredClone(result);
-    });
+    };
+    return this.#locks.run(`business-workspace:${org}`, operation);
   }
 }

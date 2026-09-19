@@ -8,27 +8,48 @@ import type {
   WelcomeEmailRecord,
 } from './contracts.js';
 import { PersonalWorkspaceOwnerMutationError } from './contracts.js';
+import { InMemoryAtomicState } from './in-memory-atomic-state.js';
 import { InMemoryOrganizationStore } from './in-memory-organization-store.js';
 import { personalOrgSlugSuffix } from './organization-helpers.js';
 import { validateUserOwnedOrgSlug } from './validation.js';
 
 /** Portable organization state. Commercial account provisioning is an optional module side effect. */
 export class InMemoryControlPlaneStore extends InMemoryOrganizationStore {
-  readonly #welcomeEmails = new Map<string, WelcomeEmailRecord>();
-  readonly #personalWorkspaces = new Map<string, string>();
-  readonly #queues = new Map<string, Promise<void>>();
+  readonly #welcomeEmails: Map<string, WelcomeEmailRecord>;
+  readonly #personalWorkspaces: Map<string, string>;
   readonly #now: () => Date;
+  readonly #transactions: InMemoryAtomicState;
+  readonly #personalWorkspaceCreated:
+    | ((input: { readonly org: string; readonly ownerSubject: string }) => Promise<void>)
+    | undefined;
 
-  constructor(options: { readonly now?: () => Date } = {}) {
+  constructor(
+    options: {
+      readonly now?: () => Date;
+      readonly transactions?: InMemoryAtomicState;
+      /** Fresh-only local participant; all stores must share the supplied transaction context. */
+      readonly personalWorkspaceCreated?: (input: {
+        readonly org: string;
+        readonly ownerSubject: string;
+      }) => Promise<void>;
+    } = {},
+  ) {
+    if (options.personalWorkspaceCreated && !options.transactions)
+      throw new Error('fresh workspace composition requires a shared memory transaction context');
     const now = options.now ?? (() => new Date());
-    super({ now });
+    const transactions = options.transactions ?? new InMemoryAtomicState();
+    super({ now, transactions });
     this.#now = now;
+    this.#transactions = transactions;
+    this.#personalWorkspaceCreated = options.personalWorkspaceCreated;
+    this.#welcomeEmails = transactions.map();
+    this.#personalWorkspaces = transactions.map();
   }
 
   provisionPersonalWorkspace(
     input: PersonalWorkspaceProvisionInput,
   ): Promise<PersonalWorkspaceProvisionResult> {
-    return this.#serialized(`personal:${input.subject}`, async () => {
+    return this.#transactions.run(async () => {
       const requestedSlug = validateUserOwnedOrgSlug(input.slug);
       const bound = this.#personalWorkspaces.get(input.subject);
       if (bound !== undefined) {
@@ -60,6 +81,7 @@ export class InMemoryControlPlaneStore extends InMemoryOrganizationStore {
       }
       const org = await this.createOrg({ slug: requestedSlug, displayName: input.displayName });
       await this.#ensureOwner(requestedSlug, input);
+      await this.#personalWorkspaceCreated?.({ org: requestedSlug, ownerSubject: input.subject });
       const createdAt = this.#now().toISOString();
       this.#welcomeEmails.set(input.subject, {
         subject: input.subject,
@@ -75,7 +97,7 @@ export class InMemoryControlPlaneStore extends InMemoryOrganizationStore {
   }
 
   createOrgWithOwner(input: CreateOrgWithOwnerInput): Promise<OrgRecord> {
-    return this.#serialized(`org:${input.slug}`, async () => {
+    return this.#transactions.run(async () => {
       const slug = validateUserOwnedOrgSlug(input.slug);
       const existing = await this.getOrg(slug);
       if (existing !== undefined) {
@@ -190,23 +212,6 @@ export class InMemoryControlPlaneStore extends InMemoryOrganizationStore {
   #assertPersonalOwnerMutation(org: string, subject: string, role?: OrgRole): void {
     if (this.#personalWorkspaces.get(subject) === org && role !== 'owner') {
       throw new PersonalWorkspaceOwnerMutationError();
-    }
-  }
-
-  async #serialized<T>(key: string, operation: () => Promise<T>): Promise<T> {
-    const prior = this.#queues.get(key) ?? Promise.resolve();
-    let release!: () => void;
-    const next = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const chain = prior.then(() => next);
-    this.#queues.set(key, chain);
-    await prior;
-    try {
-      return await operation();
-    } finally {
-      release();
-      if (this.#queues.get(key) === chain) this.#queues.delete(key);
     }
   }
 }

@@ -54,6 +54,7 @@ export type {
   DeploymentDeleteResult,
   DeploymentDeleteSelection,
 } from './deployment-deletion-contracts.js';
+export { InMemoryAtomicState } from './in-memory-atomic-state.js';
 export { InMemoryControlPlaneStore } from './in-memory-control-plane-store.js';
 export {
   bindInMemoryOrganizationStore,
