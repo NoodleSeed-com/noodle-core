@@ -13,8 +13,13 @@ import {
   ApplicationDraftResponseSchema,
   ApplicationDraftRevisionRequestSchema,
   ApplicationDraftUndoRequestSchema,
+  ApplicationDraftValidationResponseSchema,
 } from '@noodle-borg/wire-contracts';
-import { ApplicationDraftError } from '../application-drafts/contracts.js';
+import type { ApplicationDraftCompiler } from '../application-drafts/compiler.js';
+import {
+  ApplicationDraftError,
+  DraftValidationUnavailableError,
+} from '../application-drafts/contracts.js';
 import { applicationDraftMethods, parseApplicationDraftPath } from '../application-drafts/paths.js';
 import type { ApplicationDraftStore } from '../application-drafts/store.js';
 import { admitBusinessTarget, authorizeBusinessApi } from '../business-api-admission.js';
@@ -28,6 +33,7 @@ export interface ApplicationDraftRouteDeps {
   readonly publicCounters: DailyCounterStore;
   readonly maxBody: number;
   readonly now?: () => Date;
+  readonly compiler?: Pick<ApplicationDraftCompiler, 'compile'>;
 }
 
 /** This bounded authoring surface never forwards a Portal token to general deployment/secrets APIs. */
@@ -41,6 +47,13 @@ export async function handleApplicationDraftRoute(
   try {
     await handle(req, res, url, deps);
   } catch (error) {
+    if (error instanceof DraftValidationUnavailableError) {
+      if (error.code === 'busy') res.setHeader('retry-after', '2');
+      return sendJson(res, error.code === 'busy' ? 429 : 503, {
+        code: error.code === 'busy' ? 'validation_busy' : 'validation_unavailable',
+        error: 'Draft validation is temporarily unavailable. Nothing was published.',
+      });
+    }
     if (error instanceof ApplicationDraftError) {
       const status =
         error.code === 'forbidden'
@@ -150,6 +163,45 @@ async function handle(
     Math.min(deps.maxBody, APPLICATION_DRAFT_LIMITS.totalBytes * 6 + 32_768),
   );
   if (!body.ok) return sendJson(res, body.status, { error: body.error });
+  if (id && action === 'validate' && req.method === 'POST') {
+    const parsed = ApplicationDraftRevisionRequestSchema.safeParse(body.value);
+    if (!parsed.success) return invalid(res);
+    if (!deps.compiler)
+      return sendJson(res, 503, {
+        code: 'validation_unavailable',
+        error: 'Draft validation is not configured. Nothing was published.',
+      });
+    const input = { scope, id, actorSubject, expectedRevision: parsed.data.expectedRevision };
+    const draft = await deps.drafts.forValidation(input);
+    const result = await deps.compiler.compile(draft.source);
+    // Do not hold a database lock during customer compilation. Recheck under the authority lock afterwards.
+    const current = await deps.drafts.forValidation(input);
+    if (
+      current.sourceDigest !== draft.sourceDigest ||
+      (result.ok && result.sourceDigest !== draft.sourceDigest)
+    )
+      throw new ApplicationDraftError('revision_conflict', current.revision);
+    const validation = {
+      draftId: id,
+      revision: draft.revision,
+      sourceDigest: draft.sourceDigest,
+      check: 'source-and-manifest',
+      published: false,
+      ...(result.ok
+        ? {
+            status: 'valid',
+            compilerDigest: result.compilerDigest,
+            artifactDigest: result.artifactDigest,
+            issues: [],
+          }
+        : { status: 'invalid', issues: result.issues }),
+    };
+    return sendJson(
+      res,
+      200,
+      ApplicationDraftValidationResponseSchema.parse({ ok: true, data: { validation } }),
+    );
+  }
   if (id !== undefined && req.method === 'DELETE') {
     const parsed = ApplicationDraftRevisionRequestSchema.safeParse(body.value);
     if (!parsed.success) return invalid(res);

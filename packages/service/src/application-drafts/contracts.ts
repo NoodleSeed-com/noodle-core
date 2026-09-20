@@ -56,3 +56,11 @@ export class ApplicationDraftError extends Error {
     this.name = 'ApplicationDraftError';
   }
 }
+
+/** Service-facing availability only; source errors remain bounded validation reports. */
+export class DraftValidationUnavailableError extends Error {
+  constructor(readonly code: 'busy' | 'unavailable') {
+    super(code);
+    this.name = 'DraftValidationUnavailableError';
+  }
+}

@@ -50,6 +50,13 @@ export const SOLUTION_DRAFTS: SubcommandSpec = {
   flags: [],
   subcommands: [
     {
+      name: 'validate',
+      summary: 'Check an exact saved TypeScript revision without executing actions or publishing.',
+      arguments: [draftId],
+      flags: [...common, revision],
+      jsonOutput: { mode: 'single' },
+    },
+    {
       name: 'history',
       summary: 'List source-free revisions, newest first.',
       arguments: [draftId],

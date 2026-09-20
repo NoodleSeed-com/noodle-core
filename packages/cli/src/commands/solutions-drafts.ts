@@ -4,10 +4,11 @@ import {
   ApplicationDraftHistoryClientResponseSchema,
   ApplicationDraftIdSchema,
   ApplicationDraftListClientResponseSchema,
+  ApplicationDraftValidationClientResponseSchema,
 } from '@noodle-borg/wire-contracts';
 import type { ConfigLocation } from '../config.js';
 import { resolveControlPlaneToken, serviceJson } from '../control-plane.js';
-import { EXIT, printJsonOk } from './output.js';
+import { EXIT, printJsonFailure, printJsonOk } from './output.js';
 import {
   authRequired,
   parseCommandFlags,
@@ -18,7 +19,7 @@ import {
 import { readDraftSource } from './solutions-draft-source.js';
 
 const usage =
-  'noodle solutions drafts <list|show|history|diff|create|edit|undo|delete> [draft-id] --org <org> --app <app> [--json]';
+  'noodle solutions drafts <list|show|history|diff|validate|create|edit|undo|delete> [draft-id] --org <org> --app <app> [--json]';
 export async function runSolutionDrafts(
   rest: readonly string[],
   env: NodeJS.ProcessEnv,
@@ -48,15 +49,22 @@ export async function runSolutionDrafts(
   const invalid = (message: string) =>
     printCliFailure(command, usageError(message, usage), args.json);
   const needsId =
-    operation && ['show', 'history', 'diff', 'edit', 'undo', 'delete'].includes(operation);
+    operation &&
+    ['show', 'history', 'diff', 'validate', 'edit', 'undo', 'delete'].includes(operation);
   const reads = operation && ['list', 'show', 'history', 'diff'].includes(operation);
   const needsSource = operation === 'create' || operation === 'edit';
-  const needsRevision = operation === 'edit' || operation === 'undo' || operation === 'delete';
+  const needsRevision =
+    operation === 'edit' ||
+    operation === 'undo' ||
+    operation === 'delete' ||
+    operation === 'validate';
   const needsKey = operation === 'create' || operation === 'edit' || operation === 'undo';
   if (
     args.parseError ||
     !operation ||
-    !['list', 'show', 'history', 'diff', 'create', 'edit', 'undo', 'delete'].includes(operation) ||
+    !['list', 'show', 'history', 'diff', 'validate', 'create', 'edit', 'undo', 'delete'].includes(
+      operation,
+    ) ||
     !args.org ||
     !args.app ||
     extra.length ||
@@ -103,7 +111,7 @@ export async function runSolutionDrafts(
   });
   if (!resolved.token) return printCliFailure(command, authRequired(), args.json);
   const base = `${resolved.serviceUrl}/v1/orgs/${encodeURIComponent(args.org)}/apps/${encodeURIComponent(args.app)}/drafts`;
-  const suffix = ['undo', 'history', 'diff'].includes(operation) ? `/${operation}` : '';
+  const suffix = ['undo', 'history', 'diff', 'validate'].includes(operation) ? `/${operation}` : '';
   const query =
     operation === 'diff'
       ? `?from=${args.fromRevision}&to=${args.toRevision}`
@@ -126,7 +134,7 @@ export async function runSolutionDrafts(
                 expectedRevision: Number(args.expectedRevision),
                 targetRevision: Number(args.targetRevision),
               }
-            : operation === 'delete'
+            : operation === 'delete' || operation === 'validate'
               ? { expectedRevision: Number(args.expectedRevision) }
               : undefined;
     const result = await serviceJson<unknown>(
@@ -148,7 +156,32 @@ export async function runSolutionDrafts(
       },
       options.fetchImpl ?? fetch,
     );
-    if (operation === 'delete') {
+    if (operation === 'validate') {
+      const data = ApplicationDraftValidationClientResponseSchema.parse(result).data;
+      if (data.validation.status === 'invalid') {
+        if (args.json)
+          printJsonFailure({
+            code: 'invalid_draft',
+            message: 'Draft did not pass validation. Nothing was published.',
+            errors: data.validation.issues.map(({ code, message, path }) => ({
+              code,
+              message,
+              ...(path === undefined ? {} : { path }),
+            })),
+            detail: data.validation,
+          });
+        else
+          console.error(
+            'Draft did not pass validation. Nothing was published. Use --json for check details.',
+          );
+        return EXIT.FAILURE;
+      }
+      if (args.json) printJsonOk(data);
+      else
+        console.log(
+          `Draft revision ${data.validation.revision} passed the source and manifest check. Nothing was published.`,
+        );
+    } else if (operation === 'delete') {
       if (args.json) printJsonOk({ draftId: id, deleted: true });
       else console.log('Draft source erased. Published applications are unchanged.');
     } else if (operation === 'history') {

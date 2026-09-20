@@ -254,6 +254,9 @@ importers:
       '@noodle-borg/compiler':
         specifier: workspace:*
         version: link:../compiler
+      '@noodle-borg/compute':
+        specifier: workspace:*
+        version: link:../compute
       '@noodle-borg/connector-defs':
         specifier: workspace:*
         version: link:../connector-defs
@@ -976,6 +979,9 @@ importers:
       '@noodle-borg/auth':
         specifier: workspace:*
         version: link:../auth
+      '@noodle-borg/authoring':
+        specifier: workspace:*
+        version: link:../authoring
       '@noodle-borg/capabilities':
         specifier: workspace:*
         version: link:../capabilities

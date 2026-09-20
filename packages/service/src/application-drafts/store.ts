@@ -8,6 +8,7 @@ import {
   ApplicationDraftDiffRequestSchema,
   ApplicationDraftEditRequestSchema,
   ApplicationDraftIdSchema,
+  ApplicationDraftRevisionRequestSchema,
   type ApplicationDraftSource,
   type ApplicationDraftSummary,
   ApplicationDraftUndoRequestSchema,
@@ -143,6 +144,23 @@ export class ApplicationDraftStore {
 
   list(scope: ApplicationDraftScope, actor: string): Promise<readonly ApplicationDraftSummary[]> {
     return this.authorized(scope, actor, 'drafts:read', (tx) => tx.heads());
+  }
+
+  /** Fresh edit authority and exact head in the same transaction; no revision or retry receipt is written. */
+  forValidation(input: Omit<Change, 'idempotencyKey'>): Promise<ApplicationDraft> {
+    if (
+      !ApplicationDraftIdSchema.safeParse(input.id).success ||
+      !ApplicationDraftRevisionRequestSchema.safeParse({ expectedRevision: input.expectedRevision })
+        .success
+    )
+      return Promise.reject(new ApplicationDraftError('invalid_draft'));
+    return this.authorized(input.scope, input.actorSubject, 'drafts:edit', async (tx) => {
+      const current = await tx.get(input.id);
+      if (!current) throw new ApplicationDraftError('not_found');
+      if (current.revision !== input.expectedRevision)
+        throw new ApplicationDraftError('revision_conflict', current.revision);
+      return current;
+    });
   }
 
   history(

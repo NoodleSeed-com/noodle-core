@@ -27,6 +27,61 @@ describe('noodle solutions drafts', () => {
   });
   const flags = ['--org', 'acme', '--app', 'assistant', '--json'];
 
+  it('checks an exact saved revision through the API without uploading or publishing', async () => {
+    const validation = {
+      draftId: id,
+      revision: 2,
+      sourceDigest: 'a'.repeat(64),
+      check: 'source-and-manifest',
+      published: false,
+      status: 'valid',
+      compilerDigest: `sha256:${'b'.repeat(64)}`,
+      artifactDigest: 'c'.repeat(64),
+      issues: [],
+    };
+    const fetchImpl = vi.fn(async () => Response.json({ ok: true, data: { validation } }));
+    expect(
+      await runSolutions(['drafts', 'validate', id, ...flags], env, directory, { fetchImpl }),
+    ).toBe(2);
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(
+      await runSolutions(
+        ['drafts', 'validate', id, ...flags, '--expected-revision', '2'],
+        env,
+        directory,
+        { fetchImpl },
+      ),
+    ).toBe(0);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      expect.stringContaining(`/drafts/${id}/validate`),
+      expect.objectContaining({ method: 'POST', body: JSON.stringify({ expectedRevision: 2 }) }),
+    );
+    expect(JSON.stringify(log.mock.calls)).toContain('source-and-manifest');
+    expect(JSON.stringify(log.mock.calls)).not.toContain('fixture-token');
+  });
+
+  it('returns a nonzero structured result for a failed source check', async () => {
+    const validation = {
+      draftId: id,
+      revision: 1,
+      sourceDigest: 'a'.repeat(64),
+      check: 'source-and-manifest',
+      published: false,
+      status: 'invalid',
+      issues: [{ code: 'invalid_source', message: 'Nothing was published.' }],
+    };
+    const fetchImpl = vi.fn(async () => Response.json({ ok: true, data: { validation } }));
+    expect(
+      await runSolutions(
+        ['drafts', 'validate', id, ...flags, '--expected-revision', '1'],
+        env,
+        directory,
+        { fetchImpl },
+      ),
+    ).toBe(1);
+    expect(JSON.stringify(log.mock.calls)).toContain('invalid_draft');
+  });
+
   it('uploads exact bounded TypeScript source, not environment files or caller authority', async () => {
     const source = {
       entrypoint: 'server.ts',

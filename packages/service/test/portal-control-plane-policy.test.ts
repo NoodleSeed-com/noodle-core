@@ -32,6 +32,7 @@ const authorized = [
   ['PATCH', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838'],
   ['DELETE', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838'],
   ['POST', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838/undo'],
+  ['POST', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838/validate'],
   ['GET', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838/history'],
   [
     'GET',
@@ -86,6 +87,7 @@ const denied = [
   ['GET', `${base}/page/publish`],
   ['POST', `${base}/page/publish/extra`],
   ['POST', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838/diff'],
+  ['GET', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838/validate'],
   ['DELETE', '/v1/orgs/acme/apps/assistant/drafts/019e6c86-5838-4000-8000-019e6c865838/history'],
   ['POST', '/v1/orgs/acme/apps/assistant/drafts/id/deploy'],
   ['GET', '/v1/orgs/acme/apps/assistant/drafts/id/secrets'],

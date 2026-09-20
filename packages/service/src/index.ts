@@ -198,6 +198,7 @@ export {
   type ApplicationConnectionsOptions,
   createApplicationConnections,
 } from './application-connections.js';
+export { ApplicationDraftCompiler } from './application-drafts/compiler.js';
 export {
   ARCHIVE_SWEEP_INTERVAL_MS,
   ArchiveSweeper,

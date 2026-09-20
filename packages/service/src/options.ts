@@ -62,6 +62,11 @@ export interface ServiceOptions {
   readonly businessAuthoring?: {
     readonly workspaces: import('./business-workspaces/store.js').BusinessWorkspaceStore;
     readonly drafts: import('./application-drafts/store.js').ApplicationDraftStore;
+    /** Trusted lifecycle-owned compiler. Absence disables validation; no host-import fallback. */
+    readonly compiler?: Pick<
+      import('./application-drafts/compiler.js').ApplicationDraftCompiler,
+      'compile'
+    >;
     /** Canonical active-principal evidence; absence disables invitation acceptance, never trusts form/email claims. */
     readonly verifiedEmail?: (subject: string, claimedEmail: string) => Promise<string | undefined>;
   };

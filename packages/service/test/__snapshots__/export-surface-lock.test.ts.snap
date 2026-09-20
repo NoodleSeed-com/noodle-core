@@ -13,6 +13,7 @@ exports[`service export surface lock > exports exactly this set of names 1`] = `
   "AlertEvaluator",
   "AppResponseSchema",
   "AppSummarySchema",
+  "ApplicationDraftCompiler",
   "AppsListResponseSchema",
   "ArchiveSweeper",
   "AssistantInteractionCapacityError",
@@ -227,4 +228,4 @@ exports[`service export surface lock > exports exactly this set of names 1`] = `
 ]
 `;
 
-exports[`service export surface lock > reports the surface size so a bulk loss is visible in the diff 1`] = `222`;
+exports[`service export surface lock > reports the surface size so a bulk loss is visible in the diff 1`] = `223`;

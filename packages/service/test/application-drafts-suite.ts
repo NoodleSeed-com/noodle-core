@@ -20,6 +20,28 @@ export function describeApplicationDraftStore(
       source,
     });
 
+    it('checks exact current source with fresh edit authority and without adding history', async () => {
+      const { store, revoke } = await factory();
+      const command = input();
+      const draft = await store.create(command);
+      const check = {
+        scope: command.scope,
+        id: draft.id,
+        actorSubject: 'builder',
+        expectedRevision: 1,
+      };
+      expect(await store.forValidation(check)).toEqual(draft);
+      expect(await store.history(command.scope, draft.id, 'builder')).toHaveLength(1);
+      await expect(store.forValidation({ ...check, expectedRevision: 2 })).rejects.toMatchObject({
+        code: 'revision_conflict',
+      });
+      await expect(
+        store.forValidation({ ...check, scope: { ...command.scope, app: 'other' } }),
+      ).rejects.toMatchObject({ code: 'not_found' });
+      revoke();
+      await expect(store.forValidation(check)).rejects.toMatchObject({ code: 'forbidden' });
+    });
+
     it('creates an immutable exact-source revision and replays the same receipt', async () => {
       const { store } = await factory();
       const command = input();

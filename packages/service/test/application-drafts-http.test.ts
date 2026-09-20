@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { InMemoryDailyCounterStore } from '@noodle-borg/admission-limits/portable';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ApplicationDraftCompiler } from '../dist/application-drafts/compiler.js';
+import { DraftValidationUnavailableError } from '../src/application-drafts/contracts.js';
 import { InMemoryApplicationDraftBackend } from '../src/application-drafts/memory.js';
 import { ApplicationDraftStore } from '../src/application-drafts/store.js';
 import { BusinessMemoryLocks } from '../src/business-information/in-memory-locks.js';
@@ -11,6 +13,9 @@ import { BusinessWorkspaceStore } from '../src/business-workspaces/store.js';
 import { ServerRegistry } from '../src/registry.js';
 import { createServiceHandler } from '../src/service.js';
 
+const compiler = new ApplicationDraftCompiler();
+afterAll(() => compiler.close());
+
 describe.each([
   true,
   false,
@@ -18,6 +23,8 @@ describe.each([
   let server: Server;
   let base: string;
   let workspaces: BusinessWorkspaceStore;
+  let drafts: ApplicationDraftStore;
+  let compileDraft: ApplicationDraftCompiler['compile'];
   const source = {
     entrypoint: 'server.ts',
     files: [{ path: 'server.ts', content: '// customer-private\nexport default {};' }],
@@ -41,14 +48,19 @@ describe.each([
       verifiedEmail: 'builder@example.test',
       token: invite.token,
     });
-    const drafts = new ApplicationDraftStore(new InMemoryApplicationDraftBackend(locks), {
+    drafts = new ApplicationDraftStore(new InMemoryApplicationDraftBackend(locks), {
       authorize: async (scope, actor, permission) =>
         (await workspaces.authorize(scope.org, actor, permission)) === 'allowed',
     });
+    compileDraft = (source) => compiler.compile(source);
     const publicCounters = new InMemoryDailyCounterStore();
     server = createServer(
       createServiceHandler(new ServerRegistry(), {
-        businessAuthoring: { drafts, workspaces },
+        businessAuthoring: {
+          drafts,
+          workspaces,
+          compiler: { compile: (source) => compileDraft(source) },
+        },
         businessInformationEnabled,
         admissionCounters: publicCounters,
         maxDeployBodyBytes: 2 * 1024 * 1024,
@@ -155,6 +167,104 @@ describe.each([
     expect(response.status).toBe(400);
     expect((await request('GET', `/${randomUUID()}?revision=NaN`)).status).toBe(400);
     expect((await request('GET', `/${randomUUID()}?revision=1&revision=2`)).status).toBe(400);
+  });
+
+  it.each([
+    ['busy', 429],
+    ['unavailable', 503],
+  ] as const)('fails closed when compilation is %s', async (code, status) => {
+    const {
+      data: { draft },
+    } = await (await request('POST', '', { source, environment: 'prod' })).json();
+    compileDraft = async () => {
+      throw new DraftValidationUnavailableError(code);
+    };
+    const response = await request('POST', `/${draft.id}/validate`, { expectedRevision: 1 });
+    expect(response.status).toBe(status);
+    if (code === 'busy') expect(response.headers.get('retry-after')).toBe('2');
+    expect(await response.text()).not.toContain('customer-private');
+  });
+
+  it('validates exact saved source without accepting execution or publication authority', async () => {
+    const nativeSource = {
+      entrypoint: 'server.ts',
+      files: [
+        {
+          path: 'server.ts',
+          content: `import { server, tool, z } from '@noodleseed/one';
+       export default server('welcome', { version: '1.0.0', title: 'Welcome' }, [tool('hello', {
+         description: 'Say hello', input: z.object({}), fulfil: () => ({ message: 'hello' })
+       })]);`,
+        },
+      ],
+    };
+    const created = await request('POST', '', { source: nativeSource, environment: 'prod' });
+    const {
+      data: { draft },
+    } = await created.json();
+    const checked = await request('POST', `/${draft.id}/validate`, { expectedRevision: 1 });
+    expect(checked.status).toBe(200);
+    expect(await checked.json()).toMatchObject({
+      data: {
+        validation: {
+          draftId: draft.id,
+          revision: 1,
+          sourceDigest: draft.sourceDigest,
+          status: 'valid',
+          check: 'source-and-manifest',
+          published: false,
+          issues: [],
+        },
+      },
+    });
+    expect((await request('POST', `/${draft.id}/validate`, { expectedRevision: 2 })).status).toBe(
+      409,
+    );
+    expect(
+      (await request('POST', `/${draft.id}/validate`, { expectedRevision: 1, publish: true }))
+        .status,
+    ).toBe(400);
+    expect((await request('GET', `/${draft.id}/validate`)).status).toBe(405);
+    expect(
+      (await request('POST', `/${draft.id}/validate`, { expectedRevision: 1 }, 'stranger')).status,
+    ).toBe(403);
+    const {
+      data: { revisions },
+    } = await (await request('GET', `/${draft.id}/history`)).json();
+    expect(revisions).toHaveLength(1);
+  });
+
+  it('rejects changed source and revoked permission after compilation, without retaining a receipt', async () => {
+    const {
+      data: { draft },
+    } = await (await request('POST', '', { source, environment: 'prod' })).json();
+    compileDraft = async () => {
+      await drafts.edit({
+        scope: { org: 'acme', app: 'assistant' },
+        id: draft.id,
+        actorSubject: 'builder',
+        idempotencyKey: 'edit-during-check',
+        expectedRevision: 1,
+        source: { ...source, files: [{ path: 'server.ts', content: '// different' }] },
+      });
+      return { ok: false, issues: [{ code: 'invalid_source', message: 'private diagnostic' }] };
+    };
+    expect((await request('POST', `/${draft.id}/validate`, { expectedRevision: 1 })).status).toBe(
+      409,
+    );
+    compileDraft = async () => {
+      await workspaces.changeRole({
+        org: 'acme',
+        actor: 'owner',
+        subject: 'builder',
+        role: 'viewer',
+        expectedRevision: 3,
+      });
+      return { ok: false, issues: [{ code: 'invalid_source', message: 'private diagnostic' }] };
+    };
+    const denied = await request('POST', `/${draft.id}/validate`, { expectedRevision: 2 });
+    expect(denied.status).toBe(403);
+    expect(await denied.text()).not.toContain('private diagnostic');
   });
 
   it('rechecks membership before an exact retry and does not fall back to legacy ownership', async () => {

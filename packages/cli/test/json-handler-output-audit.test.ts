@@ -201,6 +201,7 @@ const HANDLER_FAMILY_SURFACES = {
     'solutions page publish',
     'solutions page unpublish',
     'solutions drafts list',
+    'solutions drafts validate',
     'solutions drafts show',
     'solutions drafts history',
     'solutions drafts diff',

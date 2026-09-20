@@ -21,16 +21,21 @@
     "./load-authored": {
       "types": "./dist/load-authored.d.ts",
       "import": "./dist/load-authored.js"
+    },
+    "./sandbox-authoring": {
+      "types": "./dist/sandbox-authoring.d.ts",
+      "import": "./dist/sandbox-authoring.js"
     }
   },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node ../../scripts/build-authoring-sandbox.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.type-tests.json --noEmit"
   },
   "dependencies": {
+    "@noodle-borg/compute": "workspace:*",
     "@noodle-borg/managed-capabilities": "workspace:*",
     "typescript": "^6.0.3",
     "@noodle-borg/compiler": "workspace:*",
