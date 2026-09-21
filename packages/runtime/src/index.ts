@@ -51,6 +51,7 @@ export type {
   ConnectorRegistry,
   ConnectorTraceEvent,
   ExecutionTraceSink,
+  PublicAdmissionContext,
 } from './connector/types.js';
 export {
   ConnectorInvocationError,

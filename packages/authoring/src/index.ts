@@ -113,6 +113,11 @@ export {
   type HandoffStateHandleLink,
   handoffSession,
 } from './handoff.js';
+export type {
+  CollectControl,
+  CollectFieldOptions,
+  ToolInteractionOptions,
+} from './interaction.js';
 export {
   algolia,
   file,

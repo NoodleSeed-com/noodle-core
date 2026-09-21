@@ -85,13 +85,24 @@ export type ChannelEventState =
   | 'failed'
   | 'cancelled'
   | 'unknown';
+/** A native reply button: an opaque server-bound id and the label the participant sees. */
+export interface ChannelReplyButton {
+  readonly id: string;
+  readonly title: string;
+}
 export interface ChannelEvent {
   readonly id: string;
   readonly participantId: string;
   readonly providerId: string;
   readonly providerMessageId?: string;
   readonly text?: string;
+  /** The button the participant tapped, in place of text. */
+  readonly button?: ChannelReplyButton;
   readonly reply?: string;
+  /** What history keeps of the reply when it must differ from the sent text; replaces `reply` once dispatched. */
+  readonly replyTranscript?: string;
+  /** Native reply buttons offered with the reply; content-free, dropped once dispatch is attempted. */
+  readonly buttons?: readonly ChannelReplyButton[];
   readonly eventAt: number;
   readonly receivedAt: number;
   readonly generation: number;
@@ -108,6 +119,7 @@ export interface ChannelInbound {
   readonly address: ChannelAddress;
   readonly eventAt: number;
   readonly text?: string;
+  readonly button?: ChannelReplyButton;
 }
 export class ChannelError extends Error {
   constructor(readonly code: string) {

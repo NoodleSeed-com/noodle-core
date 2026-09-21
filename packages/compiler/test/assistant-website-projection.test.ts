@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { InMemoryCatalog } from '../src/catalog/in-memory.js';
 import type { OperationSignature } from '../src/catalog/types.js';
 import { compileManifest } from '../src/compile.js';
+import { BUILTIN_RECORD_CATALOG_CONNECTOR } from '../src/native-record-operations.js';
 
 /**
  * The public website projection (ADR 0201) is enforced at compile time so its failure modes are
@@ -498,5 +499,236 @@ describe('a public surface may declare anonymous cross-page continuity', () => {
       const result = compileManifest(withContinuity(bound), { catalog });
       expect(result.ok, JSON.stringify(errorCodes(result))).toBe(true);
     }
+  });
+});
+
+/**
+ * A messaging surface (ADR 0239) runs the conversation loop itself, so it can present a `collect`
+ * interaction (ADR 0240) natively: the opener's fields are gathered in chat and its confirmed action
+ * saves one native record. Everything the messaging profile cannot provide without an interaction
+ * (a browser widget, an arbitrary write, an external connector call) is still refused, but with a
+ * code that names the missing requirement rather than a blanket "unsupported".
+ */
+describe('messaging surface narrows to interaction-backed collection', () => {
+  const brief = {
+    type: 'object',
+    properties: { workflow: { type: 'string' } },
+    required: ['workflow'],
+    additionalProperties: false,
+  };
+  const enquiry = {
+    type: 'object',
+    properties: {
+      workflow: { type: 'string' },
+      fullName: { type: 'string' },
+      consentToContact: { type: 'boolean', const: true },
+    },
+    required: ['workflow', 'fullName', 'consentToContact'],
+    additionalProperties: false,
+  };
+  const collect = (action: string) => ({
+    kind: 'collect',
+    action,
+    initialValues: { workflow: { fromOutput: 'workflow' } },
+    fields: [
+      { key: 'fullName', control: 'text' },
+      { key: 'consentToContact', control: 'consent' },
+    ],
+    review: 'all',
+    outcome: { success: 'Saved.' },
+  });
+  const messagingCatalog = new InMemoryCatalog([
+    {
+      id: 'acme',
+      version: '1.0.0',
+      operations: { look_up: readSignature, book_demo: actionSignature },
+    },
+    BUILTIN_RECORD_CATALOG_CONNECTOR,
+  ]);
+
+  function messaging(
+    capabilities: readonly { kind: string; name: string }[],
+    options: { readonly withView?: boolean } = { withView: true },
+  ): unknown {
+    return {
+      manifestVersion: '2',
+      server: {
+        name: 'acme_site',
+        title: 'Acme Site',
+        version: '1.0.0',
+        assistant: {
+          model: { kind: 'noodle-managed' },
+          allowedOrigins: [],
+          surfaces: [{ kind: 'messaging', channel: 'whatsapp', mode: 'public', capabilities }],
+        },
+      },
+      connectors: {
+        acme: { id: 'acme', version: '1.0.0' },
+        records: { id: 'noodle_records', version: '1.0.0' },
+      },
+      widgets: [
+        { name: 'card', tool: 'show_card', html: '<main/>' },
+        ...(options.withView
+          ? [{ name: 'contact_widget', tool: 'open_contact_form', html: '<main/>' }]
+          : []),
+      ],
+      tools: [
+        {
+          name: 'open_contact_form',
+          description: 'Opener.',
+          inputSchema: brief,
+          outputSchema: brief,
+          annotations: { readOnlyHint: true },
+          fulfilment: { steps: [], output: { workflow: '${input.workflow}' } },
+          interaction: collect('submit_enquiry'),
+        },
+        {
+          name: 'submit_enquiry',
+          description: 'Native action.',
+          inputSchema: enquiry,
+          annotations: { readOnlyHint: false, confirm: true },
+          visibility: ['app'],
+          fulfilment: {
+            steps: [
+              {
+                id: 'saved',
+                use: 'records.submit_record',
+                args: { collection: 'leads', payload: { contact_name: '${input.fullName}' } },
+              },
+            ],
+            output: { ok: '${steps.saved.ok}' },
+          },
+        },
+        {
+          name: 'open_demo_request',
+          description: 'Opener whose action leaves the platform.',
+          inputSchema: brief,
+          outputSchema: brief,
+          annotations: { readOnlyHint: true },
+          fulfilment: { steps: [], output: { workflow: '${input.workflow}' } },
+          interaction: collect('book_external'),
+        },
+        {
+          name: 'book_external',
+          description: 'External action.',
+          inputSchema: enquiry,
+          annotations: { readOnlyHint: false, confirm: true },
+          fulfilment: { use: 'acme.book_demo', args: { email: '${input.fullName}' } },
+        },
+        {
+          name: 'show_card',
+          description: 'Widget read without an interaction.',
+          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+          annotations: { readOnlyHint: true },
+          fulfilment: { steps: [], output: { ok: true } },
+        },
+        {
+          name: 'health',
+          description: 'Pure read.',
+          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+          annotations: { readOnlyHint: true },
+          fulfilment: { steps: [], output: { ok: true } },
+        },
+        {
+          name: 'look_up',
+          description: 'Connector read.',
+          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+          annotations: { readOnlyHint: true },
+          fulfilment: { use: 'acme.look_up', args: { id: 'x' } },
+        },
+        {
+          name: 'bare_write',
+          description: 'Write without an interaction.',
+          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+          annotations: { readOnlyHint: false, confirm: true },
+          fulfilment: { steps: [], output: { ok: true } },
+        },
+      ],
+    };
+  }
+
+  const tool = (name: string) => ({ kind: 'tool', name });
+
+  it('allows an opener and its native records action selected together, with and without a catalog', () => {
+    const selection = [tool('open_contact_form'), tool('submit_enquiry'), tool('health')];
+    const resolved = compileManifest(messaging(selection), { catalog: messagingCatalog });
+    expect(resolved.ok, JSON.stringify(errorCodes(resolved))).toBe(true);
+    const shapeOnly = compileManifest(messaging(selection));
+    expect(shapeOnly.ok, JSON.stringify(errorCodes(shapeOnly))).toBe(true);
+    // A view-less opener rides on the platform renderer alone and is equally welcome.
+    const viewless = compileManifest(messaging(selection, { withView: false }), {
+      catalog: messagingCatalog,
+    });
+    expect(viewless.ok, JSON.stringify(errorCodes(viewless))).toBe(true);
+  });
+
+  it('names the unselected action when an opener is selected alone', () => {
+    for (const withView of [true, false]) {
+      const result = compileManifest(messaging([tool('open_contact_form')], { withView }), {
+        catalog: messagingCatalog,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      const missing = result.errors.filter((error) => error.code === 'channel_dependency_missing');
+      expect(missing).toHaveLength(1);
+      expect(missing[0]?.message).toContain('open_contact_form');
+      expect(missing[0]?.message).toContain('submit_enquiry');
+      expect(missing[0]?.path).toBe('tools.open_contact_form');
+    }
+  });
+
+  it('refuses the action selected without its opener as a write the profile cannot collect for', () => {
+    const result = compileManifest(messaging([tool('submit_enquiry')]), {
+      catalog: messagingCatalog,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const refused = result.errors.filter(
+      (error) => error.code === 'channel_requirement_unsupported',
+    );
+    expect(refused).toHaveLength(1);
+    expect(refused[0]?.path).toBe('tools.submit_enquiry');
+    expect(refused[0]?.message).toMatch(/write/);
+  });
+
+  it('refuses an action whose operation leaves the native records connector', () => {
+    const result = compileManifest(messaging([tool('open_demo_request'), tool('book_external')]), {
+      catalog: messagingCatalog,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const refused = result.errors.filter(
+      (error) => error.code === 'channel_requirement_unsupported',
+    );
+    expect(refused.map((error) => error.path)).toEqual(['tools.book_external']);
+    expect(refused[0]?.message).toMatch(/connector/);
+  });
+
+  it.each([
+    ['a widget without an interaction', 'show_card', /UI/],
+    ['a write without an interaction', 'bare_write', /write/],
+    ['a connector read', 'look_up', /connector/],
+  ])('still refuses %s, naming the requirement', (_label, name, requirement) => {
+    const result = compileManifest(messaging([tool(name)]), { catalog: messagingCatalog });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    const refused = result.errors.filter(
+      (error) => error.code === 'channel_requirement_unsupported',
+    );
+    expect(refused.map((error) => error.path)).toEqual([`tools.${name}`]);
+    expect(refused[0]?.message).toMatch(requirement);
+    expect(errorCodes(result)).not.toContain('assistant_messaging_unsupported');
+  });
+
+  it('keeps the kind gate for resources and prompts under its existing code', () => {
+    const manifest = messaging([tool('health'), { kind: 'resource', name: 'faq' }]) as {
+      resources?: unknown[];
+    };
+    manifest.resources = [
+      { name: 'faq', uri: 'faq://all', fulfilment: { steps: [], output: { text: 'faq' } } },
+    ];
+    const result = compileManifest(manifest, { catalog: messagingCatalog });
+    expect(result.ok).toBe(false);
+    expect(errorCodes(result)).toContain('assistant_messaging_unsupported');
   });
 });

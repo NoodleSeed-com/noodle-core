@@ -48,6 +48,7 @@ import type { CompileError, CompileResult, CompileWarning } from './errors.js';
 import { findExternalRef, parseFulfilment } from './fulfilment-structural.js';
 import { compileManagedCollections } from './managed-collections.js';
 import { cspOriginFaults } from './manifest/csp-origins.js';
+import { compileToolInteractions } from './manifest/interaction-validation.js';
 import { parseManifestDocument } from './manifest/parse-document.js';
 import { type Manifest, manifestSchema } from './manifest/schema.js';
 import { resolveSchemaUses } from './manifest/schema-refs.js';
@@ -522,12 +523,16 @@ export function compileManifest(raw: unknown, options: CompileOptions = {}): Com
     errors,
   });
 
+  const toolInteractions = compileToolInteractions(manifest.tools, artifactTools, errors);
+
   errors.push(
     ...validateWebsiteProjection(manifest.server.assistant, {
       tools: artifactTools,
       resources: artifactResources,
       prompts: artifactPrompts,
       knowledge,
+      interactions: toolInteractions,
+      connectors: declared,
     }),
   );
 
@@ -556,6 +561,7 @@ export function compileManifest(raw: unknown, options: CompileOptions = {}): Com
     ...(knowledge.length > 0 ? { knowledge } : {}),
     ...(managedCollections.length > 0 ? { managedCollections } : {}),
     ...(variables.length > 0 ? { variables } : {}),
+    ...(toolInteractions === undefined ? {} : { toolInteractions }),
   });
 
   const warnings = [

@@ -103,10 +103,27 @@ const check = z.strictObject({
   status: z.enum(['ready', 'unavailable']),
   code: code.optional(),
 });
+/**
+ * One business capability's compatibility on this channel (ADR 0240 decision 7): the five report
+ * states, the failing requirement, a bounded reason code and one actionable next step. Capability
+ * codes may carry the platform's upper-case identity code beside lower-case channel codes.
+ */
+const capabilityReport = z.strictObject({
+  capability: code,
+  status: z.enum(['native', 'adapted', 'handoff', 'needs_setup', 'unavailable']),
+  code: z
+    .string()
+    .regex(/^[A-Za-z0-9_]+$/)
+    .max(100)
+    .optional(),
+  requirement: code.optional(),
+  next: z.string().max(400).optional(),
+});
 const readiness = z.strictObject({
   ready: z.boolean(),
   revision,
   checks: z.array(check),
+  capabilities: z.array(capabilityReport).max(16),
   webhookUrl: z.url().optional(),
 });
 export const WhatsAppReadinessResponseSchema = z.strictObject({
@@ -115,7 +132,13 @@ export const WhatsAppReadinessResponseSchema = z.strictObject({
 });
 export const WhatsAppReadinessClientResponseSchema = z.object({
   ok: z.literal(true),
-  data: readiness.extend({ checks: z.array(check.strip()) }).strip(),
+  data: readiness
+    .extend({
+      checks: z.array(check.strip()),
+      // A same-feature service that predates the report omits the array; absence is not an error.
+      capabilities: z.array(capabilityReport.strip()).optional(),
+    })
+    .strip(),
 });
 const webhook = z.strictObject({
   url: z.string().max(2048),

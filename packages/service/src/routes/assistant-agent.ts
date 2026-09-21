@@ -22,6 +22,7 @@ import {
   dispatchAssistantTool,
   dispatchMessagingReadTool,
   isMessagingTurn,
+  type MessagingCollectionPort,
   projectAssistantGuide,
   publicSurfaceOf,
   recoverableAssistantView,
@@ -121,6 +122,10 @@ export async function runAgentTurn(
     readonly beforeStep: () => Promise<void>;
     readonly claimTool: (name: string) => Promise<boolean>;
     readonly signal: AbortSignal;
+    /** Natural collection (ADR 0240): how a `collect` opener opens a ledger for this participant. */
+    readonly collection?: MessagingCollectionPort;
+    /** Platform-authored note for this turn, such as an open collection's ledger status. */
+    readonly systemNote?: string;
   },
 ): Promise<void> {
   // Every terminal failure in this loop is one shape: a code, and the turn ends. Naming it keeps the
@@ -184,6 +189,9 @@ export async function runAgentTurn(
       ...(pageContext === undefined ? {} : { pageContext }),
       ...(modelContext === undefined ? {} : { modelContext }),
     }),
+    ...(transport?.systemNote === undefined
+      ? []
+      : [{ role: 'system' as const, content: transport.systemNote }]),
     ...session.history,
     { role: 'user', content: message },
   ];
@@ -390,6 +398,7 @@ export async function runAgentTurn(
             context,
             session,
             claimTool: transport?.claimTool ?? (async () => false),
+            ...(transport?.collection === undefined ? {} : { collection: transport.collection }),
           })
         : await dispatchAssistantTool({
             artifact: target.served.artifact,

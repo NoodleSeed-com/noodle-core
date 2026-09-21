@@ -2,18 +2,41 @@ import * as wire from '@noodle-borg/wire-contracts';
 import { renderTable } from '../table.js';
 import { stdoutTableOptions } from './resource-shared.js';
 
+const CAPABILITY_STATUS: Readonly<Record<string, string>> = {
+  native: 'Native',
+  adapted: 'Adapted',
+  handoff: 'Handoff',
+  needs_setup: 'Needs setup',
+  unavailable: 'Unavailable',
+};
+/** One compatibility line per business capability: status, code, failing requirement and next step. */
+function capabilityLine(entry: {
+  readonly capability: string;
+  readonly status: string;
+  readonly code?: string | undefined;
+  readonly requirement?: string | undefined;
+  readonly next?: string | undefined;
+}): string {
+  return `  ${CAPABILITY_STATUS[entry.status] ?? entry.status}: ${entry.capability}${entry.code ? ` (${entry.code})` : ''}${entry.requirement ? `; requires ${entry.requirement}` : ''}${entry.next ? `. Next: ${entry.next}` : ''}`;
+}
+
 /** Wire validation precedes human rendering; no provider bodies or protected addresses reach here. */
 export function formatWhatsAppResult(result: unknown): string {
   const doctor = wire.WhatsAppReadinessClientResponseSchema.safeParse(result);
-  if (doctor.success)
+  if (doctor.success) {
+    const { data } = doctor.data;
     return [
-      doctor.data.data.ready ? 'WhatsApp is ready to enable.' : 'WhatsApp remains unavailable.',
-      `Revision: ${doctor.data.data.revision}`,
-      ...doctor.data.data.checks.map(
+      data.ready ? 'WhatsApp is ready to enable.' : 'WhatsApp remains unavailable.',
+      `Revision: ${data.revision}`,
+      ...data.checks.map(
         (check) =>
           `${check.status === 'ready' ? 'Ready' : 'Unavailable'}: ${check.name}${check.code ? ` (${check.code})` : ''}`,
       ),
+      ...(data.capabilities === undefined
+        ? []
+        : ['Capabilities:', ...data.capabilities.map(capabilityLine)]),
     ].join('\n');
+  }
   const binding = wire.WhatsAppBindingClientResponseSchema.safeParse(result);
   if (binding.success) {
     const value = binding.data.data;

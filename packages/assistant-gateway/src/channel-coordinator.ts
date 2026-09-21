@@ -12,6 +12,7 @@ import {
   type ChannelInbound,
   type ChannelLimitsInput,
   type ChannelParticipant,
+  type ChannelReplyButton,
   channelDigest,
   channelLimits,
   channelRow,
@@ -22,6 +23,7 @@ import {
 } from './channel-types.js';
 import {
   assertChannelSend,
+  type ChannelTranscript,
   claimChannelTurn,
   completeChannelTurn,
   prepareChannelSend,
@@ -455,11 +457,18 @@ export class ChannelCoordinator {
       return channelValue<ChannelEvent>(tx, id, eventId);
     });
   }
-  async fail(id: string, eventId: string, lease: string, code: string): Promise<void> {
+  /** Close a running turn without a reply: `failed` for an error, `cancelled` for input that is deliberately not answered. */
+  async fail(
+    id: string,
+    eventId: string,
+    lease: string,
+    code: string,
+    state: 'failed' | 'cancelled' = 'failed',
+  ): Promise<void> {
     await this.store.transaction([id], async (tx) => {
       const event = await channelValue<ChannelEvent>(tx, id, eventId);
       if (!event || event.lease !== lease || event.state !== 'running') return;
-      await writeChannelEvent(tx, id, { ...event, state: 'failed', code }, this.now());
+      await writeChannelEvent(tx, id, { ...event, state, code }, this.now());
     });
   }
   receive(id: string, messages: readonly ChannelInbound[], retentionMs = CHANNEL_RETENTION_MS) {
@@ -478,6 +487,8 @@ export class ChannelCoordinator {
     reply: string,
     retentionMs = CHANNEL_RETENTION_MS,
     code?: string,
+    transcript?: ChannelTranscript,
+    buttons?: readonly ChannelReplyButton[],
   ) {
     return completeChannelTurn(
       this.store,
@@ -488,6 +499,8 @@ export class ChannelCoordinator {
       this.now(),
       retentionMs,
       code,
+      transcript,
+      buttons,
     );
   }
   assertSend(id: string, eventId: string, lease: string) {

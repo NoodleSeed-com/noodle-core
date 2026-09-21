@@ -8,6 +8,8 @@ import {
   verifyPublicAdmissionAssertion,
 } from '../src/public-admission-assertion.js';
 import {
+  admitPublicRecord,
+  PUBLIC_RECORD_ADMISSION_DEFAULTS,
   publicRecordAdmissionLimits,
   publicRecordCounterRequests,
 } from '../src/public-record-admission.js';
@@ -172,5 +174,97 @@ describe('ordinary public-record testing allowance', () => {
     });
     expect(await counters.peek('solution-intake:surface:surface', now)).toBe(2);
     expect(() => publicRecordAdmissionLimits({ networkPerMinute: 601 })).toThrow();
+  });
+});
+
+describe('trusted messaging admission (ADR 0240)', () => {
+  const admit = (
+    counters: InMemoryDailyCounterStore,
+    key: string,
+    buckets: { visitor?: string; network?: string; messaging?: string },
+  ) =>
+    admitPublicRecord({
+      counters,
+      surfaceId: 'surface',
+      attempt: { key, fingerprint: 'a' },
+      buckets,
+      now,
+    });
+
+  it('keeps every browser default and counter key byte-for-byte', () => {
+    expect(PUBLIC_RECORD_ADMISSION_DEFAULTS).toEqual({
+      visitorPerMinute: 300,
+      visitorPerHour: 3_000,
+      networkPerMinute: 600,
+      networkPerHour: 6_000,
+      messagingPerMinute: 10,
+      messagingPerHour: 60,
+      installationPerDay: 10_000,
+    });
+    expect(
+      publicRecordCounterRequests('surface', { visitor: 'v', network: 'n' }).map((r) => r.key),
+    ).toEqual([
+      'solution-intake:visitor:minute:surface:v',
+      'solution-intake:visitor:hour:surface:v',
+      'solution-intake:network:minute:surface:n',
+      'solution-intake:network:hour:surface:n',
+      'solution-intake:surface:surface',
+    ]);
+  });
+
+  it('admits a messaging-only participant digest under its own per-participant ceilings', async () => {
+    expect(publicRecordCounterRequests('surface', { messaging: 'participant_1' })).toEqual([
+      {
+        key: ['solution-intake', 'messaging', 'minute', 'surface', 'participant_1'].join(':'),
+        category: 'messaging',
+        limit: 10,
+        window: 'minute',
+      },
+      {
+        key: ['solution-intake', 'messaging', 'hour', 'surface', 'participant_1'].join(':'),
+        category: 'messaging',
+        limit: 60,
+        window: 'hour',
+      },
+      {
+        key: 'solution-intake:surface:surface',
+        category: 'installation',
+        limit: 10_000,
+        window: 'day',
+      },
+    ]);
+    const counters = new InMemoryDailyCounterStore();
+    for (let index = 0; index < 10; index++)
+      expect(await admit(counters, `m-${index}`, { messaging: 'participant_1' })).toEqual({
+        allowed: true,
+      });
+    expect(await admit(counters, 'm-denied', { messaging: 'participant_1' })).toMatchObject({
+      allowed: false,
+      reason: 'quota_exceeded',
+      limits: [{ category: 'messaging', limit: 10, resetAt: new Date('2030-03-04T09:01:00Z') }],
+    });
+    // Atomic refusal spent nothing of the installation allowance; another participant is unaffected.
+    expect(await counters.peek('solution-intake:surface:surface', now)).toBe(10);
+    expect(await admit(counters, 'other-1', { messaging: 'other-participant' })).toEqual({
+      allowed: true,
+    });
+    expect(
+      await admit(counters, 'both', { network: 'egress', messaging: 'other-participant' }),
+    ).toEqual({ allowed: true });
+    expect(() => publicRecordAdmissionLimits({ messagingPerMinute: 11 })).toThrow();
+    expect(() => publicRecordAdmissionLimits({ messagingPerHour: 61 })).toThrow();
+  });
+
+  it('fails closed without a trusted network or messaging bucket', async () => {
+    const counters = new InMemoryDailyCounterStore();
+    expect(await admit(counters, 'visitor-only', { visitor: 'v' })).toEqual({
+      allowed: false,
+      reason: 'admission_unavailable',
+    });
+    expect(await admit(counters, 'nothing', {})).toEqual({
+      allowed: false,
+      reason: 'admission_unavailable',
+    });
+    expect(await counters.peek('solution-intake:surface:surface', now)).toBe(0);
   });
 });

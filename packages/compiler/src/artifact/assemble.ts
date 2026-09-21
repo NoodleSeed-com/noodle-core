@@ -36,6 +36,7 @@ interface ArtifactAssemblyInput {
   readonly knowledge?: RuntimeArtifact['server']['knowledge'];
   readonly managedCollections?: RuntimeArtifact['server']['managedCollections'];
   readonly variables?: RuntimeArtifact['server']['variables'];
+  readonly toolInteractions?: RuntimeArtifact['toolInteractions'];
 }
 
 export function assembleRuntimeArtifact({
@@ -55,6 +56,7 @@ export function assembleRuntimeArtifact({
   knowledge,
   managedCollections,
   variables,
+  toolInteractions,
 }: ArtifactAssemblyInput): RuntimeArtifact {
   // 4. Assemble the artifact. `resources`/`prompts` and their capability lists are emitted only when
   // present, keeping a tools-only artifact byte-identical to before this slice.
@@ -120,6 +122,7 @@ export function assembleRuntimeArtifact({
       ...(state !== undefined ? { state } : {}),
     },
     tools: artifactTools,
+    ...(toolInteractions === undefined ? {} : { toolInteractions }),
     ...(allResources.length > 0 ? { resources: allResources } : {}),
     ...(artifactPrompts.length > 0 ? { prompts: artifactPrompts } : {}),
     ...(packagedAssets.length > 0 ? { assets: packagedAssets.map(toArtifactAsset) } : {}),

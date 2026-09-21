@@ -1,11 +1,14 @@
 import type {
+  ArtifactCollectInteraction,
   ArtifactFulfilment,
   ArtifactPrompt,
   ArtifactResource,
   ArtifactStep,
   ArtifactTool,
+  OperationRef,
 } from '../artifact/types.js';
 import type { CompileError } from '../errors.js';
+import { RECORD_CONNECTOR_ID } from '../native-record-operations.js';
 import { type CondNode, collectPaths, type ExprNode } from './expression.js';
 
 /**
@@ -42,6 +45,10 @@ export interface WebsiteProjectionSurfaces {
   readonly prompts: readonly ArtifactPrompt[];
   /** Compiled knowledge components (ADR 0202): projectable as `knowledge` capabilities. */
   readonly knowledge?: readonly { readonly name: string }[] | undefined;
+  /** `collect` interactions keyed by opener (ADR 0240); a messaging surface presents them natively. */
+  readonly interactions?: Readonly<Record<string, ArtifactCollectInteraction>> | undefined;
+  /** Declared connector aliases, so a shape-only operation ref still names its connector id. */
+  readonly connectors?: Readonly<Record<string, { readonly id: string }>> | undefined;
 }
 
 /** A tool touches identity when it reads `${user}` or requires verified claims (ADR 0185). */
@@ -87,18 +94,12 @@ export function validateWebsiteProjection(
       const tool = toolsByName.get(capability.name);
       if (tool === undefined) return;
       const path = `tools.${tool.name}`;
-      if (
-        surface.kind === 'messaging' &&
-        (tool.annotations?.readOnlyHint !== true ||
-          tool._meta?.ui !== undefined ||
-          tool.fulfilment.kind === 'operation' ||
-          tool.fulfilment.steps.some((step) => step.kind === 'operation'))
-      ) {
-        errors.push({
-          code: 'assistant_messaging_unsupported',
-          path,
-          message: `"${tool.name}" requires a write, connector, or UI renderer not enabled for this messaging slice`,
-        });
+      if (surface.kind === 'messaging') {
+        const selected = new Set(
+          surface.capabilities?.flatMap((entry) => (entry.kind === 'tool' ? [entry.name] : [])),
+        );
+        const requirement = messagingRequirement(tool, selected, surfaces);
+        if (requirement !== undefined) errors.push({ ...requirement, path });
       }
 
       if (surface.mode === 'public' && anonymousBehavior(tool) === 'requires-identity') {
@@ -127,6 +128,71 @@ export function validateWebsiteProjection(
   });
 
   return errors;
+}
+
+/**
+ * What a messaging profile can present (ADR 0240): pure reads and knowledge as before, plus a
+ * `collect` opener whose confirmed action is selected beside it and saves one native record. The
+ * opener may carry a browser widget (the website keeps its React view) because the profile renders
+ * the same block as natural collection. Anything else names the requirement it lacks.
+ */
+function messagingRequirement(
+  tool: ArtifactTool,
+  selected: ReadonlySet<string>,
+  surfaces: WebsiteProjectionSurfaces,
+): Omit<CompileError, 'path'> | undefined {
+  const operations = operationRefs(tool.fulfilment);
+  const interaction = surfaces.interactions?.[tool.name];
+  if (interaction !== undefined && !selected.has(interaction.action)) {
+    return {
+      code: 'channel_dependency_missing',
+      message: `"${tool.name}" requires its confirmed action "${interaction.action}", which is not selected on this messaging surface`,
+    };
+  }
+  const opensCollection = interaction !== undefined;
+  const isCollectAction = [...selected].some(
+    (name) => surfaces.interactions?.[name]?.action === tool.name,
+  );
+  if (isCollectAction) {
+    const [operation] = operations;
+    if (
+      operations.length === 1 &&
+      operation !== undefined &&
+      isNativeRecordsOperation(operation, surfaces.connectors)
+    ) {
+      return undefined;
+    }
+    return {
+      code: 'channel_requirement_unsupported',
+      message: `"${tool.name}" requires a connector call the messaging profile does not provide; a collect action saves exactly one native record`,
+    };
+  }
+  const requirements = [
+    ...(tool.annotations?.readOnlyHint !== true ? ['a write'] : []),
+    ...(operations.length > 0 ? ['a connector call'] : []),
+    ...(tool._meta?.ui?.resourceUri !== undefined && !opensCollection ? ['a UI renderer'] : []),
+  ];
+  if (requirements.length === 0) return undefined;
+  return {
+    code: 'channel_requirement_unsupported',
+    message: `"${tool.name}" requires ${requirements.join(' and ')} that the messaging profile does not provide without a collect interaction`,
+  };
+}
+
+function operationRefs(fulfilment: ArtifactFulfilment): readonly OperationRef[] {
+  return fulfilment.kind === 'operation'
+    ? [fulfilment.operationRef]
+    : fulfilment.steps.flatMap((step) => (step.kind === 'operation' ? [step.operationRef] : []));
+}
+
+/** Resolved refs carry the connector id; a shape-only ref is looked up through its declared alias. */
+export function isNativeRecordsOperation(
+  operation: OperationRef,
+  connectors: WebsiteProjectionSurfaces['connectors'],
+): boolean {
+  return operation.resolved
+    ? operation.connectorId === RECORD_CONNECTOR_ID
+    : connectors?.[operation.connector]?.id === RECORD_CONNECTOR_ID;
 }
 
 /**

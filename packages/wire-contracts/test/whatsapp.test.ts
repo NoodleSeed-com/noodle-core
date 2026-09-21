@@ -3,6 +3,8 @@ import {
   WhatsAppBindingClientResponseSchema,
   WhatsAppBindingResponseSchema,
   WhatsAppConfigureRequestSchema,
+  WhatsAppReadinessClientResponseSchema,
+  WhatsAppReadinessResponseSchema,
 } from '../src/whatsapp.js';
 
 const config = {
@@ -33,5 +35,59 @@ describe('WhatsApp wire contract', () => {
     const response = { ok: true, data: null, futureField: true };
     expect(WhatsAppBindingResponseSchema.safeParse(response).success).toBe(false);
     expect(WhatsAppBindingClientResponseSchema.parse(response)).toEqual({ ok: true, data: null });
+  });
+});
+describe('WhatsApp readiness capability report', () => {
+  const entry = {
+    capability: 'capture_request',
+    status: 'needs_setup',
+    code: 'collection_not_installed',
+    next: 'Install the application before enabling the channel.',
+  };
+  const data = { ready: false, revision: 1, checks: [], capabilities: [entry] };
+  it('accepts one entry per capability on the strict server schema and rejects undeclared shapes', () => {
+    expect(WhatsAppReadinessResponseSchema.safeParse({ ok: true, data }).success).toBe(true);
+    expect(
+      WhatsAppReadinessResponseSchema.safeParse({
+        ok: true,
+        data: { ...data, capabilities: [{ ...entry, renderer: 'flow' }] },
+      }).success,
+    ).toBe(false);
+    expect(
+      WhatsAppReadinessResponseSchema.safeParse({
+        ok: true,
+        data: { ...data, capabilities: [{ ...entry, status: 'maybe' }] },
+      }).success,
+    ).toBe(false);
+    expect(
+      WhatsAppReadinessResponseSchema.safeParse({
+        ok: true,
+        data: {
+          ...data,
+          capabilities: [
+            {
+              capability: 'account_self_service',
+              status: 'unavailable',
+              code: 'IDENTITY_NOT_ESTABLISHABLE',
+              requirement: 'verified_customer',
+            },
+          ],
+        },
+      }).success,
+    ).toBe(true);
+  });
+  it('strips additive fields on the client reader and tolerates a service that omits the array', () => {
+    expect(
+      WhatsAppReadinessClientResponseSchema.parse({
+        ok: true,
+        data: { ...data, capabilities: [{ ...entry, renderer: 'flow' }], later: 1 },
+      }),
+    ).toEqual({ ok: true, data });
+    expect(
+      WhatsAppReadinessClientResponseSchema.parse({
+        ok: true,
+        data: { ready: true, revision: 1, checks: [] },
+      }).data.capabilities,
+    ).toBeUndefined();
   });
 });

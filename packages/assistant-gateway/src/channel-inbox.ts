@@ -112,8 +112,11 @@ export async function receiveChannelMessages(
       const sequence = ((await channelValue<number>(tx, id, 'sequence')) ?? 0) + 1;
       await tx.put(id, channelRow('sequence', 'counter', sequence, now));
       const eventId = `e_${String(sequence).padStart(20, '0')}`;
-      const unsupported =
-        message.text === undefined || message.text.length > binding.limits.textCharacters;
+      const text =
+        message.text !== undefined && message.text.length <= binding.limits.textCharacters
+          ? message.text
+          : undefined;
+      const unsupported = text === undefined && message.button === undefined;
       let event: ChannelEvent = {
         id: eventId,
         participantId,
@@ -125,7 +128,8 @@ export async function receiveChannelMessages(
         attempts: 0,
         state: code ? 'refused' : unsupported ? 'reply' : 'queued',
         ...(code ? { code } : {}),
-        ...(!code && !unsupported ? { text: message.text } : {}),
+        ...(!code && text !== undefined ? { text } : {}),
+        ...(!code && message.button !== undefined ? { button: message.button } : {}),
         ...(!code && unsupported
           ? {
               reply: `Please send a text message of up to ${binding.limits.textCharacters} characters. For help, contact ${binding.supportEmail}.`,

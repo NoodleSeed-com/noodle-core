@@ -32,12 +32,29 @@ describe('acme-discovery example', () => {
 
   it('keeps the lead capture behind explicit confirmation and a managed customer sink', async () => {
     const manifest = (await app.toManifest()) as {
-      tools: { name: string; annotations?: Record<string, unknown> }[];
+      tools: { name: string; annotations?: Record<string, unknown>; interaction?: unknown }[];
     };
     const captureLead = manifest.tools.find((tool) => tool.name === 'capture_lead');
     // The confirmation card is the visitor's consent moment (ADR 0214): a lead may never leave the
     // conversation without it, and the sink endpoint/credential stay operator-managed data.
     expect(captureLead?.annotations?.confirm).toBe(true);
+    expect(captureLead?.interaction).toBeUndefined();
+    // ADR 0240: the read-only opener carries the whole collect definition for that action.
+    const opener = manifest.tools.find((tool) => tool.name === 'offer_lead_capture');
+    expect(opener?.annotations?.readOnlyHint).toBe(true);
+    expect(opener?.interaction).toEqual({
+      kind: 'collect',
+      action: 'capture_lead',
+      initialValues: { note: { fromOutput: 'note' } },
+      fields: [
+        { key: 'name', control: 'text' },
+        { key: 'workEmail', control: 'email', private: true },
+        { key: 'company', control: 'text' },
+        { key: 'note', control: 'textarea', optional: true },
+      ],
+      review: 'all',
+      outcome: { success: 'Your details were sent to Acme.' },
+    });
     const catalog = JSON.stringify(
       (app as unknown as { toConnectorCatalog: () => unknown }).toConnectorCatalog(),
     );
@@ -59,6 +76,7 @@ describe('acme-discovery example', () => {
       surface.capabilities?.map((capability) => capability.name) ?? [];
     expect(capabilityNames(surfaces[0]!)).toContain('my_trips');
     expect(capabilityNames(surfaces[0]!)).toContain('capture_lead');
+    expect(capabilityNames(surfaces[0]!)).toContain('offer_lead_capture');
     expect(capabilityNames(surfaces[1]!)).toEqual([
       'destinations',
       'discover_getaways',

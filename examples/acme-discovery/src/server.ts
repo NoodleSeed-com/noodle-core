@@ -260,6 +260,36 @@ const captureLead = tool('capture_lead', {
   },
 });
 
+// Its opener (ADR 0240): one `collect` definition every channel presents with the controls it has —
+// a form on the website, natural conversation on messaging — saving through the same confirmed
+// `capture_lead`. It seeds only the trip note; the block names meaning, never layout.
+const offerLeadCapture = tool('offer_lead_capture', {
+  title: 'Offer to send details to Acme',
+  description:
+    'Offer to send the visitor’s details to the Acme Getaways team. Call once, only when the visitor ' +
+    'agrees to be contacted instead of signing up, passing the trip interest they described as the ' +
+    'note. Contact details are collected from the visitor and confirmed before anything is sent.',
+  annotations: readOnly,
+  input: z.object({
+    note: z.string().max(500).default('').meta({ title: 'What are you planning?' }),
+  }),
+  output: z.object({ note: z.string() }),
+  fulfil: ({ input }) => ({ note: input.note }),
+  interaction: {
+    kind: 'collect',
+    action: captureLead,
+    initialValues: { note: { fromOutput: 'note' } },
+    fields: [
+      { key: 'name', control: 'text' },
+      { key: 'workEmail', control: 'email', private: true },
+      { key: 'company', control: 'text' },
+      { key: 'note', control: 'textarea', optional: true },
+    ],
+    review: 'all',
+    outcome: { success: 'Your details were sent to Acme.' },
+  },
+});
+
 // The mixed surface's sign-in trigger (ADR 0201): reading `${user.id}` classifies this tool
 // requires-identity, so an anonymous visitor who reaches for it sees the sign-in card instead of an
 // error — and after signing in on Acme's account origin, the conversation continues under the
@@ -363,6 +393,7 @@ export default server(
             discoverGetaways,
             createHandoff,
             shortlistGetaway,
+            offerLeadCapture,
             captureLead,
             myTrips,
           ],
@@ -389,5 +420,5 @@ export default server(
     knowledge: [destinations],
     capabilities: [publicPages],
   },
-  [discoverGetaways, createHandoff, shortlistGetaway, captureLead, myTrips],
+  [discoverGetaways, createHandoff, shortlistGetaway, offerLeadCapture, captureLead, myTrips],
 );

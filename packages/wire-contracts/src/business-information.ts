@@ -34,7 +34,14 @@ export const BUSINESS_GRANT_ROLES = ['administrator', 'manager', 'operator', 'vi
 export const BusinessGrantRoleSchema = z.enum(BUSINESS_GRANT_ROLES);
 export type BusinessGrantRole = z.infer<typeof BusinessGrantRoleSchema>;
 
-export const MANAGED_RECORD_ORIGIN_SURFACES = ['public', 'portal', 'mcp', 'api'] as const;
+/** `messaging` marks trusted channel provenance (ADR 0240), never a client-claimed origin. */
+export const MANAGED_RECORD_ORIGIN_SURFACES = [
+  'public',
+  'portal',
+  'mcp',
+  'api',
+  'messaging',
+] as const;
 export const ManagedRecordOriginSurfaceSchema = z.enum(MANAGED_RECORD_ORIGIN_SURFACES);
 export type ManagedRecordOriginSurface = z.infer<typeof ManagedRecordOriginSurfaceSchema>;
 

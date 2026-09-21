@@ -9,7 +9,8 @@ export interface ChannelRow {
     | 'counter'
     | 'spend'
     | 'block'
-    | 'mutation';
+    | 'mutation'
+    | 'interaction';
   readonly state?: string;
   readonly updatedAt: number;
   readonly expiresAt?: number;

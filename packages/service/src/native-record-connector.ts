@@ -13,6 +13,7 @@ import type {
   BusinessPermission,
   InstalledCollectionDefinition,
   JsonObject,
+  ManagedRequestOrigin,
   SolutionInstallation,
 } from './business-information/contracts.js';
 import {
@@ -175,7 +176,7 @@ class NativeRecordConnector implements Connector {
         idempotencyKey: key,
         payload,
         ...(publicInput ? { publicInput: true as const } : {}),
-        origin: { kind: 'mcp' as const, reference: 'native-tool' },
+        origin: trustedOrigin(call),
         actorSubject,
       };
       const completed = await store.probeRequest(request);
@@ -194,12 +195,16 @@ class NativeRecordConnector implements Connector {
       if (publicInput) {
         if (!installation.intakeActive || this.dependencies.publicIntakeEnabled === false)
           return fail(call, 503, 'Public record intake is paused.');
-        if (call.publicAdmission === undefined || !call.publicAdmission.network)
+        if (
+          call.publicAdmission === undefined ||
+          (!call.publicAdmission.network && !call.publicAdmission.messaging)
+        )
           return fail(
             call,
             503,
-            'Trusted network admission context is required for public record writes.',
+            'Trusted network or messaging admission context is required for public record writes.',
           );
+        const { provenance: _provenance, ...buckets } = call.publicAdmission;
         const quota = await admitPublicRecord({
           counters: this.dependencies.counters,
           surfaceId: installation.publicId,
@@ -207,7 +212,7 @@ class NativeRecordConnector implements Connector {
             key: `solution-intake:logical:${installation.publicId}:${idempotencyDigest(key)}`,
             fingerprint: requestFingerprint(request),
           },
-          buckets: call.publicAdmission,
+          buckets,
           now: this.dependencies.now?.() ?? new Date(),
         });
         if (!quota.allowed)
@@ -288,6 +293,18 @@ class NativeRecordConnector implements Connector {
   }
 }
 
+/**
+ * Record provenance comes only from the trusted call context (ADR 0240): a messaging channel names
+ * itself through `publicAdmission.provenance` and must arrive with its participant bucket; anything
+ * a caller claims inside tool input has no effect.
+ */
+function trustedOrigin(call: ConnectorCall): ManagedRequestOrigin {
+  const provenance = call.publicAdmission?.provenance;
+  if (provenance === undefined) return { kind: 'mcp', reference: 'native-tool' };
+  if (!call.publicAdmission?.messaging)
+    return fail(call, 503, 'Messaging provenance requires a trusted participant admission bucket.');
+  return { kind: 'messaging', reference: provenance.channel };
+}
 function receipt(record: { readonly id: string; readonly revision: number }) {
   return { ok: true, recordId: record.id, revision: record.revision };
 }

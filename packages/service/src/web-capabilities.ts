@@ -44,7 +44,9 @@ export function deploymentWebConnector(
         ).allow,
         anonymous: call.caller === undefined || call.caller.identityKind === 'anonymous',
         ...(call.caller === undefined ? {} : { subject: call.caller.subject }),
-        ...(call.publicAdmission === undefined ? {} : { network: call.publicAdmission.network }),
+        ...(call.publicAdmission?.network === undefined
+          ? {}
+          : { network: call.publicAdmission.network }),
         budget: call.capabilityBudget,
         ...(call.signal === undefined ? {} : { signal: call.signal }),
       });

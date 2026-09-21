@@ -7,6 +7,7 @@ import type {
   ConnectorCallHost,
   ConnectorRegistry,
   ExecutionTraceSink,
+  PublicAdmissionContext,
 } from './connector/types.js';
 import { preflightFulfilmentSignatures } from './connector-snapshot.js';
 import type { FrozenCustomerRoutes } from './customer-routing.js';
@@ -55,8 +56,8 @@ export interface ExecuteDeps {
   readonly policy?: PolicyGate;
   readonly env?: Record<string, unknown> | (() => Promise<Record<string, unknown>>);
   readonly caller?: CallerIdentity;
-  /** Transport-owned admission attribution; absent network means public native writes must refuse. */
-  readonly publicAdmission?: { readonly network: string; readonly visitor?: string };
+  /** Transport-owned admission attribution; without a network or messaging bucket public native writes refuse. */
+  readonly publicAdmission?: PublicAdmissionContext;
   /** Verified customer IdP issuer, kept outside caller/expression scope for credential isolation. */
   readonly customerIssuer?: string;
   /** Request-local validated customer connector routes, kept separate from caller/expression scope. */

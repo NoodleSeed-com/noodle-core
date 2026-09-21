@@ -4367,6 +4367,96 @@
               "contextProvider": {
                 "type": "boolean",
                 "const": true
+              },
+              "interaction": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "collect"
+                  },
+                  "action": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_]+$"
+                  },
+                  "initialValues": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128
+                    },
+                    "additionalProperties": {
+                      "type": "object",
+                      "properties": {
+                        "fromOutput": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "required": ["fromOutput"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "fields": {
+                    "minItems": 1,
+                    "maxItems": 32,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        },
+                        "control": {
+                          "type": "string",
+                          "enum": ["text", "textarea", "email", "phone", "url", "select", "consent"]
+                        },
+                        "private": {
+                          "type": "boolean",
+                          "const": true
+                        },
+                        "optional": {
+                          "type": "boolean",
+                          "const": true
+                        }
+                      },
+                      "required": ["key", "control"],
+                      "additionalProperties": false
+                    }
+                  },
+                  "review": {
+                    "type": "string",
+                    "const": "all"
+                  },
+                  "outcome": {
+                    "type": "object",
+                    "properties": {
+                      "success": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 280
+                      }
+                    },
+                    "required": ["success"],
+                    "additionalProperties": false
+                  },
+                  "confirmationExpiry": {
+                    "type": "object",
+                    "properties": {
+                      "seconds": {
+                        "type": "number"
+                      }
+                    },
+                    "required": ["seconds"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["kind", "action", "fields", "review", "outcome"],
+                "additionalProperties": false
               }
             },
             "required": ["name", "description", "inputSchema", "fulfilment"],

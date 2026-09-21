@@ -111,6 +111,7 @@ describe('WhatsApp CLI against the real operator HTTP routes', () => {
       expect(await command(['events', 'list'])).toBe(0);
       expect(await command(['doctor'])).toBe(2);
       expect(JSON.stringify(log.mock.calls.at(-1))).toContain('durable_storage_required');
+      expect(JSON.stringify(log.mock.calls.at(-1))).toContain('IDENTITY_NOT_ESTABLISHABLE');
       expect(await command(['enable', '--expected-revision', '2'])).toBe(1);
       expect(await command(['disconnect', '--expected-revision', '2'])).toBe(0);
       expect(JSON.stringify(log.mock.calls)).not.toContain('test-only');

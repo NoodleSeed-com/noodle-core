@@ -9,6 +9,7 @@ import {
   ChannelError,
   type ChannelEvent,
   type ChannelParticipant,
+  type ChannelReplyButton,
   channelDigest,
   channelRow,
   channelValue,
@@ -162,6 +163,11 @@ export async function renewChannelTurn(
     );
   });
 }
+/** Text the transcript keeps instead of the raw message or the sent reply, e.g. with private values redacted. */
+export interface ChannelTranscript {
+  readonly user?: string;
+  readonly assistant?: string;
+}
 export async function completeChannelTurn(
   store: ChannelStore,
   id: string,
@@ -171,16 +177,19 @@ export async function completeChannelTurn(
   now: number,
   retentionMs = CHANNEL_RETENTION_MS,
   code?: string,
+  transcript: ChannelTranscript = {},
+  buttons?: readonly ChannelReplyButton[],
 ): Promise<void> {
   if (!reply.trim() || reply.length > 4096) throw new ChannelError('reply_invalid');
   await store.transaction([id], async (tx) => {
     const event = await leased(tx, id, eventId, lease, now);
     const participant = await channelValue<ChannelParticipant>(tx, id, event.participantId);
     if (!participant) throw new ChannelError('context_expired');
+    const userText = transcript.user ?? event.text ?? '';
     const history = [
       ...participant.history.filter((entry) => entry.at > now - retentionMs),
-      { role: 'user' as const, content: event.text ?? '', at: event.receivedAt },
-      { role: 'assistant' as const, content: reply, at: now },
+      { role: 'user' as const, content: userText, at: event.receivedAt },
+      { role: 'assistant' as const, content: transcript.assistant ?? reply, at: now },
     ].slice(-20);
     await tx.put(
       id,
@@ -193,7 +202,12 @@ export async function completeChannelTurn(
       id,
       {
         ...event,
+        ...(event.text === undefined ? {} : { text: userText }),
         reply,
+        ...(transcript.assistant !== undefined && transcript.assistant !== reply
+          ? { replyTranscript: transcript.assistant }
+          : {}),
+        ...(buttons !== undefined && buttons.length > 0 ? { buttons } : {}),
         state: 'reply',
         lease: undefined,
         leaseUntil: undefined,
@@ -259,11 +273,15 @@ export async function updateChannelSend(
           `delivery:${channelDigest(result.providerMessageId)}`,
         )
       : undefined;
+    // Once dispatch has been attempted the sent text and its buttons are never needed again: the
+    // row keeps only what the transcript keeps, so a redacted reply does not outlive its delivery.
+    const { replyTranscript: _kept, buttons: _offered, ...dispatched } = event;
     await writeChannelEvent(
       tx,
       id,
       {
-        ...event,
+        ...dispatched,
+        ...(event.replyTranscript === undefined ? {} : { reply: event.replyTranscript }),
         ...result,
         ...(early && early !== 'sent' ? { state: early } : {}),
         leaseUntil: undefined,

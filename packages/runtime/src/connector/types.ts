@@ -136,6 +136,19 @@ export interface ConnectorCallHost {
   ): Promise<unknown>;
 }
 
+/**
+ * Trusted admission facts for native public writes (ADR 0240). Every field is transport- or
+ * adapter-derived: `network` from verified ingress, `messaging` as a binding-scoped participant digest
+ * computed only after webhook authentication, and `provenance` naming the channel a saved record came
+ * from. A write needs `network` or `messaging`; nothing here is ever read from tool input or expressions.
+ */
+export interface PublicAdmissionContext {
+  readonly network?: string;
+  readonly visitor?: string;
+  readonly messaging?: string;
+  readonly provenance?: { readonly kind: 'messaging'; readonly channel: 'whatsapp' };
+}
+
 /** A single connector-operation invocation, fully resolved and credentialed by the runtime. */
 export interface ConnectorCall {
   readonly capabilityBudget?: CapabilityBudget;
@@ -147,7 +160,7 @@ export interface ConnectorCall {
   readonly coordination?: OperationCoordinationSnapshot;
   readonly resolveCoordination?: () => Promise<void>;
   /** Trusted request attribution for native public writes; never an argument or expression value. */
-  readonly publicAdmission?: { readonly network: string; readonly visitor?: string };
+  readonly publicAdmission?: PublicAdmissionContext;
   /** Evaluated, validated arguments. */
   readonly args: Readonly<Record<string, unknown>>;
   /** Managed variables resolved for the deployment scope. */

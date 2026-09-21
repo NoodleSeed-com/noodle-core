@@ -18,6 +18,7 @@ import {
   managedVariableExpressionSchema,
   serverBrandingSchema,
 } from './branding-schema.js';
+import { toolInteractionSchema } from './interaction-schema.js';
 import { NAME_PATTERN } from './naming.js';
 
 /**
@@ -143,7 +144,12 @@ const toolSchema = z.object({
   fulfilment: fulfilmentSchema,
 });
 
-const toolV2Schema = toolSchema.extend({ contextProvider: z.literal(true).optional() });
+const toolV2Schema = toolSchema.extend({
+  contextProvider: z.literal(true).optional(),
+  // Additive optional field: a v1.x minor under ADR 0150. Bounded `collect` interaction metadata
+  // (ADR 0240) an opener tool declares for one confirmed action; references are checked in compile().
+  interaction: toolInteractionSchema.optional(),
+});
 
 /**
  * An MCP resource. Like a tool, it carries a `fulfilment` (it can return a constant or call connectors);

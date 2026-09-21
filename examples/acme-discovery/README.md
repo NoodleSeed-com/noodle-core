@@ -9,7 +9,7 @@ server-level `handoff.allowedDomains`.
 Capability slots: top-of-funnel funnel discipline, discovery carousel widget, `create_handoff` deep-link
 handoff with attribution, `handoff.allowedDomains`, the **public website assistant surface** with its
 **WebMCP browser-agent bridge** on a real demo page (`site/index.html`), and a worked
-**design-first** artifact (the UX spec + wireframe below). It shows the "design the experience, then build
+**design-first** artifact (`design/UX-Document.md` and `design/wireframe.html`). It shows the "design the experience, then build
 it" flow the `noodle-seed` skill's `references/experience-design.md` teaches.
 
 ## The same tools on Acme's own website
@@ -22,7 +22,7 @@ surface, so the visitor can also sign in mid-conversation:
 access: [
   publicWebsite({
     origins: ['https://getaways.acme.example'],
-    capabilities: [destinations, discoverGetaways, createHandoff, shortlistGetaway, captureLead, myTrips],
+    capabilities: [destinations, discoverGetaways, createHandoff, shortlistGetaway, offerLeadCapture, captureLead, myTrips],
     signIn: true, // my_trips reads ${user}; reaching it raises the sign-in card
     instructions:
       'Be a friendly, consultative travel guide, never pushy. Help visitors narrow a getaway before suggesting the next useful step.',
@@ -36,10 +36,6 @@ access: [
 ```
 
 There is no second tool set and no second app — one `server.ts`, projected onto its front doors.
-The flagship selects `model: noodleManaged()`, so a billing-attributed hosted deployment needs no customer
-model endpoint, name, or key and its artifact remains provider-neutral. The sponsored beta is available by
-default with pooled billing-account and platform-wide daily limits; `openAICompatible(...)` remains the BYO
-alternative.
 The surface `instructions` add only the website-specific voice and goal; shared product truth stays in
 `server.instructions`. This public guidance is injected into that surface's assistant turns, never MCP
 `initialize` or another assistant surface.
@@ -110,6 +106,11 @@ existing primitives, not a platform feature:
 
 - `capture_lead` is an ordinary tool with `annotations.action({ confirm: true })`: the confirmation
   card, showing every field, is the visitor's consent moment.
+- `offer_lead_capture` is its read-only opener, declaring one `collect` `interaction` (ADR 0240):
+  the fields to collect, the work email marked `private`, the trip note seeded from the opener's
+  output and optional, `review: 'all'`, and the success sentence. A form on the website and natural
+  conversation on a messaging channel both save through the same confirmed `capture_lead`;
+  `noodle validate` checks every field against the action's input schema.
 - Delivery is a declarative HTTP connector whose endpoint is `variable('LEAD_SINK_URL')` and whose
   credential is `secret('LEAD_SINK_TOKEN')` — the operator supplies values with
   `noodle variables set` / `noodle secrets set`; the example stays credential-free and one authored
@@ -120,50 +121,11 @@ existing primitives, not a platform feature:
   different data: Resend/Postmark are `auth: { kind: 'apiKey', … }`, a HubSpot private app is
   `auth: { kind: 'bearer', … }` — never a named vendor package.
 
-## Design spec (write this before the code)
+## Design spec and wireframe (write these before the code)
 
-- **Funnel boundary** — Discover and shortlist a getaway in ChatGPT. Booking, payment, and the account
-  live on `acme.example`, reached only after the handoff. No payment or per-user auth in chat.
-- **Personas** — the undecided browser ("somewhere warm in June?"), the near-decided planner (has a vibe
-  and month, wants options and a fast handoff).
-- **Top-3 prioritized user flows**
-  1. **Discover** — "warm beach trip in June for 2" → `discover_getaways` renders the carousel.
-  2. **Shortlist** — pick a destination in the widget → `shortlist_getaway` (widget-only) records it.
-  3. **Handoff** — "Continue on Acme" → `create_handoff` emits the deep link → opens off-app.
-- **Tools** — `discover_getaways` (model-visible, renders the widget), `create_handoff` (model-visible,
-  emits the deep link), `shortlist_getaway` (widget-only helper, hidden from the model).
-- **Widgets + display modes** — `DiscoveryCarousel` as an inline card that expands to fullscreen for
-  browsing. No picture-in-picture (nothing is live/ongoing).
-- **Grounding sources** — the destination catalog in `src/server.ts` is Acme's own data; the widget never
-  invents a place, price, or best-month.
-- **Handoff domains** — `https://book.acme.example`, `https://acme.example` (the server
-  `handoff.allowedDomains`; the deep link carries `dest`, `month`, `pax`, and `src=chatgpt` for
-  attribution).
-
-## Wireframe (one screen, then the off-app destination)
-
-The carousel screen is in-app (solid frame); the booking screen is off-app (dashed frame) and reached
-only after the handoff — it is Acme's own page, never wireframed as if it were in chat.
-
-```html
-<div class="phone">                                  <!-- in-app: solid frame -->
-  <div class="chatgpt-header">ChatGPT · Acme Getaways</div>
-  <div class="msg user">somewhere warm in June, 2 of us</div>
-  <div class="tool-call">discover_getaways { vibe: "beach", month: "June", travelers: 2 }</div>
-  <div class="wcard">
-    <div class="wcard-head">DiscoveryCarousel</div>   <!-- component name = code + spec -->
-    <div class="wcard-body">
-      <div class="dest">Coral Bay · from $890 · best May–Sep  [Shortlist]</div>
-      <div class="dest">Harbor City · from $980 · best Sep–Nov [Shortlist]</div>
-      <a class="cta">Continue on Acme · Coral Bay</a>   <!-- one primary action -->
-    </div>
-  </div>
-</div>
-<div class="phone offapp">                            <!-- off-app: dashed frame -->
-  <div class="browser-header">book.acme.example/plan?dest=coral_bay&month=June&pax=2&src=chatgpt</div>
-  <div class="offapp-body">Acme booking — payment & account live here.</div>
-</div>
-```
+The house-style UX Document (funnel boundary, personas, prioritized flows, tool and widget spec,
+handoff domains) is `design/UX-Document.md`; the single-file wireframe with its embedded Apps SDK
+audit is `design/wireframe.html`.
 
 ## Local author loop
 
@@ -193,4 +155,5 @@ noodle open
 This example has no connector or model secrets and does not include tokens, caller-key mechanisms, or
 `.env.noodle` values. Hosted `noodleManaged()` inference is available by default to billing-attributed
 deployments and remains subject to sponsored daily limits; local validation and tool calls do not use the
-hosted model. All destinations, prices, and URLs are fictional.
+hosted model, and `openAICompatible(...)` is the BYO alternative. All destinations, prices, and URLs are
+fictional.

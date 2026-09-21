@@ -39,6 +39,7 @@ export function createWhatsAppRuntime(
   return new WhatsAppRuntime(
     {
       ...options,
+      ...(history.installations ? { installations: history.installations } : {}),
       ...(history.allowance
         ? {
             historyDays: async (tenant: import('../store.js').TenantRef) => {

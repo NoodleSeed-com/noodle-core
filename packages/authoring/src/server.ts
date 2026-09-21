@@ -24,6 +24,7 @@ import { toManifestConnectorRef } from './connections.js';
 import { type ConnectorCatalogDoc, type ConnectorRef, validateCatalog } from './connectors.js';
 import { manifestContext, type ServerContextOptions } from './context.js';
 import { type CustomerAuth, manifestCustomerAuth } from './customer-auth.js';
+import { manifestToolInteraction, type ToolInteractionOptions } from './interaction.js';
 import { type JsonSchema, toJsonSchema } from './json-schema.js';
 import { type KnowledgeDeclaration, manifestKnowledge } from './knowledge.js';
 import * as collections from './managed-collection.js';
@@ -184,6 +185,8 @@ export interface ToolOptions {
   readonly visibility?: ('model' | 'app')[];
   /** Optional MCP Apps presentation linked to this tool. A view is metadata, not another tool kind. */
   readonly view?: ToolViewOptions;
+  /** Bounded `collect` interaction this opener declares for one confirmed action (ADR 0240). */
+  readonly interaction?: ToolInteractionOptions;
   /** Stable view identity. Defaults to `<tool>_widget`. */
   readonly viewName?: string;
   readonly viewTitle?: string;
@@ -562,6 +565,9 @@ class ServerBuilder implements ServerDefinition {
         ...(tool.options.output ? { outputSchema: toJsonSchema(tool.options.output) } : {}),
         ...manifestToolAnnotations(tool.options),
         ...(tool.options.visibility?.length ? { visibility: [...tool.options.visibility] } : {}),
+        ...(tool.options.interaction
+          ? { interaction: manifestToolInteraction(tool.name, tool.options.interaction) }
+          : {}),
         fulfilment: {
           steps: recorded.steps,
           output: recorded.output,

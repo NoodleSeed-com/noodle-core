@@ -9,12 +9,25 @@ export const PUBLIC_RECORD_ADMISSION_DEFAULTS = Object.freeze({
   visitorPerHour: 3_000,
   networkPerMinute: 600,
   networkPerHour: 6_000,
+  /** Per binding-scoped messaging participant (ADR 0240): the accepted WhatsApp attempt ceilings. */
+  messagingPerMinute: 10,
+  messagingPerHour: 60,
   installationPerDay: 10_000,
 });
 export type PublicRecordAdmissionLimits = {
   readonly [Key in keyof typeof PUBLIC_RECORD_ADMISSION_DEFAULTS]: number;
 };
-export type PublicRecordLimitCategory = 'visitor' | 'network' | 'installation';
+export type PublicRecordLimitCategory = 'visitor' | 'network' | 'messaging' | 'installation';
+/**
+ * Trusted pseudonymous buckets. `network` comes from verified ingress; `messaging` is a binding-scoped
+ * participant digest derived only after webhook authentication. At least one of the two must be present:
+ * provider egress is not a person, and a browser visitor hint alone authorizes nothing.
+ */
+export interface PublicRecordAdmissionBuckets {
+  readonly visitor?: string;
+  readonly network?: string;
+  readonly messaging?: string;
+}
 
 export type PublicRecordAdmissionResult =
   | { readonly allowed: true }
@@ -36,11 +49,12 @@ export async function admitPublicRecord(input: {
   readonly counters: DailyCounterStore;
   readonly surfaceId: string;
   readonly attempt: { readonly key: string; readonly fingerprint: string };
-  readonly buckets: { readonly visitor?: string; readonly network?: string };
+  readonly buckets: PublicRecordAdmissionBuckets;
   readonly now: Date;
   readonly limits?: Partial<PublicRecordAdmissionLimits>;
 }): Promise<PublicRecordAdmissionResult> {
-  if (!input.buckets.network) return { allowed: false, reason: 'admission_unavailable' };
+  if (!input.buckets.network && !input.buckets.messaging)
+    return { allowed: false, reason: 'admission_unavailable' };
   if (!('consumeAllOnce' in input.counters) || typeof input.counters.consumeAllOnce !== 'function')
     return { allowed: false, reason: 'admission_unavailable' };
   try {
@@ -92,11 +106,11 @@ export function publicRecordAdmissionLimits(
 
 export function publicRecordCounterRequests(
   surfaceId: string,
-  buckets: { readonly visitor?: string; readonly network?: string },
+  buckets: PublicRecordAdmissionBuckets,
   limits: PublicRecordAdmissionLimits = PUBLIC_RECORD_ADMISSION_DEFAULTS,
 ): readonly (CounterRequest & { readonly category: PublicRecordLimitCategory })[] {
   const requests: (CounterRequest & { category: PublicRecordLimitCategory })[] = [];
-  for (const category of ['visitor', 'network'] as const) {
+  for (const category of ['visitor', 'network', 'messaging'] as const) {
     const bucket = buckets[category];
     if (bucket === undefined) continue;
     requests.push(

@@ -168,7 +168,8 @@ export interface BusinessInvitation {
 }
 
 export interface ManagedRequestOrigin {
-  readonly kind: 'embedded' | 'mcp' | 'portal' | 'api' | 'import';
+  /** `messaging` is trusted channel provenance (ADR 0240); its reference names the channel, e.g. `whatsapp`. */
+  readonly kind: 'embedded' | 'mcp' | 'portal' | 'api' | 'import' | 'messaging';
   readonly reference?: string;
 }
 

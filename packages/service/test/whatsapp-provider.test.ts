@@ -77,6 +77,35 @@ describe('360dialog adapter', () => {
     expect(parsed.statuses[0]?.state).toBe('read');
     expect(() => parseWhatsAppWebhook(data, 'someone-else')).toThrow('asset_mismatch');
   });
+  it('normalizes a tapped reply button, ignores other interactive kinds and bounds the button id', () => {
+    const tap = (id: string) => ({
+      id: 'tap',
+      from: '15551234567',
+      timestamp: '1800000003',
+      type: 'interactive',
+      interactive: { type: 'button_reply', button_reply: { id, title: 'Confirm' } },
+    });
+    const parsed = parseWhatsAppWebhook(
+      callback([
+        tap('b_opaque'),
+        {
+          id: 'list',
+          from: '15551234567',
+          timestamp: '1800000004',
+          type: 'interactive',
+          interactive: { type: 'list_reply', list_reply: { id: 'row', title: 'Row' } },
+        },
+      ]),
+      'owned',
+    );
+    expect(parsed.messages[0]).toMatchObject({ button: { id: 'b_opaque', title: 'Confirm' } });
+    expect(parsed.messages[0]?.text).toBeUndefined();
+    expect(parsed.messages[1]?.button).toBeUndefined();
+    expect(parsed.messages[1]?.text).toBeUndefined();
+    expect(() => parseWhatsAppWebhook(callback([tap('x'.repeat(257))]), 'owned')).toThrow(
+      'webhook_invalid',
+    );
+  });
   it('authenticates an independent callback secret and rejects malformed or duplicate headers', () => {
     expect(verifyWhatsAppWebhookSecret('x'.repeat(32), 'x'.repeat(32))).toBe(true);
     expect(verifyWhatsAppWebhookSecret(['x'.repeat(32)], 'x'.repeat(32))).toBe(false);
@@ -98,6 +127,62 @@ describe('360dialog adapter', () => {
       recipient_type: 'individual',
       to: '15551234567',
     });
+  });
+  it('sends the review as reply buttons and falls back to plain text only for a rejected payload', async () => {
+    const to = { kind: 'phone' as const, value: '15551234567' };
+    const buttons = [
+      { id: 'b_confirm', title: 'Confirm' },
+      { id: 'b_edit', title: 'Edit' },
+      { id: 'b_cancel', title: 'Cancel' },
+    ];
+    const accepted = () => Response.json({ messages: [{ id: 'wamid.buttons' }] });
+    const body = (call: number) =>
+      JSON.parse(fetcher.mock.calls[call]![1]!.body as string) as Record<string, unknown>;
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(accepted());
+    const adapter = new Dialog360('secret-key', fetcher);
+    const review = 'Your name: Maya Chen\n\nShall I send it?';
+    expect(await adapter.send({ to, text: review, buttons })).toEqual({
+      state: 'accepted',
+      providerMessageId: 'wamid.buttons',
+    });
+    expect(body(0)).toEqual({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: '15551234567',
+      type: 'interactive',
+      interactive: {
+        type: 'button',
+        body: { text: review },
+        action: { buttons: buttons.map((button) => ({ type: 'reply', reply: button })) },
+      },
+    });
+
+    fetcher.mockReset();
+    fetcher
+      .mockResolvedValueOnce(new Response('{"error":"unsupported"}', { status: 400 }))
+      .mockResolvedValueOnce(accepted());
+    expect(await adapter.send({ to, text: review, buttons })).toEqual({
+      state: 'accepted',
+      providerMessageId: 'wamid.buttons',
+      code: 'interactive_rejected',
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(body(1)).toMatchObject({ type: 'text', text: { body: review } });
+
+    fetcher.mockReset();
+    fetcher.mockResolvedValueOnce(new Response('', { status: 503 }));
+    expect((await adapter.send({ to, text: review, buttons })).state).toBe('unknown');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    fetcher.mockReset();
+    fetcher.mockResolvedValueOnce(new Response('', { status: 429 }));
+    expect((await adapter.send({ to, text: review, buttons })).state).toBe('failed');
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    fetcher.mockReset();
+    fetcher.mockResolvedValueOnce(accepted());
+    await adapter.send({ to, text: 'x'.repeat(1025), buttons });
+    expect(body(0).type).toBe('text');
   });
   it('validates provider acceptance rather than treating any 2xx as delivery', async () => {
     const adapter = new Dialog360(

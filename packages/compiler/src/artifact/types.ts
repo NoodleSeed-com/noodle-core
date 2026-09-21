@@ -5,6 +5,7 @@ import type { ArtifactVariableDeclaration } from '../business-variables.js';
 import type { CustomerEndpointPolicy } from '../customer-endpoint.js';
 import type { ManagedCollectionControls } from '../managed-collection-controls.js';
 import type { CondNode, ExprNode } from '../manifest/expression.js';
+import type { CollectControl } from '../manifest/interaction-schema.js';
 import type { Manifest } from '../manifest/schema.js';
 import type { OperationRef } from './operation-ref.js';
 
@@ -102,6 +103,34 @@ interface WidgetPermissions {
 export interface ArtifactMeta {
   readonly ui?: WidgetUiMeta;
   readonly [key: string]: unknown;
+}
+
+/** One field a platform renderer collects for a `collect` interaction (ADR 0240). */
+export interface ArtifactCollectField {
+  readonly key: string;
+  readonly control: CollectControl;
+  /** Never enters the conversation model, transcript, logs or diagnostics. */
+  readonly private?: true;
+  /** May be left blank; the renderer submits the schema's empty value. */
+  readonly optional?: true;
+}
+
+/**
+ * Bounded interaction metadata an opener tool declares for one confirmed action (ADR 0240). Emitted
+ * under `RuntimeArtifact.toolInteractions` keyed by the opener, so the MCP-visible descriptor is
+ * unchanged; renderers exist only where the platform runs the conversation loop.
+ */
+export interface ArtifactCollectInteraction {
+  readonly kind: 'collect';
+  /** The confirmed action tool this collection prepares. */
+  readonly action: string;
+  readonly fields: readonly ArtifactCollectField[];
+  /** Action input property -> the opener output property that seeds it. */
+  readonly initialValues?: Readonly<Record<string, { readonly fromOutput: string }>>;
+  readonly review: 'all';
+  readonly outcome: { readonly success: string };
+  /** Developer-shortened confirmation expiry; profile defaults and the ceiling stay platform-owned. */
+  readonly confirmationExpirySeconds?: number;
 }
 
 export interface ArtifactToolAuthorization {
@@ -460,6 +489,8 @@ export interface RuntimeArtifact {
   readonly source: ArtifactSource;
   readonly server: ArtifactServer;
   readonly tools: readonly ArtifactTool[];
+  /** `collect` interactions keyed by opener tool name (ADR 0240); absent when none is declared. */
+  readonly toolInteractions?: Readonly<Record<string, ArtifactCollectInteraction>>;
   readonly resources?: readonly ArtifactResource[];
   readonly prompts?: readonly ArtifactPrompt[];
   readonly assets?: readonly ArtifactPackagedAsset[];

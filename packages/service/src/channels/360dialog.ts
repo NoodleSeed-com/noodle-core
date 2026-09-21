@@ -3,6 +3,7 @@ import {
   type ChannelAddress,
   ChannelError,
   type ChannelInbound,
+  type ChannelReplyButton,
 } from '@noodle-borg/assistant-gateway/portable';
 import { guardedFetch } from '@noodle-borg/connector-http';
 import { z } from 'zod';
@@ -26,6 +27,17 @@ const valueSchema = z.object({
         timestamp,
         type: z.string().max(64),
         text: z.object({ body: z.string().max(1 << 20) }).optional(),
+        // A tapped reply button arrives as type "interactive" with interactive.type "button_reply"
+        // carrying the id and title we sent (360dialog webhook reference, "Received Answer to Reply
+        // Button", checked 2026-09-21). Other interactive kinds are not conversation input here.
+        interactive: z
+          .object({
+            type: z.string().max(64),
+            button_reply: z
+              .object({ id: z.string().min(1).max(256), title: z.string().max(64) })
+              .optional(),
+          })
+          .optional(),
       }),
     )
     .max(100)
@@ -83,11 +95,16 @@ export function parseWhatsAppWebhook(input: unknown, phoneNumberId: string) {
         else if (message.user_id && /^[A-Z]{2}\.[A-Za-z0-9]{1,124}$/.test(message.user_id))
           address = { kind: 'opaque', value: message.user_id };
         else throw new ChannelError('recipient_invalid');
+        const button =
+          message.type === 'interactive' && message.interactive?.type === 'button_reply'
+            ? message.interactive.button_reply
+            : undefined;
         messages.push({
           providerId: message.id,
           address,
           eventAt: message.timestamp,
           ...(message.type === 'text' && message.text ? { text: message.text.body } : {}),
+          ...(button ? { button: { id: button.id, title: button.title } } : {}),
         });
       }
       for (const status of value.statuses ?? [])
@@ -95,6 +112,10 @@ export function parseWhatsAppWebhook(input: unknown, phoneNumberId: string) {
       if (messages.length + statuses.length > 100) throw new ChannelError('batch_too_large');
     }
   return { messages, statuses };
+}
+/** A 4xx that judges the payload itself; auth, throttling and timeouts are no reason to resend differently. */
+function rejectedPayload(status: number): boolean {
+  return status >= 400 && status < 500 && ![401, 403, 408, 429].includes(status);
 }
 async function boundedJson(response: Response): Promise<unknown> {
   const reader = response.body?.getReader();
@@ -206,20 +227,64 @@ export class Dialog360 {
       return { state: 'unknown', code: 'provider_outcome_unknown' };
     }
   }
-  async send(input: { readonly to: ChannelAddress; readonly text: string }): Promise<{
+  /**
+   * One reply. With buttons the review goes as an interactive reply-button message: at most three
+   * buttons, titles up to 20 characters, ids up to 256 and a body up to 1024 characters, per the
+   * Meta Cloud API reply-buttons reference that the 360dialog Cloud API host relays (360dialog's own
+   * interactive-messages page states only the three-button limit; its webhook reference gives the
+   * inbound shape); all checked 2026-09-21. A payload the provider rejects outright dispatched
+   * nothing, so the same text goes plain instead; an ambiguous outcome is never retried.
+   */
+  async send(input: {
+    readonly to: ChannelAddress;
+    readonly text: string;
+    readonly buttons?: readonly ChannelReplyButton[] | undefined;
+  }): Promise<{
     state: 'accepted' | 'failed' | 'unknown';
     providerMessageId?: string;
     code?: string;
   }> {
     if (!input.text || input.text.length > 4096) return { state: 'failed', code: 'reply_invalid' };
+    const buttons = input.buttons ?? [];
+    const interactive =
+      buttons.length > 0 &&
+      buttons.length <= 3 &&
+      input.text.length <= 1024 &&
+      buttons.every((button) => button.id.length <= 256 && button.title.length <= 20);
+    const envelope = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      ...(input.to.kind === 'phone' ? { to: input.to.value } : { recipient: input.to.value }),
+    };
     try {
-      const response = await this.request('/messages', 'POST', {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        type: 'text',
-        ...(input.to.kind === 'phone' ? { to: input.to.value } : { recipient: input.to.value }),
-        text: { body: input.text, preview_url: false },
-      });
+      let code: string | undefined;
+      let response = interactive
+        ? await this.request('/messages', 'POST', {
+            ...envelope,
+            type: 'interactive',
+            interactive: {
+              type: 'button',
+              body: { text: input.text },
+              action: {
+                buttons: buttons.map((button) => ({
+                  type: 'reply',
+                  reply: { id: button.id, title: button.title },
+                })),
+              },
+            },
+          })
+        : undefined;
+      if (response !== undefined && !response.ok && rejectedPayload(response.status)) {
+        await response.body?.cancel();
+        code = 'interactive_rejected';
+        response = undefined;
+      }
+      if (response === undefined)
+        response = await this.request('/messages', 'POST', {
+          ...envelope,
+          type: 'text',
+          text: { body: input.text, preview_url: false },
+        });
       if (!response.ok) {
         await response.body?.cancel();
         return {
@@ -231,7 +296,11 @@ export class Dialog360 {
         .object({ messages: z.array(z.object({ id: identifier })).length(1) })
         .safeParse(await boundedJson(response));
       return parsed.success
-        ? { state: 'accepted', providerMessageId: parsed.data.messages[0]!.id }
+        ? {
+            state: 'accepted',
+            providerMessageId: parsed.data.messages[0]!.id,
+            ...(code === undefined ? {} : { code }),
+          }
         : { state: 'unknown', code: 'provider_receipt_invalid' };
     } catch {
       return { state: 'unknown', code: 'send_outcome_unknown' };

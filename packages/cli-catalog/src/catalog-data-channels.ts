@@ -80,7 +80,7 @@ export const CHANNELS_COMMAND: CommandSpec = {
         ]),
         leaf(
           'doctor',
-          'Check deployment, storage, worker, model cost bound, and provider setup.',
+          'Check deployment, storage, worker, model cost bound, provider setup, and capability compatibility.',
           mutation,
         ),
         leaf('enable', 'Enable after a successful current readiness check.', [

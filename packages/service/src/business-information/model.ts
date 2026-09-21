@@ -461,7 +461,7 @@ export function validateExpectedRevision(value: number): number {
 }
 
 function normalizeOrigin(origin: ManagedRequestRecord['origin']): ManagedRequestRecord['origin'] {
-  const kinds = ['embedded', 'mcp', 'portal', 'api', 'import'];
+  const kinds = ['embedded', 'mcp', 'portal', 'api', 'import', 'messaging'];
   if (!kinds.includes(origin.kind)) throw new Error('unsupported managed request origin');
   return {
     kind: origin.kind,

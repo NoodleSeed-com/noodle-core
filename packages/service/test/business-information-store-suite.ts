@@ -721,6 +721,27 @@ export function describeBusinessInformationStore(makeHarness: () => Promise<Stor
     });
   });
 
+  it('stores and reads trusted messaging provenance beside the existing origins', async () => {
+    const harness = await makeHarness();
+    const { scope } = await install(harness);
+    const created = await harness.store.createRequest({
+      scope,
+      collectionKey: 'travel_requests',
+      idempotencyKey: 'whatsapp-lead-1',
+      payload: { request_type: 'service', summary: 'Enquiry captured in chat.' },
+      origin: { kind: 'messaging', reference: 'whatsapp' },
+      actorSubject: 'anonymous',
+    });
+    expect(created).toMatchObject({
+      disposition: 'created',
+      record: { origin: { kind: 'messaging', reference: 'whatsapp' } },
+    });
+    if (created.disposition !== 'created') throw new Error('messaging record was not created');
+    await expect(
+      harness.store.getRequest(scope, 'travel_requests', created.record.id),
+    ).resolves.toMatchObject({ origin: { kind: 'messaging', reference: 'whatsapp' } });
+  });
+
   it('applies update, assignment, status, and note operations through one CAS history', async () => {
     const harness = await makeHarness();
     const { scope } = await install(harness);

@@ -8,6 +8,7 @@ import {
   CollectionSourceRefreshRequestSchema,
   CollectionSourceRefreshResponseSchema,
   ExternalManagedRecordSchema,
+  MANAGED_RECORD_ORIGIN_SURFACES,
   ManagedRecordMutationRequestSchema,
   ManagedRecordOperationNotSupportedErrorSchema,
   ManagedRecordResponseSchema,
@@ -425,6 +426,14 @@ describe('business-information wire contracts', () => {
       request: { status: 'new' },
     };
     expect(NativeManagedRecordSchema.safeParse(record).success).toBe(true);
+    // Trusted messaging provenance (ADR 0240) is a first-class origin surface beside the browser ones.
+    expect(MANAGED_RECORD_ORIGIN_SURFACES).toEqual(['public', 'portal', 'mcp', 'api', 'messaging']);
+    expect(
+      NativeManagedRecordSchema.safeParse({ ...record, origin: { surface: 'messaging' } }).success,
+    ).toBe(true);
+    expect(
+      NativeManagedRecordSchema.safeParse({ ...record, origin: { surface: 'whatsapp' } }).success,
+    ).toBe(false);
     expect(
       NativeManagedRecordSchema.safeParse({ ...record, retentionExpiresAt: null }).success,
     ).toBe(true);

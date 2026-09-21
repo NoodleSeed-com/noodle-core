@@ -64,7 +64,8 @@
  */
 /** `0.21.0`: protected tools may opt into public descriptor discovery without execution permission. */
 /** `0.22.0`: governed public-page extraction declarations and ordinary generated tools. */
-export const ARTIFACT_SCHEMA_VERSION = '0.22.0';
+/** `0.23.0`: bounded `collect` interaction metadata keyed by opener tool (ADR 0240); never MCP-visible. */
+export const ARTIFACT_SCHEMA_VERSION = '0.23.0';
 
 /** mimeType for an MCP Apps UI resource (SEP-1865). Widgets are served under this profile. */
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app';

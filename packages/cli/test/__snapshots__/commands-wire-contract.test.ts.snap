@@ -9117,7 +9117,7 @@ exports[`commands --json public wire contract > writes one complete JsonEnvelope
                   "mode": "single",
                 },
                 "name": "doctor",
-                "summary": "Check deployment, storage, worker, model cost bound, and provider setup.",
+                "summary": "Check deployment, storage, worker, model cost bound, provider setup, and capability compatibility.",
               },
               {
                 "arguments": [],

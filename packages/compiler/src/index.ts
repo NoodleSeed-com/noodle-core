@@ -25,6 +25,8 @@ export { compileAppPackage } from './app-package/compile.js';
 export { isSafeReadTool, requiresToolConfirmation } from './artifact/consent.js';
 export {
   ARTIFACT_SCHEMA_VERSION,
+  type ArtifactCollectField,
+  type ArtifactCollectInteraction,
   type ArtifactConnectionSource,
   type ArtifactConnectorBinding,
   type ArtifactCustomerAuthRouting,
@@ -149,7 +151,7 @@ export {
   resolveSchemaUses,
   type SchemasMap,
 } from './manifest/schema-refs.js';
-export { anonymousBehavior } from './manifest/website-projection.js';
+export { anonymousBehavior, isNativeRecordsOperation } from './manifest/website-projection.js';
 export { type SniffedImage, sniffImageBytes } from './mime-sniffing.js';
 export {
   BUILTIN_RECORD_CATALOG_CONNECTOR,

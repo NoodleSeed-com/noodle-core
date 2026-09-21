@@ -310,7 +310,8 @@ function originFrom(value: string): ManagedRequestOrigin['kind'] {
     value === 'mcp' ||
     value === 'portal' ||
     value === 'api' ||
-    value === 'import'
+    value === 'import' ||
+    value === 'messaging'
   ) {
     return value;
   }

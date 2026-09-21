@@ -265,6 +265,17 @@ describe.skipIf(!databaseUrl)('WhatsApp channel through real HTTP and encrypted 
       status: 'ready',
       code: 'provider_messaging_limited',
     });
+    expect(readiness.data.capabilities).toEqual([
+      { capability: 'answer_questions', status: 'native' },
+      { capability: 'look_up_information', status: 'native' },
+      {
+        capability: 'account_self_service',
+        status: 'unavailable',
+        code: 'IDENTITY_NOT_ESTABLISHABLE',
+        requirement: 'verified_customer',
+        next: expect.any(String),
+      },
+    ]);
     expect(
       (await call('/state', 'PATCH', { expectedRevision: binding.revision, state: 'enabled' }))
         .status,

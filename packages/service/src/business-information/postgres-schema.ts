@@ -154,6 +154,12 @@ export async function ensureBusinessInformationSchema(pool: Pool): Promise<void>
   await pool.query(
     `ALTER TABLE managed_request_records ADD COLUMN IF NOT EXISTS original_schema_identity jsonb`,
   );
+  // Additive origin widening (ADR 0240): readers accept 'messaging' before any writer emits it.
+  await pool.query(`ALTER TABLE managed_request_records
+    DROP CONSTRAINT IF EXISTS managed_request_records_origin_kind_check,
+    ADD CONSTRAINT managed_request_records_origin_kind_check CHECK (
+      origin_kind IN ('embedded', 'mcp', 'portal', 'api', 'import', 'messaging')
+    )`);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS managed_request_activities (
       org_slug text NOT NULL,

@@ -47,7 +47,7 @@ describe('compiled messaging projection', () => {
     const result = compileManifest(manifest(surface, false), catalog);
     expect(result.ok).toBe(false);
     if (!result.ok)
-      expect(result.errors.some((error) => error.code === 'assistant_messaging_unsupported')).toBe(
+      expect(result.errors.some((error) => error.code === 'channel_requirement_unsupported')).toBe(
         true,
       );
   });

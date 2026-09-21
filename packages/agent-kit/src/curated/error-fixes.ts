@@ -129,6 +129,24 @@ export const ERROR_FIXES: Record<string, string> = {
     'Remove the `${user...}` reference from this tool or drop it from the public assistant `capabilities`; a public website visitor is anonymous, so there is no signed-in user to read.',
   assistant_public_effect_unconfirmed:
     'Add `annotations.readOnly()` if this projected tool only reads, or `{ confirm: true }` if it causes an external effect; a public assistant never reaches an unconfirmed side effect.',
+  interaction_action_invalid:
+    'Point `interaction.action` at a declared tool that sets `annotations.openAction({ confirm: true })` (or another `{ confirm: true }` action) and is not read-only; a collect interaction prepares exactly one confirmed action.',
+  interaction_field_unknown:
+    'Use an input property of the action tool as the field `key`; the collect block names fields by the action’s Zod input keys, never by labels.',
+  interaction_field_control_mismatch:
+    'Match each control to the action input type: `consent` needs `z.literal(true)`, `select` needs `z.enum([...])` of strings, and `text`/`textarea`/`email`/`phone`/`url` need a string schema.',
+  interaction_field_missing:
+    'Collect or seed every required action input (a `fields` entry or an `initialValues` entry), mark a not-required field `optional: true`, and let an optional-but-required string accept `""`.',
+  interaction_initial_value_unknown:
+    'Key `initialValues` by an action input property and set `fromOutput` to a property of this opener’s `output` schema.',
+  interaction_consent_invalid:
+    'Keep exactly one `control: "consent"` field; the runtime poses one consent question, never several.',
+  interaction_expiry_invalid:
+    'Set `confirmationExpiry.seconds` to a whole number from 1 to 86400; a developer may only shorten the channel profile’s default.',
+  channel_dependency_missing:
+    'Select the opener and its `interaction.action` together in the same `publicMessaging({ capabilities })` list; natural collection needs the confirmed action it prepares.',
+  channel_requirement_unsupported:
+    'On `publicMessaging`, select pure read tools, knowledge, and collect openers whose action saves one native record; a widget, an unrelated write, or an external connector call needs an `interaction` or a different surface.',
   customer_endpoint_surface_unsupported:
     'Move the customer-routed call into a tool fulfilment; routed resources, prompts, and ambient providers are unsupported.',
   customer_endpoint_credential_source_unsupported:

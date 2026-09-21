@@ -9,13 +9,17 @@ import {
   type ChannelWork,
   channelDigest,
   channelProviderBlocks,
+  collectionSpecFor,
   finishChannelProviderBlock,
   type MessagingTurnContext,
   messagingSurfaceOf,
   projectArtifactForSurface,
   resolveInvocationContextSnapshot,
+  WHATSAPP_CONFIRMATION_EXPIRY_MS,
   withAssistantTurnExecutionAuthority,
 } from '@noodle-borg/assistant-gateway/portable';
+import { guardedFetch } from '@noodle-borg/connector-http';
+import { executePreparedTool, prepareToolForConfirmation } from '@noodle-borg/runtime';
 import type { ServedTarget } from '@noodle-borg/transport-http';
 import type { AssistantRouteDeps } from '../routes/assistant.js';
 import { runAgentTurn } from '../routes/assistant-agent.js';
@@ -24,7 +28,17 @@ import { resolveAssistantModelBinding } from '../routes/assistant-model-binding.
 import { activeAssistantTarget } from '../routes/assistant-session-target.js';
 import { resolveConfigScope } from '../store.js';
 import { Dialog360, verifyWhatsAppWebhookSecret, WHATSAPP_CALLBACK_HEADER } from './360dialog.js';
+import { type CapabilityInstallations, capabilityReport } from './capability-report.js';
+import {
+  type CollectionTurnOutcome,
+  collectionCustody,
+  messagingAdmissionDigest,
+  redactPrivate,
+  runCollectionTurn,
+} from './collection-turn.js';
 import { verifiedInferenceBound, withChannelInferenceGuard } from './inference-guard.js';
+import { messagingProjectionIneligibility } from './messaging-eligibility.js';
+import { reviewButtonBinding } from './reply-buttons.js';
 import type { ChannelWorkerLoop } from './worker-loop.js';
 
 export interface WhatsAppServiceOptions {
@@ -32,6 +46,8 @@ export interface WhatsAppServiceOptions {
   readonly worker: ChannelWorkerLoop;
   readonly providerFetch?: typeof fetch;
   readonly historyDays?: (tenant: ChannelBinding['tenant']) => Promise<number>;
+  /** Installed collections, read only to report whether a selected collect action is set up. */
+  readonly installations?: CapabilityInstallations;
 }
 export class WhatsAppRuntime {
   readonly channels: ChannelCoordinator;
@@ -85,17 +101,8 @@ export class WhatsAppRuntime {
     )
       throw new ChannelError('capability_not_authored');
     const artifact = projectArtifactForSurface(target.served.artifact, binding.capabilities);
-    if (artifact.tools.some((tool) => tool.annotations?.readOnlyHint !== true || tool._meta?.ui))
-      throw new ChannelError('messaging_action_unsupported');
-    // This first slice has no separately budgeted connector-backed inference. Pure reads and
-    // the existing corpus search remain available; external lookups require their owning slice.
-    const external = (fulfilment: import('@noodle-borg/compiler').ArtifactFulfilment) =>
-      fulfilment.kind === 'operation' || fulfilment.steps.some((step) => step.kind === 'operation');
-    if (
-      artifact.tools.some((tool) => external(tool.fulfilment)) ||
-      (artifact.server.context?.ambient && external(artifact.server.context.ambient.fulfilment))
-    )
-      throw new ChannelError('external_lookup_not_enabled');
+    const ineligible = messagingProjectionIneligibility(artifact);
+    if (ineligible !== undefined) throw new ChannelError(ineligible);
     return { ...target, served: { ...target.served, artifact } };
   }
   async doctor(id: string, req: IncomingMessage) {
@@ -119,8 +126,9 @@ export class WhatsAppRuntime {
     await check('worker', async () => {
       if (!this.options.worker.ready()) throw new ChannelError('worker_unavailable');
     });
+    let target: ServedTarget | undefined;
     await check('deployment', async () => {
-      await this.target(binding);
+      target = await this.target(binding);
     });
     await check('model_cost', async () => {
       const model = await resolveAssistantModelBinding(
@@ -156,7 +164,20 @@ export class WhatsAppRuntime {
     });
     const ready = checks.every((check) => check.status === 'ready');
     if (ready) await this.channels.markReady(id, binding.revision);
-    return { ready, revision: binding.revision, checks, webhookUrl: this.webhookUrl(req, binding) };
+    // The compatibility report rides beside readiness and never changes it (ADR 0240 decision 7).
+    const capabilities = await capabilityReport({
+      artifact: target?.served.artifact,
+      tenant: binding.tenant,
+      durable: this.options.store.durable,
+      installations: this.options.installations,
+    });
+    return {
+      ready,
+      revision: binding.revision,
+      checks,
+      capabilities,
+      webhookUrl: this.webhookUrl(req, binding),
+    };
   }
   async webhook(id: string, req: IncomingMessage) {
     const binding = await this.channels.internal(id);
@@ -330,7 +351,11 @@ export class WhatsAppRuntime {
           id,
           send.event.id,
           send.event.lease!,
-          await adapter.send({ to: send.participant.address, text: send.event.reply! }),
+          await adapter.send({
+            to: send.participant.address,
+            text: send.event.reply!,
+            ...(send.event.buttons === undefined ? {} : { buttons: send.event.buttons }),
+          }),
         );
       }
     } catch {
@@ -360,6 +385,7 @@ export class WhatsAppRuntime {
     timer.unref?.();
     try {
       const target = await this.target(binding);
+      const artifact = target.served.artifact;
       const model = await resolveAssistantModelBinding(
         target,
         binding.tenant,
@@ -368,6 +394,13 @@ export class WhatsAppRuntime {
         'whatsapp',
       );
       if (!model) throw new ChannelError('model_not_configured');
+      const guarded = withChannelInferenceGuard(
+        model,
+        this.channels,
+        binding.id,
+        event.id,
+        beforeStep,
+      );
       const session: MessagingTurnContext = {
         kind: 'messaging',
         channel: 'whatsapp',
@@ -380,57 +413,145 @@ export class WhatsAppRuntime {
         history: participant.history.map(({ role, content }) => ({ role, content })),
         modelToolUses: participant.modelToolUses ?? [],
       };
+      const executeDeps = withAssistantTurnExecutionAuthority(
+        { ...target.served.deps, signal },
+        artifact,
+        session,
+      );
       const context = await resolveInvocationContextSnapshot({
-        artifact: target.served.artifact,
-        executeDeps: withAssistantTurnExecutionAuthority(
-          { ...target.served.deps, signal },
-          target.served.artifact,
-          session,
-        ),
+        artifact,
+        executeDeps,
         caller: session.caller,
         instant: new Date(this.channels.now()),
       });
-      let text = '',
-        failure: string | undefined;
-      await runAgentTurn(
-        target,
-        session,
-        event.text!,
-        context,
-        this.deps,
-        (result) => {
-          if (result.event === 'content' && typeof result.data.delta === 'string')
-            text += result.data.delta;
-          if (result.event === 'error') failure = String(result.data.code ?? 'answer_failed');
-        },
-        undefined,
-        undefined,
-        undefined,
-        false,
-        {
-          binding: withChannelInferenceGuard(
-            model,
-            this.channels,
-            binding.id,
-            event.id,
+      const now = this.channels.now();
+      const inbound = event.text ?? '';
+      // A tapped button is input only for the pending review: it never reaches the model as text,
+      // and history keeps the label the participant saw.
+      const button = event.button;
+      const heard = event.text ?? button?.title ?? '';
+      const custody = collectionCustody(this.options.store, binding.id, participant.id);
+      let ledger = await custody.load();
+      let spec =
+        ledger === undefined
+          ? undefined
+          : collectionSpecFor(artifact, ledger.interactionId, WHATSAPP_CONFIRMATION_EXPIRY_MS);
+      if (ledger !== undefined && spec === undefined) {
+        // The deployment no longer declares this interaction: the stale ledger is dropped.
+        await custody.remove();
+        ledger = undefined;
+      }
+      let outcome: CollectionTurnOutcome =
+        button === undefined ? { kind: 'none' } : { kind: 'ignored', code: 'button_unbound' };
+      if (ledger !== undefined && spec !== undefined) {
+        const toolDeps = { ...executeDeps, caller: session.caller, context };
+        outcome = await runCollectionTurn(
+          ledger,
+          inbound,
+          {
+            spec,
+            artifact,
+            now,
+            supportEmail: binding.supportEmail,
+            buttons: reviewButtonBinding(binding.indexKey, binding.id, participant.id),
+            model: {
+              binding: guarded,
+              fetcher: this.deps.modelFetch ?? ((url, init) => guardedFetch(new URL(url), init)),
+              signal,
+            },
+            prepare: (action, input) =>
+              prepareToolForConfirmation(artifact, action, input, toolDeps),
+            execute: async (proposalId, continuation) => {
+              await beforeStep();
+              return executePreparedTool(artifact, continuation, {
+                ...toolDeps,
+                invocationId: proposalId,
+                publicAdmission: {
+                  messaging: messagingAdmissionDigest(binding.id, participant.id),
+                  provenance: { kind: 'messaging', channel: 'whatsapp' },
+                },
+              });
+            },
+            persist: custody.persist,
+            remove: custody.remove,
+          },
+          button?.id,
+        );
+        ledger = outcome.kind === 'reply' || outcome.kind === 'model' ? outcome.ledger : undefined;
+      }
+      if (outcome.kind === 'ignored') {
+        // An unknown, stale or foreign token: no reply, no model call, one content-free code.
+        await this.channels.fail(binding.id, event.id, event.lease!, outcome.code, 'cancelled');
+        return;
+      }
+      let answer: string;
+      if (outcome.kind === 'reply') answer = outcome.reply;
+      else {
+        let text = '',
+          failure: string | undefined;
+        await runAgentTurn(
+          target,
+          session,
+          outcome.kind === 'model' ? outcome.utterance : inbound,
+          context,
+          this.deps,
+          (result) => {
+            if (result.event === 'content' && typeof result.data.delta === 'string')
+              text += result.data.delta;
+            if (result.event === 'error') failure = String(result.data.code ?? 'answer_failed');
+          },
+          undefined,
+          undefined,
+          undefined,
+          false,
+          {
+            binding: guarded,
             beforeStep,
-          ),
-          beforeStep,
-          claimTool: (name) => this.channels.claimTool(binding.id, participant.id, name),
-          signal,
-        },
-      );
-      if (failure || !text.trim()) throw new ChannelError(failure ?? 'answer_unavailable');
-      const disclosure =
-        participant.history.length === 0
-          ? `I’m ${target.served.artifact.server.branding?.name ?? target.served.artifact.server.title}’s AI assistant.\n\n`
-          : '';
-      const answer = disclosure + text.trim();
+            claimTool: (name) => this.channels.claimTool(binding.id, participant.id, name),
+            signal,
+            collection: {
+              open: ledger,
+              now,
+              retentionMs: historyRetention,
+              confirmationExpiryMs: WHATSAPP_CONFIRMATION_EXPIRY_MS,
+              save: async (opened) => {
+                await custody.persist(opened);
+                ledger = opened;
+                spec = collectionSpecFor(
+                  artifact,
+                  opened.interactionId,
+                  WHATSAPP_CONFIRMATION_EXPIRY_MS,
+                );
+              },
+            },
+            ...(outcome.kind === 'model' ? { systemNote: outcome.note } : {}),
+          },
+        );
+        if (failure || !text.trim()) throw new ChannelError(failure ?? 'answer_unavailable');
+        const disclosure =
+          participant.history.length === 0
+            ? `I’m ${artifact.server.branding?.name ?? artifact.server.title}’s AI assistant.\n\n`
+            : '';
+        answer = disclosure + text.trim();
+      }
       const bounded =
         answer.length <= 3500
           ? answer
           : `${answer.slice(0, 3350).replace(/[\uD800-\uDBFF]$/u, '')}\n\nAsk me to expand on any part.`;
-      await this.channels.complete(binding.id, event.id, event.lease!, bounded, historyRetention);
+      // Marked-private values never persist: history and the event row keep redacted text, and the
+      // full review outlives only its own delivery.
+      const scrub = (text: string) =>
+        ledger !== undefined && spec !== undefined ? redactPrivate(spec, ledger, text) : text;
+      await this.channels.complete(
+        binding.id,
+        event.id,
+        event.lease!,
+        bounded,
+        historyRetention,
+        undefined,
+        { user: scrub(heard), assistant: scrub(bounded) },
+        outcome.kind === 'reply' ? outcome.buttons : undefined,
+      );
     } catch (error) {
       const code = error instanceof ChannelError ? error.code : 'answer_failed';
       try {
