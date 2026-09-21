@@ -21,6 +21,8 @@ interface AssistantElementEventHost {
   readonly respond: (id: string, response: AssistantInteractionResponse) => Promise<void>;
   readonly dispatchError: (detail: AssistantErrorDetail) => void;
   readonly revealLatest: () => void;
+  /** Cards that block the conversation (confirm, input, sign-in) are shown regardless of scroll position. */
+  readonly revealInteraction: () => void;
   readonly renderView: (detail: AssistantViewAvailableDetail) => void;
 }
 
@@ -240,7 +242,7 @@ export class AssistantElementEventController {
     });
     messages.append(card);
     this.#proposalCards.set(id, card);
-    this.#host.revealLatest();
+    this.#host.revealInteraction();
     this.#host.element.dispatchEvent(
       new CustomEvent('assistant-tool-proposed', {
         detail: { id, tool, title, description, arguments: arguments_, reviewSchema },
@@ -279,7 +281,7 @@ export class AssistantElementEventController {
     });
     messages.append(card);
     this.#proposalCards.set(id, card);
-    this.#host.revealLatest();
+    this.#host.revealInteraction();
     this.#host.element.dispatchEvent(
       new CustomEvent('assistant-sign-in-required', {
         detail: { id, tool, signInTicket, expiresAt },
@@ -308,7 +310,7 @@ export class AssistantElementEventController {
     });
     messages.append(card);
     this.#proposalCards.set(id, card);
-    this.#host.revealLatest();
+    this.#host.revealInteraction();
     this.#host.element.dispatchEvent(
       new CustomEvent('assistant-input-requested', {
         detail: { id, message, requestedSchema },

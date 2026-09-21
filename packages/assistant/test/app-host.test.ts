@@ -2,9 +2,12 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { AppBridge } from '@modelcontextprotocol/ext-apps/app-bridge';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   APP_RENDER_TIMEOUT_MS,
+  APP_TOOL_CALL_KEEPALIVE_INTERVAL_MS,
+  APP_TOOL_CALL_KEEPALIVE_MAX_MS,
   type AssistantAppHostActions,
   MAX_INLINE_APP_HEIGHT,
   mountAssistantApp,
@@ -249,5 +252,95 @@ describe('mountAssistantApp sandbox host', () => {
     expect(open).not.toHaveBeenCalled();
     finishTeardown?.();
     await teardown;
+  });
+});
+
+describe('widget tool calls that wait on the visitor', () => {
+  const extraFor = (progressToken: number | undefined, signal = new AbortController().signal) =>
+    ({
+      signal,
+      requestId: 1,
+      ...(progressToken === undefined ? {} : { _meta: { progressToken } }),
+      sendNotification: async () => {},
+      sendRequest: async () => ({}),
+    }) as unknown as Parameters<NonNullable<AppBridge['oncalltool']>>[1];
+
+  async function mountWithPendingCall(progressToken: number | undefined) {
+    const { AppBridge, PostMessageTransport } = await import(
+      '@modelcontextprotocol/ext-apps/app-bridge'
+    );
+    const send = vi.spyOn(PostMessageTransport.prototype, 'send').mockResolvedValue();
+    vi.spyOn(AppBridge.prototype, 'sendToolInput').mockResolvedValue();
+    vi.spyOn(AppBridge.prototype, 'sendToolResult').mockResolvedValue();
+    let bridge: AppBridge | undefined;
+    vi.spyOn(AppBridge.prototype, 'connect').mockImplementation(async function () {
+      bridge = this;
+      this.oninitialized?.({});
+    });
+    let settle: ((value: Record<string, unknown>) => void) | undefined;
+    const requestApp = vi.fn(
+      () => new Promise<Record<string, unknown>>((resolve) => (settle = resolve)),
+    );
+    const card = mountAssistantApp(detail, {
+      client: { requestApp } as unknown as AssistantClient,
+      sendMessage: async () => {},
+      updateModelContext: () => {},
+    });
+    if (!card) throw new Error('card did not mount');
+    document.body.append(card);
+    card.querySelector('iframe')?.dispatchEvent(new Event('load'));
+    const call = bridge?.oncalltool?.(
+      { name: 'submit_workflow_consultation', arguments: {} },
+      extraFor(progressToken),
+    );
+    const progressSends = () =>
+      send.mock.calls.filter(([message]) => message.method === 'notifications/progress');
+    return { call, settle: () => settle?.({ content: [] }), progressSends };
+  }
+
+  it('sends progress with the widget token while the panel waits for a confirmation', async () => {
+    vi.useFakeTimers();
+    const mounted = await mountWithPendingCall(7);
+
+    await vi.advanceTimersByTimeAsync(APP_TOOL_CALL_KEEPALIVE_INTERVAL_MS);
+    expect(mounted.progressSends()).toEqual([
+      [
+        {
+          jsonrpc: '2.0',
+          method: 'notifications/progress',
+          params: { progressToken: 7, progress: 1 },
+        },
+      ],
+    ]);
+    await vi.advanceTimersByTimeAsync(APP_TOOL_CALL_KEEPALIVE_INTERVAL_MS);
+    expect(mounted.progressSends()).toHaveLength(2);
+
+    mounted.settle();
+    await mounted.call;
+    await vi.advanceTimersByTimeAsync(APP_TOOL_CALL_KEEPALIVE_INTERVAL_MS * 3);
+    expect(mounted.progressSends()).toHaveLength(2);
+  });
+
+  it('sends nothing when the widget did not ask for progress', async () => {
+    vi.useFakeTimers();
+    const mounted = await mountWithPendingCall(undefined);
+
+    await vi.advanceTimersByTimeAsync(APP_TOOL_CALL_KEEPALIVE_INTERVAL_MS * 4);
+    expect(mounted.progressSends()).toHaveLength(0);
+    mounted.settle();
+    await mounted.call;
+  });
+
+  it('stops the keep-alive once the confirmation lifetime has passed', async () => {
+    vi.useFakeTimers();
+    const mounted = await mountWithPendingCall(3);
+
+    await vi.advanceTimersByTimeAsync(APP_TOOL_CALL_KEEPALIVE_MAX_MS);
+    const sentWithinLifetime = mounted.progressSends().length;
+    expect(sentWithinLifetime).toBeGreaterThan(0);
+    await vi.advanceTimersByTimeAsync(APP_TOOL_CALL_KEEPALIVE_INTERVAL_MS * 3);
+    expect(mounted.progressSends()).toHaveLength(sentWithinLifetime);
+    mounted.settle();
+    await mounted.call;
   });
 });

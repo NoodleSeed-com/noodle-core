@@ -142,6 +142,7 @@ describe('assistant visual language', () => {
       respond: async () => undefined,
       dispatchError: () => undefined,
       revealLatest: () => undefined,
+      revealInteraction: () => undefined,
       renderView: () => undefined,
     });
 
@@ -183,6 +184,7 @@ describe('assistant visual language', () => {
       respond: async () => undefined,
       dispatchError: () => undefined,
       revealLatest: () => undefined,
+      revealInteraction: () => undefined,
       renderView: () => undefined,
     });
     const details: { intent?: string; signInTicket?: string }[] = [];
@@ -230,6 +232,7 @@ describe('assistant visual language', () => {
       respond: async () => undefined,
       dispatchError: () => undefined,
       revealLatest: () => undefined,
+      revealInteraction: () => undefined,
       renderView: () => undefined,
     });
 

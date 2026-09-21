@@ -109,6 +109,44 @@ export const APP_RENDER_TIMEOUT_MS = 10_000;
 /** Prevent an untrusted App from allocating an unbounded inline surface. */
 export const MAX_INLINE_APP_HEIGHT = 16_384;
 const APP_TEARDOWN_TIMEOUT_MS = 1_000;
+/**
+ * A widget's `tools/call` can wait on the visitor: a tool that needs confirmation answers only once
+ * the panel's card is confirmed, which may take minutes on a phone. The App SDK gives such a
+ * request 60 seconds unless progress arrives (`resetTimeoutOnProgress`), so the host reports
+ * progress while it waits. The bridge's typed notification set has no progress member, which is
+ * why the keep-alive rides the transport as a plain JSON-RPC notification.
+ */
+export const APP_TOOL_CALL_KEEPALIVE_INTERVAL_MS = 20_000;
+/** Matches the confirmation lifetime the service enforces; past it the call fails as before. */
+export const APP_TOOL_CALL_KEEPALIVE_MAX_MS = 10 * 60_000;
+
+type AppToolCallExtra = Parameters<NonNullable<AppBridge['oncalltool']>>[1];
+
+/** Report progress on a pending widget tool call until it settles, aborts, or outlives a confirmation. */
+function keepWidgetToolCallAlive(
+  transport: PostMessageTransport | undefined,
+  extra: AppToolCallExtra | undefined,
+): () => void {
+  const progressToken = extra?._meta?.progressToken;
+  if (!transport || progressToken === undefined) return () => {};
+  let progress = 0;
+  const startedAt = Date.now();
+  const timer = setInterval(() => {
+    if (extra?.signal.aborted || Date.now() - startedAt >= APP_TOOL_CALL_KEEPALIVE_MAX_MS) {
+      clearInterval(timer);
+      return;
+    }
+    progress += 1;
+    void transport
+      .send({
+        jsonrpc: '2.0',
+        method: 'notifications/progress',
+        params: { progressToken, progress },
+      })
+      .catch(() => {});
+  }, APP_TOOL_CALL_KEEPALIVE_INTERVAL_MS);
+  return () => clearInterval(timer);
+}
 
 interface AssistantAppMount {
   readonly destroy: () => Promise<void>;
@@ -276,16 +314,21 @@ export function mountAssistantApp(
         if (destroyed) return { mode: displayMode };
         return { mode: applyDisplayMode(mode) };
       };
-      bridge.oncalltool = async (params) => {
+      bridge.oncalltool = async (params, extra) => {
         if (destroyed) {
           return {
             content: [{ type: 'text', text: 'App view is closing.' }],
             isError: true,
           } as Awaited<ReturnType<NonNullable<typeof bridge.oncalltool>>>;
         }
-        return (await actions.client.requestApp('tools/call', params)) as Awaited<
-          ReturnType<NonNullable<typeof bridge.oncalltool>>
-        >;
+        const stopKeepAlive = keepWidgetToolCallAlive(mountedTransport, extra);
+        try {
+          return (await actions.client.requestApp('tools/call', params)) as Awaited<
+            ReturnType<NonNullable<typeof bridge.oncalltool>>
+          >;
+        } finally {
+          stopKeepAlive();
+        }
       };
       bridge.onlistresources = async (params) => {
         if (destroyed) {

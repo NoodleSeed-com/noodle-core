@@ -137,6 +137,7 @@ export class NoodleAssistantElement extends HTMLElementBase {
     respond: (id, response) => this.respond(id, response),
     dispatchError: (detail) => this.#dispatchError(detail),
     revealLatest: () => this.#revealLatest(),
+    revealInteraction: () => this.#scrollToBottom(),
     renderView: (detail) => {
       const messages = this.#messages;
       const client = this.#client;
