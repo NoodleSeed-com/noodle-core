@@ -39,9 +39,11 @@ export async function narrateResolvedInteraction(
     );
     if (generated.narration) {
       // Streamed to the panel as content deltas above, so it is genuine visible prose.
-      await deps.store.appendHistory(session.id, [
-        { role: 'assistant', content: generated.narration, kind: 'visible' },
-      ]);
+      const rows = [
+        { role: 'assistant' as const, content: generated.narration, kind: 'visible' as const },
+      ];
+      await deps.store.appendHistory(session.id, rows);
+      await deps.conversations?.recordSessionTurn(session, rows);
     }
     if (generated.suggestions.length > 0) {
       await deps.store.replaceLatestSuggestions(session.id, {

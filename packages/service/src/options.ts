@@ -46,6 +46,10 @@ import type {
 } from './business-information/portable.js';
 import type { BusinessOnboardingOptions } from './business-onboarding.js';
 import type { ApplicationConnections } from './connections/types.js';
+import type {
+  ConversationHistoryStore,
+  ConversationPolicySource,
+} from './conversation-history/contracts.js';
 import type { GoogleWorkloadIdentityStore } from './google-workload-identity-store.js';
 import type { DeveloperGrantStore } from './oauth/developer-grant.js';
 import type { ServicePrincipalRuntime } from './oauth/service-principal-store.js';
@@ -108,6 +112,11 @@ export interface ServiceOptions {
   readonly oauthClientCredentialsReady?: boolean;
   /** Embedded-assistant clients and ephemeral sessions. Production injects a durable shared store. */
   readonly assistantStore?: AssistantStore;
+  /** Durable people-facing conversation history and the business policy governing it (ADR 0241). */
+  readonly conversationHistory?: {
+    readonly store: ConversationHistoryStore;
+    readonly policy: ConversationPolicySource;
+  };
   /** Durable environment-scoped renderer appearance overrides. */
   readonly assistantAppearance?: AssistantAppearanceSettingsStore;
   /** Public-surface ports. Omitted means this service serves authenticated embeds only. */

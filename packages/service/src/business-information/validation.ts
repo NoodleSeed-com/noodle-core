@@ -1,3 +1,4 @@
+import { looksLikePaymentCard } from '../payment-card.js';
 import { type JsonObject, type JsonValue, MANAGED_RETENTION_DAYS } from './contracts.js';
 
 export const MAX_PAYLOAD_BYTES = 32 * 1024;
@@ -158,29 +159,6 @@ function validateString(value: string, path: string): void {
       `${path} contains health or biometric data`,
     );
   }
-}
-
-function looksLikePaymentCard(value: string): boolean {
-  const candidates = value.match(/(?:\d[ -]?){13,19}/g) ?? [];
-  return candidates.some((candidate) => {
-    const digits = candidate.replace(/\D/g, '');
-    return digits.length >= 13 && digits.length <= 19 && luhnValid(digits);
-  });
-}
-
-function luhnValid(digits: string): boolean {
-  let sum = 0;
-  let double = false;
-  for (let index = digits.length - 1; index >= 0; index -= 1) {
-    let digit = Number(digits[index]);
-    if (double) {
-      digit *= 2;
-      if (digit > 9) digit -= 9;
-    }
-    sum += digit;
-    double = !double;
-  }
-  return sum % 10 === 0;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

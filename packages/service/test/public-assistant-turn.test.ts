@@ -11,6 +11,8 @@ import {
   type PublicEmbedRecord,
 } from '@noodle-borg/assistant-gateway';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ConversationCapture } from '../src/conversation-history/capture.js';
+import { InMemoryConversationHistoryStore } from '../src/conversation-history/memory-store.js';
 import { ServerRegistry } from '../src/registry.js';
 import type { AssistantRouteDeps } from '../src/routes/assistant.js';
 import { handleAssistantTurn } from '../src/routes/assistant.js';
@@ -39,6 +41,7 @@ async function start(options: {
   readonly envelope?: typeof ADMISSION_DEFAULTS;
   readonly modelSource?: 'operator' | 'noodle-managed';
   readonly managedModelResolver?: AssistantRouteDeps['managedModelResolver'];
+  readonly conversations?: ConversationCapture;
 }) {
   const store = new InMemoryAssistantStore();
   const embeds = new InMemoryPublicEmbedStore();
@@ -120,6 +123,7 @@ tools:
       : { publicEmbeds: embeds, admissionCounters: new InMemoryDailyCounterStore() }),
     ...(options.envelope ? { admissionEnvelope: options.envelope } : {}),
     ...(options.managedModelResolver ? { managedModelResolver: options.managedModelResolver } : {}),
+    ...(options.conversations ? { conversations: options.conversations } : {}),
     serviceBase: () => '',
     clock: () => NOW,
     maxBody: 64 * 1024,
@@ -246,5 +250,35 @@ describe('public turn admission on the route', () => {
     expect(response.status).toBe(200);
     expect(await response.text()).not.toContain('event: error');
     expect(modelFetch).toHaveBeenCalled();
+  });
+});
+
+describe('conversation history capture on the route (ADR 0241)', () => {
+  it('records the visible exchange once the business has opted in', async () => {
+    const history = new InMemoryConversationHistoryStore();
+    const conversations = new ConversationCapture(
+      history,
+      async () => ({ maximumDays: 7, conversationDays: 7 }),
+      { now: () => NOW.getTime() },
+    );
+    const { base, token } = await start({ kind: 'public', conversations });
+    const response = await turn(base, token, 'Do you ship to Dubai?');
+    expect(await response.text()).not.toContain('event: error');
+    const id = await history.findRecent(TENANT, 'website', { kind: 'anonymous', ref: 'anon_1' }, 0);
+    const read = await history.read(TENANT, id ?? '', NOW.getTime());
+    expect(read?.items.map((item) => item.kind === 'message' && [item.role, item.text])).toEqual([
+      ['user', 'Do you ship to Dubai?'],
+      ['assistant', 'Hello.'],
+    ]);
+  });
+
+  it('records nothing for a business that has not opted in', async () => {
+    const history = new InMemoryConversationHistoryStore();
+    const conversations = new ConversationCapture(history, async () => undefined);
+    const { base, token } = await start({ kind: 'public', conversations });
+    await (await turn(base, token)).text();
+    expect(
+      await history.findRecent(TENANT, 'website', { kind: 'anonymous', ref: 'anon_1' }, 0),
+    ).toBeUndefined();
   });
 });

@@ -12,6 +12,7 @@ import { type ArtifactTool, anonymousBehavior } from '@noodle-borg/compiler';
 import { claimableStateHandleNames } from '@noodle-borg/runtime';
 import { sendJson } from '@noodle-borg/transport-http';
 import { assistantSessionResponseSchema } from '@noodle-borg/wire-contracts';
+import type { ConversationCapture } from '../conversation-history/capture.js';
 import type { AuditSink } from '../store/audit.js';
 import type { TenantRef } from '../store.js';
 
@@ -147,6 +148,7 @@ export async function elevateAssistantSession(
     readonly store: { elevateSession: AssistantStore['elevateSession'] };
     readonly audit: AuditSink;
     readonly clock?: () => Date;
+    readonly conversations?: ConversationCapture;
   },
   input: {
     readonly signInTicket: unknown;
@@ -226,6 +228,8 @@ export async function elevateAssistantSession(
     // What they signed in *for*: an elevation with no reason is an elevation nobody can review.
     details: { tool: elevated.tool, sessionId: elevated.session.id },
   });
+  // The conversation in progress moves to the verified customer; earlier ones never do (ADR 0241).
+  await deps.conversations?.reownSession(elevated.session);
   // The same wire shape a fresh exchange returns, parsed for the same reason (ADR 0151): the widget
   // cannot tell the two apart, so they must not differ.
   const body = {

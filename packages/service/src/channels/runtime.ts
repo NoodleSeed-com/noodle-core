@@ -571,6 +571,13 @@ export class WhatsAppRuntime {
         { user: scrub(heard), assistant: scrub(bounded) },
         outcome.kind === 'reply' ? outcome.buttons : undefined,
       );
+      await this.deps.conversations?.recordChannelTurn({
+        tenant: binding.tenant,
+        participantId: participant.id,
+        user: scrub(heard),
+        assistant: scrub(bounded),
+        receivedAt: event.receivedAt,
+      });
     } catch (error) {
       const code = error instanceof ChannelError ? error.code : 'answer_failed';
       try {

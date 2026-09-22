@@ -1,3 +1,4 @@
+import { ConversationCapture } from './conversation-history/capture.js';
 import type { ServiceOptions } from './options.js';
 import type { AssistantRouteDeps } from './routes/assistant.js';
 
@@ -31,5 +32,17 @@ export function assistantRouteDependencies(
       : {}),
     ...(options.captureRequestEvent ? { captureRequestEvent: options.captureRequestEvent } : {}),
     ...(options.clock ? { clock: options.clock } : {}),
+    ...(options.conversationHistory
+      ? {
+          conversations: new ConversationCapture(
+            options.conversationHistory.store,
+            options.conversationHistory.policy,
+            {
+              now: () => (options.clock?.() ?? new Date()).getTime(),
+              ...(core.logger ? { logger: core.logger } : {}),
+            },
+          ),
+        }
+      : {}),
   };
 }

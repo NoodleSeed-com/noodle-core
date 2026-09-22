@@ -14,6 +14,7 @@ import type {
   AssistantAppearanceSettingsStore,
   AssistantElevationCoordinator,
   AssistantElevationStore,
+  AssistantHistoryMessage,
   PublicEmbedStore,
 } from '@noodle-borg/assistant-gateway/portable';
 import {
@@ -62,6 +63,7 @@ import {
   assistantSessionResponseSchema,
 } from '@noodle-borg/wire-contracts';
 import type { RuntimeTargetResolver } from '../application-runtime-target.js';
+import type { ConversationCapture } from '../conversation-history/capture.js';
 import { sendForbidden, sendUnauthorized } from '../http-util.js';
 import type { ServerRegistry } from '../registry.js';
 import type { AuditSink } from '../store/audit.js';
@@ -114,6 +116,8 @@ export interface AssistantRouteDeps {
   readonly captureRequestEvent?: (event: RequestEventInput) => void;
   readonly clock?: () => Date;
   readonly logger?: Logger;
+  /** Durable people-facing history (ADR 0241); absent means nothing is recorded. */
+  readonly conversations?: ConversationCapture;
 }
 
 export async function handleConsoleApprovalNonce(
@@ -510,13 +514,15 @@ export async function handleAssistantTurn(
       .filter((event) => event.event === 'content')
       .map((event) => String(event.data.delta ?? ''))
       .join('');
+    const rows: AssistantHistoryMessage[] = [
+      { role: 'user', content: message.trim(), kind: turn ? 'visible' : 'narration' },
+      ...(assistantContent
+        ? [{ role: 'assistant' as const, content: assistantContent, kind: 'visible' as const }]
+        : []),
+    ];
     try {
-      await deps.store.appendHistory(session.id, [
-        { role: 'user', content: message.trim(), kind: turn ? 'visible' : 'narration' },
-        ...(assistantContent
-          ? [{ role: 'assistant' as const, content: assistantContent, kind: 'visible' as const }]
-          : []),
-      ]);
+      await deps.store.appendHistory(session.id, rows);
+      await deps.conversations?.recordSessionTurn(session, rows);
     } catch {
       emit({ event: 'error', data: { code: 'conversation_state_failed', retryable: false } });
       deps.logger?.warn('assistant.history.failed', {

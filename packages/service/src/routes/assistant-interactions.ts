@@ -502,6 +502,11 @@ async function finishExecution(
       status: 'failed',
       reasonCode: code,
     });
+    await deps.conversations?.recordSessionOutcome(session, {
+      interactionId: interaction.id,
+      tool: toolName,
+      status: 'failed',
+    });
     writeInteractionSseHeaders(res, session.origin);
     writeInteractionResolved(res, interaction.id, 'accept');
     writeInteractionError(res, code, false);
@@ -540,6 +545,11 @@ async function finishExecution(
       kind: 'narration',
     },
   ]);
+  await deps.conversations?.recordSessionOutcome(session, {
+    interactionId: interaction.id,
+    tool: toolName,
+    status: 'succeeded',
+  });
   writeInteractionSseHeaders(res, session.origin);
   writeInteractionResolved(res, interaction.id, 'accept');
   writeToolCompleted(res, interaction.id, toolName, safeOutput);
@@ -644,6 +654,11 @@ async function resolveStop(
       kind: 'narration',
     },
   ]);
+  await deps.conversations?.recordSessionOutcome(session, {
+    interactionId: interaction.id,
+    tool: toolName,
+    status: action === 'decline' ? 'declined' : 'cancelled',
+  });
   writeInteractionSseHeaders(res, session.origin);
   writeInteractionResolved(res, interaction.id, action);
   if (target && context) {
