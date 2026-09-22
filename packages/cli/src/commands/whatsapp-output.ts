@@ -46,6 +46,7 @@ export function formatWhatsAppResult(result: unknown): string {
       `WhatsApp: ${value.state} (revision ${value.revision})`,
       `${value.tenant.org}/${value.tenant.app}/${value.tenant.env}`,
       `Binding: ${value.id}`,
+      `Provider: ${value.provider}${value.wabaId ? ` (WABA ${value.wabaId})` : ''}`,
       `Deployment: ${value.deploymentId}`,
       `Capabilities: ${value.capabilities.map((cap) => `${cap.kind}:${cap.name}`).join(', ') || 'none'}`,
       `Limits: ${value.limits.perMinute}/minute, ${value.limits.perHour}/hour, ${value.limits.perDay}/day per sender; ${value.limits.channelPerDay}/day per channel.`,

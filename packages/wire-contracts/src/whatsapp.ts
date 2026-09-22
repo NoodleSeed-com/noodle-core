@@ -21,15 +21,37 @@ export const WhatsAppLimitsSchema = z.strictObject({
 });
 const capability = z.strictObject({ kind: z.enum(['tool', 'knowledge']), name: id });
 const secretRef = z.string().regex(/^[A-Z][A-Z0-9_]{0,127}$/);
-export const WhatsAppConfigureRequestSchema = z.strictObject({
-  expectedRevision: revision,
-  phoneNumberId: id,
-  apiKeySecret: secretRef,
-  webhookSecret: secretRef,
-  capabilities: z.array(capability).max(64),
-  supportEmail: z.email().max(254),
-  limits: WhatsAppLimitsSchema.partial().optional(),
-});
+/** `360dialog` keeps a per-binding callback secret; `meta` names its WABA and uses the app signature. */
+export const WhatsAppProviderSchema = z.enum(['360dialog', 'meta']);
+export const WhatsAppConfigureRequestSchema = z
+  .strictObject({
+    expectedRevision: revision,
+    provider: WhatsAppProviderSchema.default('360dialog'),
+    phoneNumberId: id,
+    wabaId: id.optional(),
+    apiKeySecret: secretRef,
+    webhookSecret: secretRef.optional(),
+    capabilities: z.array(capability).max(64),
+    supportEmail: z.email().max(254),
+    limits: WhatsAppLimitsSchema.partial().optional(),
+  })
+  .superRefine((value, context) => {
+    const meta = value.provider === 'meta';
+    if (meta ? !value.wabaId : !value.webhookSecret)
+      context.addIssue({
+        code: 'custom',
+        path: [meta ? 'wabaId' : 'webhookSecret'],
+        message: meta ? 'Meta requires wabaId' : '360dialog requires webhookSecret',
+      });
+    if (meta ? value.webhookSecret !== undefined : value.wabaId !== undefined)
+      context.addIssue({
+        code: 'custom',
+        path: [meta ? 'webhookSecret' : 'wabaId'],
+        message: meta
+          ? 'Meta callbacks are authenticated by the app signature, not a webhook secret'
+          : 'wabaId applies only to the meta provider',
+      });
+  });
 export const WhatsAppStateRequestSchema = z.strictObject({
   expectedRevision: revision,
   state: z.enum(['enabled', 'paused']),
@@ -68,10 +90,11 @@ const tenant = z.strictObject({ org: id, app: id, env: id });
 export const WhatsAppBindingSchema = z.strictObject({
   id,
   tenant,
-  provider: z.literal('360dialog'),
+  provider: WhatsAppProviderSchema,
   phoneNumberId: id,
+  wabaId: id.optional(),
   apiKeySecret: secretRef,
-  webhookSecret: secretRef,
+  webhookSecret: secretRef.optional(),
   deploymentId: id,
   capabilities: z.array(capability),
   supportEmail: z.email(),

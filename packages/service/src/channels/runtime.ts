@@ -27,7 +27,7 @@ import { resolveAssistantKnowledge } from '../routes/assistant-knowledge.js';
 import { resolveAssistantModelBinding } from '../routes/assistant-model-binding.js';
 import { activeAssistantTarget } from '../routes/assistant-session-target.js';
 import { resolveConfigScope } from '../store.js';
-import { Dialog360, verifyWhatsAppWebhookSecret, WHATSAPP_CALLBACK_HEADER } from './360dialog.js';
+import { Dialog360, dialog360Provider, verifyWhatsAppWebhookSecret } from './360dialog.js';
 import { type CapabilityInstallations, capabilityReport } from './capability-report.js';
 import {
   type CollectionTurnOutcome,
@@ -38,6 +38,8 @@ import {
 } from './collection-turn.js';
 import { verifiedInferenceBound, withChannelInferenceGuard } from './inference-guard.js';
 import { messagingProjectionIneligibility } from './messaging-eligibility.js';
+import { MetaCloud, WHATSAPP_META_CALLBACK_PATH, type WhatsAppMetaConfig } from './meta-cloud.js';
+import type { WhatsAppProvider } from './provider.js';
 import { reviewButtonBinding } from './reply-buttons.js';
 import type { ChannelWorkerLoop } from './worker-loop.js';
 
@@ -48,6 +50,8 @@ export interface WhatsAppServiceOptions {
   readonly historyDays?: (tenant: ChannelBinding['tenant']) => Promise<number>;
   /** Installed collections, read only to report whether a selected collect action is set up. */
   readonly installations?: CapabilityInstallations;
+  /** Noodle Seed's Meta app; without it Meta bindings are never ready and the shared callback is absent. */
+  readonly meta?: WhatsAppMetaConfig;
 }
 export class WhatsAppRuntime {
   readonly channels: ChannelCoordinator;
@@ -62,13 +66,34 @@ export class WhatsAppRuntime {
     );
     options.worker.attach(() => this.sweep());
   }
-  async provider(binding: ChannelBinding): Promise<{ adapter: Dialog360; webhookSecret: string }> {
+  /**
+   * The binding's provider, after its tenant credentials resolve; a changed credential pauses and
+   * fences the binding. 360dialog also returns its callback secret for the per-binding route.
+   */
+  async provider(
+    binding: ChannelBinding,
+  ): Promise<{ adapter: WhatsAppProvider; webhookSecret?: string }> {
     const values = await this.deps.registry.configStore.resolveConfigValues(
       'secret',
       resolveConfigScope(binding.tenant),
     );
-    const apiKey = values[binding.apiKeySecret],
-      webhookSecret = values[binding.webhookSecret];
+    const apiKey = values[binding.apiKeySecret];
+    if (binding.provider === 'meta') {
+      const meta = this.options.meta;
+      if (!meta) throw new ChannelError('meta_platform_unconfigured');
+      if (!apiKey || !binding.wabaId) throw new ChannelError('channel_credentials_missing');
+      // Only the tenant's business token is binding state; the platform app secret is not.
+      await this.channels.checkCredentials(binding.id, channelDigest(JSON.stringify([apiKey])));
+      return {
+        adapter: new MetaCloud(
+          apiKey,
+          { phoneNumberId: binding.phoneNumberId, wabaId: binding.wabaId },
+          meta,
+          this.options.providerFetch,
+        ),
+      };
+    }
+    const webhookSecret = binding.webhookSecret ? values[binding.webhookSecret] : undefined;
     if (
       !apiKey ||
       !webhookSecret ||
@@ -80,10 +105,16 @@ export class WhatsAppRuntime {
       binding.id,
       channelDigest(JSON.stringify([apiKey, webhookSecret])),
     );
-    return { adapter: new Dialog360(apiKey, this.options.providerFetch), webhookSecret };
+    return {
+      adapter: dialog360Provider(new Dialog360(apiKey, this.options.providerFetch), webhookSecret),
+      webhookSecret,
+    };
   }
   webhookUrl(req: IncomingMessage, binding: ChannelBinding): string {
-    return `${this.deps.serviceBase(req).replace(/\/$/, '')}/v1/channels/whatsapp/webhooks/${binding.id}`;
+    const base = this.deps.serviceBase(req).replace(/\/$/, '');
+    return binding.provider === 'meta'
+      ? `${base}${WHATSAPP_META_CALLBACK_PATH}`
+      : `${base}/v1/channels/whatsapp/webhooks/${binding.id}`;
   }
   async target(binding: ChannelBinding): Promise<ServedTarget> {
     const target = await activeAssistantTarget(this.deps, binding.tenant);
@@ -181,29 +212,13 @@ export class WhatsAppRuntime {
   }
   async webhook(id: string, req: IncomingMessage) {
     const binding = await this.channels.internal(id);
-    const { adapter, webhookSecret } = await this.provider(binding);
-    const current = await adapter.webhook();
-    return {
-      url: this.webhookUrl(req, binding),
-      matches: current.url === this.webhookUrl(req, binding),
-      authenticated: verifyWhatsAppWebhookSecret(
-        current.headers?.[WHATSAPP_CALLBACK_HEADER],
-        webhookSecret,
-      ),
-    };
+    const url = this.webhookUrl(req, binding);
+    return { url, ...(await (await this.provider(binding)).adapter.inspectWebhook(url)) };
   }
   async configureWebhook(id: string, req: IncomingMessage): Promise<void> {
     const binding = await this.channels.internal(id);
     if (binding.state !== 'paused') throw new ChannelError('pause_before_webhook_change');
-    const { adapter, webhookSecret } = await this.provider(binding);
-    const existing = await adapter.webhook();
-    const url = this.webhookUrl(req, binding);
-    if (existing.url && existing.url !== url) throw new ChannelError('webhook_ownership_conflict');
-    if (
-      existing.url !== url ||
-      !verifyWhatsAppWebhookSecret(existing.headers?.[WHATSAPP_CALLBACK_HEADER], webhookSecret)
-    )
-      await adapter.configureWebhook(url, webhookSecret);
+    await (await this.provider(binding)).adapter.configureWebhook(this.webhookUrl(req, binding));
   }
   async projection(tenant: ChannelBinding['tenant']) {
     const binding = await this.channels.get(tenant);
@@ -347,16 +362,20 @@ export class WhatsAppRuntime {
         const { adapter } = await this.provider(send.binding);
         await this.channels.assertSend(id, send.event.id, send.event.lease!);
         this.options.worker.signal.throwIfAborted();
-        await this.channels.sent(
-          id,
-          send.event.id,
-          send.event.lease!,
-          await adapter.send({
-            to: send.participant.address,
-            text: send.event.reply!,
-            ...(send.event.buttons === undefined ? {} : { buttons: send.event.buttons }),
-          }),
-        );
+        const result = await adapter.send({
+          to: send.participant.address,
+          text: send.event.reply!,
+          ...(send.event.buttons === undefined ? {} : { buttons: send.event.buttons }),
+        });
+        await this.channels.sent(id, send.event.id, send.event.lease!, result);
+        // Content-free delivery evidence: no address, text or credential.
+        this.deps.logger?.info('assistant.channel.reply', {
+          provider: send.binding.provider,
+          bindingId: id,
+          providerMessageId: result.providerMessageId,
+          state: result.state,
+          code: result.code,
+        });
       }
     } catch {
       this.deps.logger?.warn('assistant.channel.worker', { code: 'channel_work_failed' });

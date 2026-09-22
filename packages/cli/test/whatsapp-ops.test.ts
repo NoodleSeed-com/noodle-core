@@ -32,6 +32,94 @@ describe('WhatsApp assisted setup', () => {
     expect(() => whatsappOperation(['enable'])).toThrow('expected-revision');
     expect(() => whatsappOperation([...command, '--api-key', 'secret'])).toThrow('unknown option');
   });
+  it('selects the Meta Cloud API with its WABA and no callback secret', () => {
+    const meta = [
+      'configure',
+      '--provider',
+      'meta',
+      '--phone-number-id',
+      '1040350119157691',
+      '--waba-id',
+      '2120347998801839',
+      '--api-key-secret',
+      'WHATSAPP_ACCESS_TOKEN',
+      '--capabilities',
+      'knowledge:product',
+      '--support-email',
+      'hello@noodleseed.com',
+      '--expected-revision',
+      '0',
+    ];
+    expect(whatsappOperation(meta).body).toEqual({
+      expectedRevision: 0,
+      provider: 'meta',
+      phoneNumberId: '1040350119157691',
+      wabaId: '2120347998801839',
+      apiKeySecret: 'WHATSAPP_ACCESS_TOKEN',
+      capabilities: [{ kind: 'knowledge', name: 'product' }],
+      supportEmail: 'hello@noodleseed.com',
+      limits: {},
+    });
+    expect(() =>
+      whatsappOperation(
+        meta.filter((flag) => !flag.startsWith('2120')).filter((flag) => flag !== '--waba-id'),
+      ),
+    ).toThrow();
+    expect(() =>
+      whatsappOperation([...meta, '--webhook-secret', 'WHATSAPP_WEBHOOK_SECRET']),
+    ).toThrow();
+    // An unselected provider stays implicit so services that predate the choice keep accepting it.
+    const dialog = whatsappOperation([
+      'configure',
+      '--phone-number-id',
+      '1234',
+      '--api-key-secret',
+      'WHATSAPP_API_KEY',
+      '--webhook-secret',
+      'WHATSAPP_WEBHOOK_SECRET',
+      '--capabilities',
+      'knowledge:product',
+      '--support-email',
+      'hello@noodleseed.com',
+      '--expected-revision',
+      '0',
+    ]);
+    expect(dialog.body).not.toHaveProperty('provider');
+    expect(
+      formatWhatsAppResult({
+        ok: true,
+        data: {
+          id: 'binding-1',
+          tenant: { org: 'noodleseed', app: 'site-assistant', env: 'meta-test' },
+          provider: 'meta',
+          phoneNumberId: '1040350119157691',
+          wabaId: '2120347998801839',
+          apiKeySecret: 'WHATSAPP_ACCESS_TOKEN',
+          deploymentId: 'deploy-1',
+          capabilities: [],
+          supportEmail: 'hello@noodleseed.com',
+          revision: 1,
+          generation: 1,
+          state: 'paused',
+          limits: {
+            perMinute: 10,
+            perHour: 60,
+            perDay: 200,
+            channelPerDay: 1000,
+            newParticipantsPerDay: 200,
+            concurrent: 5,
+            pendingPerParticipant: 3,
+            pending: 100,
+            textCharacters: 4000,
+            dailyMicroUsd: 20_000_000,
+          },
+          createdAt: 1,
+          updatedAt: 1,
+          actor: 'operator',
+        },
+      }),
+    ).toContain('Provider: meta (WABA 2120347998801839)');
+  });
   it('preserves zero limits and rejects values above the approved ceiling', () => {
     expect(
       whatsappOperation(['limits', 'set', '--expected-revision', '3', '--per-minute', '0']),

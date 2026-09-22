@@ -48,7 +48,7 @@ export {
   trustedPublicMcpRef,
   trustedPublicOrgWellKnownRef,
 } from './public-routing.js';
-export { readBody, readDeployBody, readJsonBody } from './request-body.js';
+export { readBody, readBodyBuffer, readDeployBody, readJsonBody } from './request-body.js';
 export { sendJson } from './responses.js';
 export { type RunningServer, type ServeOptions, serveHttp } from './serve.js';
 export type {

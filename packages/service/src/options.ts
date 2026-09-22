@@ -72,6 +72,8 @@ export interface ServiceOptions {
   };
   /** Logged messaging custody and explicitly managed background worker, absent disables channel routes. */
   readonly whatsapp?: import('./channels/runtime.js').WhatsAppServiceOptions;
+  /** Noodle Seed's Meta app for Cloud API bindings; hosted WhatsApp composition carries it. */
+  readonly whatsappMeta?: import('./channels/meta-cloud.js').WhatsAppMetaConfig;
   /** Deployment-owned agreement authority. Hosted composition supplies an empty policy until documents are approved. */
   readonly businessOnboarding?: BusinessOnboardingOptions;
   /** Internal durable execution evidence composition; allowance comes from an operator-selected module. */

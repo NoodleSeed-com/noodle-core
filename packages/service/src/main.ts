@@ -16,6 +16,7 @@ import type { ModuleInput } from '@noodle-borg/service-modules';
 import { createLogger, type LogLevel } from '@noodle-borg/transport-http';
 import { resolveApplicationConnectionsConfig } from './application-connections-config.js';
 import { resolveBuildInfo } from './build-info.js';
+import { resolveWhatsAppMetaConfig } from './channels/meta-config.js';
 import { resolveMcpProtocolMode } from './mcp-protocol-runtime.js';
 import { GoogleOAuthAuthenticator } from './oauth/google.js';
 import { resolveRecoveryMode } from './recovery-quarantine.js';
@@ -83,6 +84,7 @@ export async function runServiceMain(overrides: ServiceMainOverrides = {}): Prom
   const secretMasterKey = process.env.NOODLE_SECRET_MASTER_KEY;
   const businessInformationSourceIdentityKey = process.env.NOODLE_BUSINESS_SOURCE_IDENTITY_KEY;
   const applicationConnections = resolveApplicationConnectionsConfig(process.env);
+  const whatsappMeta = resolveWhatsAppMetaConfig(process.env);
   const operationEvidenceIdentityKey = process.env.NOODLE_OPERATION_EVIDENCE_IDENTITY_KEY;
   const operationEvidenceEpoch = process.env.NOODLE_OPERATION_EVIDENCE_EPOCH;
   const businessInformationPublicIntakeEnabled = parseOptionalBoolean(
@@ -279,6 +281,7 @@ export async function runServiceMain(overrides: ServiceMainOverrides = {}): Prom
         : {}),
     ...(businessInformationSourceIdentityKey ? { businessInformationSourceIdentityKey } : {}),
     ...(applicationConnections ? { applicationConnections } : {}),
+    ...(whatsappMeta ? { whatsappMeta } : {}),
     ...(operationEvidenceIdentityKey ? { operationEvidenceIdentityKey } : {}),
     ...(operationEvidenceEpoch ? { operationEvidenceEpoch } : {}),
     ...(businessInformationPublicIntakeEnabled === undefined

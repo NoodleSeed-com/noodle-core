@@ -31,6 +31,68 @@ describe('WhatsApp wire contract', () => {
       }).success,
     ).toBe(false);
   });
+  it('defaults to 360dialog and holds each provider to its own callback authentication', () => {
+    expect(WhatsAppConfigureRequestSchema.parse(config).provider).toBe('360dialog');
+    const { webhookSecret: _callback, ...withoutCallback } = config;
+    expect(WhatsAppConfigureRequestSchema.safeParse(withoutCallback).success).toBe(false);
+    expect(
+      WhatsAppConfigureRequestSchema.safeParse({ ...config, wabaId: '2120347998801839' }).success,
+    ).toBe(false);
+    const meta = {
+      ...withoutCallback,
+      provider: 'meta',
+      apiKeySecret: 'WHATSAPP_ACCESS_TOKEN',
+      wabaId: '2120347998801839',
+    };
+    expect(WhatsAppConfigureRequestSchema.parse(meta)).toMatchObject({
+      provider: 'meta',
+      wabaId: '2120347998801839',
+    });
+    const { wabaId: _waba, ...metaWithoutWaba } = meta;
+    expect(WhatsAppConfigureRequestSchema.safeParse(metaWithoutWaba).success).toBe(false);
+    expect(
+      WhatsAppConfigureRequestSchema.safeParse({
+        ...meta,
+        webhookSecret: 'WHATSAPP_WEBHOOK_SECRET',
+      }).success,
+    ).toBe(false);
+    expect(WhatsAppConfigureRequestSchema.safeParse({ ...meta, provider: 'twilio' }).success).toBe(
+      false,
+    );
+    const binding = {
+      id: 'binding-1',
+      tenant: { org: 'noodleseed', app: 'site-assistant', env: 'meta-test' },
+      provider: 'meta',
+      phoneNumberId: '1040350119157691',
+      wabaId: '2120347998801839',
+      apiKeySecret: 'WHATSAPP_ACCESS_TOKEN',
+      deploymentId: 'deploy-1',
+      capabilities: [],
+      supportEmail: 'hello@noodleseed.com',
+      revision: 1,
+      generation: 1,
+      state: 'paused',
+      limits: {
+        perMinute: 10,
+        perHour: 60,
+        perDay: 200,
+        channelPerDay: 1000,
+        newParticipantsPerDay: 200,
+        concurrent: 5,
+        pendingPerParticipant: 3,
+        pending: 100,
+        textCharacters: 4000,
+        dailyMicroUsd: 20_000_000,
+      },
+      createdAt: 1,
+      updatedAt: 1,
+      actor: 'operator',
+    };
+    expect(WhatsAppBindingResponseSchema.safeParse({ ok: true, data: binding }).success).toBe(true);
+    expect(
+      WhatsAppBindingClientResponseSchema.parse({ ok: true, data: binding }).data,
+    ).toMatchObject({ provider: 'meta', wabaId: '2120347998801839' });
+  });
   it('rejects accidental server fields while older client readers allow additive fields', () => {
     const response = { ok: true, data: null, futureField: true };
     expect(WhatsAppBindingResponseSchema.safeParse(response).success).toBe(false);

@@ -33,7 +33,9 @@ const VALUES = {
   '--org': 'org',
   '--app': 'app',
   '--env': 'env',
+  '--provider': 'provider',
   '--phone-number-id': 'phoneNumberId',
+  '--waba-id': 'wabaId',
   '--api-key-secret': 'apiKeySecret',
   '--webhook-secret': 'webhookSecret',
   '--capabilities': 'capabilities',
@@ -87,9 +89,11 @@ export function whatsappOperation(rest: readonly string[], protectedPhone?: stri
   });
   if (noun === 'status' && !action) return get('', wire.WhatsAppBindingClientResponseSchema);
   if (noun === 'configure' && !action) {
-    const body = wire.WhatsAppConfigureRequestSchema.parse({
+    const { provider, ...body } = wire.WhatsAppConfigureRequestSchema.parse({
       expectedRevision: revision(),
+      provider: flags.provider,
       phoneNumberId: flags.phoneNumberId,
+      wabaId: flags.wabaId,
       apiKeySecret: flags.apiKeySecret,
       webhookSecret: flags.webhookSecret,
       supportEmail: flags.supportEmail,
@@ -100,7 +104,13 @@ export function whatsappOperation(rest: readonly string[], protectedPhone?: stri
       }),
       limits: limits(),
     });
-    return { path: '', method: 'PUT', body, response: wire.WhatsAppBindingClientResponseSchema };
+    return {
+      path: '',
+      method: 'PUT',
+      // An unselected provider stays implicit so services that predate the choice accept the body.
+      body: flags.provider === undefined ? body : { ...body, provider },
+      response: wire.WhatsAppBindingClientResponseSchema,
+    };
   }
   if (noun === 'doctor' && !action)
     return {

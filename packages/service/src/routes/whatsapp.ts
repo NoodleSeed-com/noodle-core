@@ -13,10 +13,12 @@ import {
   verifyWhatsAppWebhookSecret,
   WHATSAPP_CALLBACK_HEADER,
 } from '../channels/360dialog.js';
+import { WHATSAPP_META_CALLBACK_PATH } from '../channels/meta-cloud.js';
 import type { WhatsAppRuntime } from '../channels/runtime.js';
 import type { DeveloperGrantStore } from '../oauth/developer-grant.js';
 import type { TenantRef } from '../store.js';
 import { authorizeTenantControl, developerGrantRouteAccess } from './control-plane.js';
+import { metaWebhook } from './whatsapp-meta.js';
 
 const participant = /^p_[a-f0-9]{64}$/;
 const eventId = /^e_[0-9_]+$/;
@@ -54,7 +56,8 @@ export function dispatchWhatsAppRoutes(
     /^\/v1\/orgs\/([^/]+)\/apps\/([^/]+)\/envs\/([^/]+)\/channels\/whatsapp(?:\/(.*))?$/.exec(
       url.pathname,
     );
-  if (!callback && !operator) return false;
+  const meta = url.pathname === WHATSAPP_META_CALLBACK_PATH;
+  if (!callback && !operator && !meta) return false;
   res.setHeader('Cache-Control', 'no-store');
   if (!runtime) {
     sendJson(res, 503, {
@@ -64,21 +67,23 @@ export function dispatchWhatsAppRoutes(
     return true;
   }
   const run = Promise.resolve().then(() =>
-    callback
-      ? webhook(req, res, callback[1]!, runtime)
-      : operate(
-          req,
-          res,
-          url,
-          {
-            org: decodeURIComponent(operator![1]!),
-            app: decodeURIComponent(operator![2]!),
-            env: decodeURIComponent(operator![3]!),
-          },
-          operator![4] ?? '',
-          runtime,
-          grants,
-        ),
+    meta
+      ? metaWebhook(req, res, url, runtime)
+      : callback
+        ? webhook(req, res, callback[1]!, runtime)
+        : operate(
+            req,
+            res,
+            url,
+            {
+              org: decodeURIComponent(operator![1]!),
+              app: decodeURIComponent(operator![2]!),
+              env: decodeURIComponent(operator![3]!),
+            },
+            operator![4] ?? '',
+            runtime,
+            grants,
+          ),
   );
   void run.catch((error) => {
     const code = error instanceof ChannelError ? error.code : 'channel_unavailable';
@@ -108,8 +113,13 @@ async function webhook(
 ): Promise<void> {
   if (req.method !== 'POST') return sendJson(res, 405, { error: 'method_not_allowed' });
   const binding = await runtime.channels.internal(id);
+  // Meta numbers share the signed app callback; only 360dialog has a per-binding address.
+  if (binding.provider !== '360dialog') return sendJson(res, 404, { error: 'not_found' });
   const { webhookSecret } = await runtime.provider(binding);
-  if (!verifyWhatsAppWebhookSecret(req.headers[WHATSAPP_CALLBACK_HEADER], webhookSecret))
+  if (
+    !webhookSecret ||
+    !verifyWhatsAppWebhookSecret(req.headers[WHATSAPP_CALLBACK_HEADER], webhookSecret)
+  )
     return sendJson(res, 401, { error: 'unauthorized' });
   const input = await readJsonBody(req, 1 << 20);
   if (!input.ok) return sendJson(res, input.status, { error: 'webhook_invalid' });

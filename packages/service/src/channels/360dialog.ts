@@ -3,10 +3,20 @@ import {
   type ChannelAddress,
   ChannelError,
   type ChannelInbound,
-  type ChannelReplyButton,
 } from '@noodle-borg/assistant-gateway/portable';
 import { guardedFetch } from '@noodle-borg/connector-http';
 import { z } from 'zod';
+import {
+  boundedJson,
+  cloudApiHealth,
+  cloudApiSend,
+  cloudApiSetBlocked,
+  type WhatsAppBlockResult,
+  type WhatsAppHealth,
+  type WhatsAppProvider,
+  type WhatsAppSendInput,
+  type WhatsAppSendResult,
+} from './provider.js';
 
 export const WHATSAPP_CALLBACK_HEADER = 'x-noodle-webhook-secret';
 const identifier = z.string().min(1).max(512);
@@ -24,6 +34,10 @@ const valueSchema = z.object({
         id: identifier,
         from: z.string().max(128).optional(),
         user_id: z.string().max(128).optional(),
+        // Meta's business-scoped user id field for senders who adopted usernames (Meta BSUID guide,
+        // https://developers.facebook.com/documentation/business-messaging/whatsapp/business-scoped-user-ids/,
+        // read 2026-09-22); `from` still wins whenever the phone number is present.
+        from_user_id: z.string().max(128).optional(),
         timestamp,
         type: z.string().max(64),
         text: z.object({ body: z.string().max(1 << 20) }).optional(),
@@ -90,10 +104,11 @@ export function parseWhatsAppWebhook(input: unknown, phoneNumberId: string) {
         throw new ChannelError('asset_mismatch');
       for (const message of value.messages ?? []) {
         let address: ChannelAddress;
+        const opaque = message.user_id ?? message.from_user_id;
         if (message.from && /^[1-9]\d{5,14}$/.test(message.from))
           address = { kind: 'phone', value: message.from };
-        else if (message.user_id && /^[A-Z]{2}\.[A-Za-z0-9]{1,124}$/.test(message.user_id))
-          address = { kind: 'opaque', value: message.user_id };
+        else if (opaque && /^[A-Z]{2}\.[A-Za-z0-9]{1,124}$/.test(opaque))
+          address = { kind: 'opaque', value: opaque };
         else throw new ChannelError('recipient_invalid');
         const button =
           message.type === 'interactive' && message.interactive?.type === 'button_reply'
@@ -113,28 +128,6 @@ export function parseWhatsAppWebhook(input: unknown, phoneNumberId: string) {
     }
   return { messages, statuses };
 }
-/** A 4xx that judges the payload itself; auth, throttling and timeouts are no reason to resend differently. */
-function rejectedPayload(status: number): boolean {
-  return status >= 400 && status < 500 && ![401, 403, 408, 429].includes(status);
-}
-async function boundedJson(response: Response): Promise<unknown> {
-  const reader = response.body?.getReader();
-  if (!reader) throw new ChannelError('provider_response_invalid');
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    for (;;) {
-      const result = await reader.read();
-      if (result.done) break;
-      size += result.value.byteLength;
-      if (size > 65_536) throw new ChannelError('provider_response_invalid');
-      chunks.push(result.value);
-    }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
-  } finally {
-    await reader.cancel().catch(() => undefined);
-  }
-}
 export class Dialog360 {
   constructor(
     private readonly apiKey: string,
@@ -149,22 +142,8 @@ export class Dialog360 {
       signal: AbortSignal.timeout(15_000),
     });
   }
-  async health() {
-    const response = await this.request('/health_status?fields=id');
-    if (!response.ok) throw new ChannelError('provider_unavailable');
-    const parsed = z
-      .object({
-        id: identifier,
-        health_status: z.object({ can_send_message: z.enum(['AVAILABLE', 'LIMITED', 'BLOCKED']) }),
-      })
-      .safeParse(await boundedJson(response));
-    if (!parsed.success) throw new ChannelError('provider_response_invalid');
-    return {
-      phoneNumberId: parsed.data.id,
-      // LIMITED meets provider messaging requirements; provider limits still govern each send.
-      canSend: parsed.data.health_status.can_send_message !== 'BLOCKED',
-      status: parsed.data.health_status.can_send_message,
-    };
+  async health(): Promise<WhatsAppHealth> {
+    return cloudApiHealth(await this.request('/health_status?fields=id'));
   }
   async webhook() {
     const response = await this.request('/v1/configs/webhook');
@@ -195,115 +174,43 @@ export class Dialog360 {
     if (!response.ok) throw new ChannelError('webhook_configuration_failed');
     await response.body?.cancel();
   }
-  async setBlocked(
-    phone: string,
-    blocked: boolean,
-  ): Promise<{ state: 'confirmed' | 'error' | 'unknown'; code?: string }> {
-    try {
-      const response = await this.request('/block_users', blocked ? 'POST' : 'DELETE', {
-        messaging_product: 'whatsapp',
-        block_users: [{ user: phone }],
-      });
-      if (!response.ok) {
-        await response.body?.cancel();
-        return {
-          state: response.status >= 500 ? 'unknown' : 'error',
-          code: `provider_http_${response.status}`,
-        };
-      }
-      const field = blocked ? 'added_users' : 'removed_users';
-      const parsed = z
-        .object({
-          block_users: z.object({
-            [field]: z.array(z.object({ input: z.string(), wa_id: z.string() })),
-          }),
-        })
-        .safeParse(await boundedJson(response));
-      return parsed.success &&
-        parsed.data.block_users[field]?.some((user) => user.input === phone || user.wa_id === phone)
-        ? { state: 'confirmed' }
-        : { state: 'unknown', code: 'provider_receipt_invalid' };
-    } catch {
-      return { state: 'unknown', code: 'provider_outcome_unknown' };
-    }
+  setBlocked(phone: string, blocked: boolean): Promise<WhatsAppBlockResult> {
+    return cloudApiSetBlocked((...args) => this.request(...args), phone, blocked);
   }
-  /**
-   * One reply. With buttons the review goes as an interactive reply-button message: at most three
-   * buttons, titles up to 20 characters, ids up to 256 and a body up to 1024 characters, per the
-   * Meta Cloud API reply-buttons reference that the 360dialog Cloud API host relays (360dialog's own
-   * interactive-messages page states only the three-button limit; its webhook reference gives the
-   * inbound shape); all checked 2026-09-21. A payload the provider rejects outright dispatched
-   * nothing, so the same text goes plain instead; an ambiguous outcome is never retried.
-   */
-  async send(input: {
-    readonly to: ChannelAddress;
-    readonly text: string;
-    readonly buttons?: readonly ChannelReplyButton[] | undefined;
-  }): Promise<{
-    state: 'accepted' | 'failed' | 'unknown';
-    providerMessageId?: string;
-    code?: string;
-  }> {
-    if (!input.text || input.text.length > 4096) return { state: 'failed', code: 'reply_invalid' };
-    const buttons = input.buttons ?? [];
-    const interactive =
-      buttons.length > 0 &&
-      buttons.length <= 3 &&
-      input.text.length <= 1024 &&
-      buttons.every((button) => button.id.length <= 256 && button.title.length <= 20);
-    const envelope = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      ...(input.to.kind === 'phone' ? { to: input.to.value } : { recipient: input.to.value }),
-    };
-    try {
-      let code: string | undefined;
-      let response = interactive
-        ? await this.request('/messages', 'POST', {
-            ...envelope,
-            type: 'interactive',
-            interactive: {
-              type: 'button',
-              body: { text: input.text },
-              action: {
-                buttons: buttons.map((button) => ({
-                  type: 'reply',
-                  reply: { id: button.id, title: button.title },
-                })),
-              },
-            },
-          })
-        : undefined;
-      if (response !== undefined && !response.ok && rejectedPayload(response.status)) {
-        await response.body?.cancel();
-        code = 'interactive_rejected';
-        response = undefined;
-      }
-      if (response === undefined)
-        response = await this.request('/messages', 'POST', {
-          ...envelope,
-          type: 'text',
-          text: { body: input.text, preview_url: false },
-        });
-      if (!response.ok) {
-        await response.body?.cancel();
-        return {
-          state: response.status >= 500 || response.status === 408 ? 'unknown' : 'failed',
-          code: `provider_http_${response.status}`,
-        };
-      }
-      const parsed = z
-        .object({ messages: z.array(z.object({ id: identifier })).length(1) })
-        .safeParse(await boundedJson(response));
-      return parsed.success
-        ? {
-            state: 'accepted',
-            providerMessageId: parsed.data.messages[0]!.id,
-            ...(code === undefined ? {} : { code }),
-          }
-        : { state: 'unknown', code: 'provider_receipt_invalid' };
-    } catch {
-      return { state: 'unknown', code: 'send_outcome_unknown' };
-    }
+  /** One reply; request bodies and fallback semantics are shared in `cloudApiSend`. */
+  send(input: WhatsAppSendInput): Promise<WhatsAppSendResult> {
+    return cloudApiSend((...args) => this.request(...args), input);
   }
+}
+/**
+ * One 360dialog binding as a provider: its channel key's adapter plus its per-binding callback secret.
+ * The callback carries the secret as a header; an existing callback owned by another URL is never
+ * taken over.
+ */
+export function dialog360Provider(adapter: Dialog360, webhookSecret: string): WhatsAppProvider {
+  return {
+    health: () => adapter.health(),
+    setBlocked: (phone, blocked) => adapter.setBlocked(phone, blocked),
+    send: (input) => adapter.send(input),
+    async inspectWebhook(url) {
+      const current = await adapter.webhook();
+      return {
+        matches: current.url === url,
+        authenticated: verifyWhatsAppWebhookSecret(
+          current.headers?.[WHATSAPP_CALLBACK_HEADER],
+          webhookSecret,
+        ),
+      };
+    },
+    async configureWebhook(url) {
+      const existing = await adapter.webhook();
+      if (existing.url && existing.url !== url)
+        throw new ChannelError('webhook_ownership_conflict');
+      if (
+        existing.url !== url ||
+        !verifyWhatsAppWebhookSecret(existing.headers?.[WHATSAPP_CALLBACK_HEADER], webhookSecret)
+      )
+        await adapter.configureWebhook(url, webhookSecret);
+    },
+  };
 }

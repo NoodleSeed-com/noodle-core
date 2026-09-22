@@ -9,7 +9,8 @@ export async function readBody(
   return body.ok ? { ok: true, text: body.buffer.toString('utf8') } : body;
 }
 
-async function readBodyBuffer(
+/** The exact request bytes, bounded; for callers that must verify a signature before parsing. */
+export async function readBodyBuffer(
   req: IncomingMessage,
   max: number,
 ): Promise<{ ok: true; buffer: Buffer } | { ok: false; receivedBytes: number; maxBytes: number }> {

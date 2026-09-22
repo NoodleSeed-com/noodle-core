@@ -19,14 +19,20 @@ export const CHANNEL_DEFAULT_LIMITS = Object.freeze({
 });
 export type ChannelLimits = { -readonly [K in keyof typeof CHANNEL_DEFAULT_LIMITS]: number };
 export type ChannelLimitsInput = { [K in keyof ChannelLimits]?: number | undefined };
+/** `360dialog` relays the Cloud API with a per-binding callback secret; `meta` is the Cloud API itself. */
+export type ChannelProvider = '360dialog' | 'meta';
 export type ChannelCapability = { readonly kind: 'tool' | 'knowledge'; readonly name: string };
 export interface ChannelBinding {
   readonly id: string;
   readonly tenant: TenantRef;
-  readonly provider: '360dialog';
+  readonly provider: ChannelProvider;
   readonly phoneNumberId: string;
+  /** The WhatsApp Business Account that owns the number; present only for `meta`. */
+  readonly wabaId?: string | undefined;
+  /** Tenant secret name of the provider credential: 360dialog key or Meta business token. */
   readonly apiKeySecret: string;
-  readonly webhookSecret: string;
+  /** Tenant secret name of the per-binding callback secret; present only for `360dialog`. */
+  readonly webhookSecret?: string | undefined;
   readonly deploymentId: string;
   readonly capabilities: readonly ChannelCapability[];
   readonly supportEmail: string;
@@ -47,12 +53,17 @@ export type ChannelConfigure = Pick<
   ChannelBinding,
   | 'tenant'
   | 'phoneNumberId'
+  | 'wabaId'
   | 'apiKeySecret'
   | 'webhookSecret'
   | 'deploymentId'
   | 'capabilities'
   | 'supportEmail'
-> & { readonly limits?: ChannelLimitsInput | undefined };
+> & {
+  /** Defaults to `360dialog`. */
+  readonly provider?: ChannelProvider | undefined;
+  readonly limits?: ChannelLimitsInput | undefined;
+};
 export interface ChannelAddress {
   readonly kind: 'phone' | 'opaque';
   readonly value: string;

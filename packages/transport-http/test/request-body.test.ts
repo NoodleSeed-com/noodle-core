@@ -1,7 +1,7 @@
 import { IncomingMessage } from 'node:http';
 import { Socket } from 'node:net';
 import { describe, expect, it } from 'vitest';
-import { readJsonBody } from '../src/request-body.js';
+import { readBodyBuffer, readJsonBody } from '../src/request-body.js';
 
 function request(body: string): IncomingMessage {
   const req = new IncomingMessage(new Socket());
@@ -27,6 +27,16 @@ describe('bounded request body readers', () => {
       ok: false,
       status: 413,
       error: 'request body too large',
+    });
+  });
+
+  it('returns the exact bytes for signature checks and stops at the bound', async () => {
+    const raw = '{"text":"caf\u00e9"}';
+    const read = await readBodyBuffer(request(raw), 64);
+    expect(read.ok && read.buffer.equals(Buffer.from(raw))).toBe(true);
+    await expect(readBodyBuffer(request(raw), 4)).resolves.toMatchObject({
+      ok: false,
+      maxBytes: 4,
     });
   });
 });

@@ -86,6 +86,47 @@ for (const durable of [false, true]) {
           ),
         ).rejects.toMatchObject({ code: 'asset_in_use' });
       });
+      it('finds a number owner across providers and keeps each provider to its own credentials', async () => {
+        const { channels, binding } = await setup();
+        expect(binding.provider).toBe('360dialog');
+        expect(binding).not.toHaveProperty('wabaId');
+        expect(await channels.bindingForAsset(binding.phoneNumberId)).toBe(binding.id);
+        expect(await channels.bindingForAsset(crypto.randomUUID())).toBeUndefined();
+        const { webhookSecret: _callback, ...metaInput } = configure;
+        const meta = await channels.configure(
+          {
+            ...metaInput,
+            tenant: binding.tenant,
+            provider: 'meta',
+            phoneNumberId: binding.phoneNumberId,
+            wabaId: 'waba-1',
+            apiKeySecret: 'WHATSAPP_ACCESS_TOKEN',
+          },
+          'operator',
+          'to-meta',
+          binding.revision,
+        );
+        expect(meta).toMatchObject({ id: binding.id, provider: 'meta', wabaId: 'waba-1' });
+        expect(meta).not.toHaveProperty('webhookSecret');
+        await expect(
+          channels.configure(
+            { ...metaInput, tenant: { ...tenant, app: crypto.randomUUID() }, provider: 'meta' },
+            'operator',
+            'no-waba',
+            0,
+          ),
+        ).rejects.toMatchObject({ code: 'provider_configuration_invalid' });
+        await expect(
+          channels.configure(
+            { ...configure, tenant: { ...tenant, app: crypto.randomUUID() }, wabaId: 'waba-1' },
+            'operator',
+            'stray-waba',
+            0,
+          ),
+        ).rejects.toMatchObject({ code: 'provider_configuration_invalid' });
+        await channels.setState(meta.id, 'disconnected', 'operator', 'disconnect', meta.revision);
+        expect(await channels.bindingForAsset(binding.phoneNumberId)).toBeUndefined();
+      });
       it('deduplicates admission, fences workers and keeps one participant ordered', async () => {
         const { channels, binding, now, advance } = await setup();
         await channels.markReady(binding.id, binding.revision);

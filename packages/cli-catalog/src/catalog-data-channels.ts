@@ -65,15 +65,20 @@ export const CHANNELS_COMMAND: CommandSpec = {
   subcommands: [
     group(
       'whatsapp',
-      'Configure the 360dialog channel, test readiness, and control public messaging.',
+      'Configure a 360dialog or Meta Cloud API number, test readiness, and control public messaging.',
       [
         leaf('status', 'Show configuration and current revision.'),
         leaf('configure', 'Save a paused binding using managed secret references.', [
           revision,
           ...mutation,
+          flag('provider', '360dialog (default) or meta for the Meta Cloud API.'),
           flag('phone-number-id', '360dialog/Meta phone-number asset ID.'),
-          flag('api-key-secret', 'Managed secret name for the 360dialog key.'),
-          flag('webhook-secret', 'Independent managed callback secret name.'),
+          flag('waba-id', 'WhatsApp Business Account ID; required with --provider meta.'),
+          flag(
+            'api-key-secret',
+            'Managed secret name for the 360dialog key or the Meta business token.',
+          ),
+          flag('webhook-secret', 'Independent managed callback secret name; 360dialog only.'),
           flag('capabilities', 'Comma-separated knowledge:name or tool:name selections.'),
           flag('support-email', 'Contact shown when an answer cannot be completed.'),
           ...limits,

@@ -114,7 +114,17 @@ export class ChannelCoordinator {
       };
     });
   }
+  /** The binding that owns a provider phone-number asset, whatever its provider or state. */
+  async bindingForAsset(phoneNumberId: string): Promise<string | undefined> {
+    return this.store.transaction([CHANNEL_REGISTRY], (tx) =>
+      channelValue<string>(tx, CHANNEL_REGISTRY, `asset:${channelDigest(phoneNumberId)}`),
+    );
+  }
   async configure(input: ChannelConfigure, actor: string, key: string, revision: number) {
+    const meta = input.provider === 'meta';
+    // 360dialog authenticates callbacks per binding; Meta signs them with the app secret per WABA.
+    if (meta ? !input.wabaId || input.webhookSecret : !input.webhookSecret || input.wabaId)
+      throw new ChannelError('provider_configuration_invalid');
     const tenantKey = channelTenantKey(input.tenant);
     const priorId = await this.store.transaction([CHANNEL_REGISTRY], (tx) =>
       channelValue<string>(tx, CHANNEL_REGISTRY, tenantKey),
@@ -136,10 +146,11 @@ export class ChannelCoordinator {
         const owner = await channelValue<string>(tx, CHANNEL_REGISTRY, assetKey);
         if (owner && owner !== id) throw new ChannelError('asset_in_use');
         const now = this.now();
+        const { provider: _provider, ...configured } = input;
         const binding: ChannelBinding = {
-          ...input,
+          ...configured,
           id,
-          provider: '360dialog',
+          provider: meta ? 'meta' : '360dialog',
           revision: revision + 1,
           generation: (existing?.generation ?? 0) + 1,
           state: 'paused',

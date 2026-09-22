@@ -24,6 +24,7 @@ export async function createPostgresWhatsApp(
     worker: new ChannelWorkerLoop((code) =>
       (options.logger ?? noopLogger).warn('assistant.channel.worker', { code }),
     ),
+    ...(options.whatsappMeta ? { meta: options.whatsappMeta } : {}),
   };
 }
 export function createWhatsAppRuntime(
