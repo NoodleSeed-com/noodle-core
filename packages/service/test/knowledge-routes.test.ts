@@ -33,15 +33,6 @@ const PREFLIGHT_PATH = '/v1/orgs/acme/apps/site/envs/prod/knowledge/preflight';
 const documentPath = (hash: string): string =>
   `/v1/orgs/acme/apps/site/envs/prod/knowledge/documents/${hash}`;
 
-async function enableKnowledge(): Promise<void> {
-  await configStore.setConfigValue({
-    kind: 'variable',
-    scope: { level: 'env', org: 'acme', app: 'site', env: 'prod' },
-    name: 'NOODLE_KNOWLEDGE_ENABLED',
-    value: 'true',
-  });
-}
-
 beforeEach(async () => {
   const controlPlane = new InMemoryControlPlaneStore();
   await controlPlane.addOrgMember({
@@ -97,16 +88,7 @@ describe('knowledge control-plane routes', () => {
     expect(response.status).toBe(403);
   });
 
-  it('fails closed with the enable command when the feature gate is off', async () => {
-    const response = await preflight('member', request);
-    expect(response.status).toBe(403);
-    const body = (await response.json()) as { code: string; fix: string };
-    expect(body.code).toBe('knowledge_not_enabled');
-    expect(body.fix).toContain('NOODLE_KNOWLEDGE_ENABLED');
-  });
-
-  it('diffs, accepts verified bytes, and reuses staged content across preflights', async () => {
-    await enableKnowledge();
+  it('diffs, accepts verified bytes, and reuses staged content without activation', async () => {
     const first = await preflight('member', request);
     expect(first.status).toBe(200);
     expect(await first.json()).toEqual({ ok: true, missing: [sha('doc one')] });
@@ -123,7 +105,6 @@ describe('knowledge control-plane routes', () => {
   });
 
   it('rejects tampered upload bytes', async () => {
-    await enableKnowledge();
     const upload = await fetch(`${base}${documentPath(sha('doc one'))}`, {
       method: 'PUT',
       headers: { authorization: 'Bearer member' },
@@ -163,7 +144,6 @@ describe('knowledge operator routes', () => {
   });
 
   async function deployKnowledge(): Promise<void> {
-    await enableKnowledge();
     const first = await preflight('member', request);
     expect(first.status).toBe(200);
     const upload = await fetch(`${base}${documentPath(sha('doc one'))}`, {

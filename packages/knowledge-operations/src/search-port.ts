@@ -13,7 +13,6 @@ import type { KnowledgeSearchComponent, KnowledgeSearchExecutor } from './execut
 import type { KnowledgeTenantRef } from './routes.js';
 
 export interface BoundKnowledgeSearchPort {
-  enabled(): Promise<boolean>;
   search(
     componentName: string,
     request: { readonly query: string; readonly limit?: number },
@@ -21,7 +20,7 @@ export interface BoundKnowledgeSearchPort {
     | { readonly ok: true; readonly hits: readonly SearchHit[] }
     | {
         readonly ok: false;
-        readonly reason: 'budget_exhausted' | 'not_enabled' | 'provider_error';
+        readonly reason: 'budget_exhausted' | 'provider_error';
         readonly message: string;
       }
   >;
@@ -44,7 +43,6 @@ export function bindKnowledgeSearchPort(
   components: readonly KnowledgeSearchComponent[],
 ): BoundKnowledgeSearchPort {
   return {
-    enabled: () => executor.enabled(tenant),
     async search(componentName, request) {
       const component = components.find((candidate) => candidate.name === componentName);
       if (component === undefined) {
@@ -58,8 +56,7 @@ export function bindKnowledgeSearchPort(
           return { ok: false, reason: 'budget_exhausted', message: error.message };
         }
         if (error instanceof KnowledgeError) {
-          const reason = error.layer === 'request' ? 'not_enabled' : 'provider_error';
-          return { ok: false, reason, message: error.message };
+          return { ok: false, reason: 'provider_error', message: error.message };
         }
         return { ok: false, reason: 'provider_error', message: 'knowledge search failed' };
       }

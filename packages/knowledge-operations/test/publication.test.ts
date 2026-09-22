@@ -5,11 +5,7 @@ import {
   InMemoryKnowledgeRevisionStore,
 } from '@noodle-borg/knowledge';
 import { describe, expect, it } from 'vitest';
-import {
-  createKnowledgeDeployHooks,
-  KnowledgePublicationError,
-  withKnowledgePublication,
-} from '../src/publication.js';
+import { createKnowledgeDeployHooks, withKnowledgePublication } from '../src/publication.js';
 import { InMemoryKnowledgeStagingStore } from '../src/staging-store.js';
 
 const tenant = { org: 'acme', app: 'site', env: 'prod' } as const;
@@ -40,14 +36,11 @@ function component(
   };
 }
 
-function harness(options?: { enabled?: boolean }) {
+function harness() {
   const staging = new InMemoryKnowledgeStagingStore();
   const revisionStore = new InMemoryKnowledgeRevisionStore();
   const index = new Bm25KnowledgeIndex();
-  const hooks = createKnowledgeDeployHooks(
-    { staging, revisionStore },
-    { knowledgeEnabled: async () => options?.enabled ?? true },
-  );
+  const hooks = createKnowledgeDeployHooks({ staging, revisionStore }, {});
   const stage = async (texts: Record<string, string>) => {
     for (const text of Object.values(texts)) {
       await staging.put('acme/site/prod', sha(text), Buffer.from(text), text.length);
@@ -79,20 +72,8 @@ describe('knowledge deploy publication', () => {
     expect(hits[0]?.title).toBe('a.md');
   });
 
-  it('fails closed when the gate is off and a component is declared', async () => {
-    const { hooks, stage } = harness({ enabled: false });
-    const { component: product, texts } = component('product', { 'a.md': 'text' });
-    await stage(texts);
-    await expect(
-      withKnowledgePublication(hooks, tenant, 'deploy-1', [product], async () => 'persisted'),
-    ).rejects.toBeInstanceOf(KnowledgePublicationError);
-    await expect(
-      withKnowledgePublication(hooks, tenant, 'deploy-1', [product], async () => 'x'),
-    ).rejects.toThrow(/NOODLE_KNOWLEDGE_ENABLED/);
-  });
-
   it('is a no-op for a manifest without knowledge', async () => {
-    const { hooks } = harness({ enabled: false });
+    const { hooks } = harness();
     const persisted = await withKnowledgePublication(
       hooks,
       tenant,
@@ -186,15 +167,14 @@ describe('knowledge deploy publication', () => {
   it('serves a freshly activated revision from a second instance sharing the store (staleness)', async () => {
     const staging = new InMemoryKnowledgeStagingStore();
     const revisionStore = new InMemoryKnowledgeRevisionStore();
-    const gate = { knowledgeEnabled: async () => true };
     let current = new Date('2026-08-16T10:00:00Z');
     const instanceA = createKnowledgeDeployHooks(
       { staging, revisionStore },
-      { ...gate, now: () => current },
+      { now: () => current },
     );
     const instanceB = createKnowledgeDeployHooks(
       { staging, revisionStore },
-      { ...gate, now: () => current },
+      { now: () => current },
     );
     const v1 = component('product', { 'a.md': 'instance one text' });
     await staging.put(

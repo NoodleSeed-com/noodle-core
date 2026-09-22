@@ -39,12 +39,7 @@ function wiredHarness() {
     },
     getActiveByTenant: async () => undefined,
   };
-  const wired = wireKnowledge(
-    registry,
-    stores,
-    async () => ({ NOODLE_KNOWLEDGE_ENABLED: 'true' }),
-    1024,
-  );
+  const wired = wireKnowledge(registry, stores, async () => ({}), 1024);
   if (captured === undefined) throw new Error('wireKnowledge registered no hooks');
   return { stores, hooks: captured, wired, fetchSite };
 }
@@ -98,7 +93,7 @@ describe('wireKnowledge with a BYO crawler declaration', () => {
     const wired = wireKnowledge(
       registry,
       defaultKnowledgeStores(),
-      async () => ({ NOODLE_KNOWLEDGE_ENABLED: 'true' }),
+      async () => ({}),
       1024,
       async () => ({}),
     );
@@ -137,7 +132,7 @@ describe('wireKnowledge with a BYO index declaration', () => {
     wireKnowledge(
       registry,
       stores,
-      async () => ({ NOODLE_KNOWLEDGE_ENABLED: 'true' }),
+      async () => ({}),
       1024,
       async () => ({}),
     );
@@ -203,7 +198,7 @@ describe('wireKnowledge with a BYO index declaration', () => {
         getActiveByTenant: async () => undefined,
       },
       overridden,
-      async () => ({ NOODLE_KNOWLEDGE_ENABLED: 'true' }),
+      async () => ({}),
       1024,
     );
     if (captured === undefined) throw new Error('wireKnowledge registered no hooks');

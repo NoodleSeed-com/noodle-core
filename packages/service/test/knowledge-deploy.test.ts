@@ -10,7 +10,7 @@ import { InMemoryConfigStore, ServerRegistry } from '../src/index.js';
 /**
  * Deploy-coupled knowledge publication through the real registry deploy transaction
  * (ADR 0202): ordinary deploy stages/verifies/activates the revision with the artifact,
- * rollback restores the paired revision, and the gate fails a knowledge deploy closed.
+ * rollback restores the paired revision, with no separate tenant activation step.
  */
 
 const tenant = { org: 'acme', app: 'site', env: 'prod' } as const;
@@ -68,15 +68,6 @@ async function stage(documents: Record<string, string>): Promise<void> {
   }
 }
 
-async function enableKnowledge(): Promise<void> {
-  await configStore.setConfigValue({
-    kind: 'variable',
-    scope: { level: 'env', org: tenant.org, app: tenant.app, env: tenant.env },
-    name: 'NOODLE_KNOWLEDGE_ENABLED',
-    value: 'true',
-  });
-}
-
 beforeEach(() => {
   configStore = new InMemoryConfigStore();
   registry = new ServerRegistry(undefined, undefined, configStore);
@@ -97,7 +88,6 @@ beforeEach(() => {
 
 describe('knowledge deploy transaction', () => {
   it('publishes and activates the revision with an ordinary deploy, then rolls back paired', async () => {
-    await enableKnowledge();
     const v1 = { 'docs/product.md': 'first version of the product knowledge' };
     await stage(v1);
     const first = await registry.deploy(tenant, knowledgeManifest(v1), deployOptions);
@@ -120,18 +110,7 @@ describe('knowledge deploy transaction', () => {
     );
   });
 
-  it('fails a knowledge deploy closed when the gate is off, retaining nothing', async () => {
-    const documents = { 'docs/product.md': 'gated content' };
-    await stage(documents);
-    const result = await registry.deploy(tenant, knowledgeManifest(documents), deployOptions);
-    expect(result.ok).toBe(false);
-    if (result.ok || !('errors' in result)) return;
-    expect(result.errors?.[0]).toMatchObject({ code: 'knowledge_not_enabled' });
-    expect(await stores.revisionStore.active(tenant, 'product')).toBeUndefined();
-  });
-
   it('fails with an idempotent-retry error when staged bytes are missing', async () => {
-    await enableKnowledge();
     const result = await registry.deploy(
       tenant,
       knowledgeManifest({ 'docs/product.md': 'bytes never uploaded' }),
@@ -142,7 +121,7 @@ describe('knowledge deploy transaction', () => {
     expect(result.errors?.[0]).toMatchObject({ code: 'knowledge_documents_missing' });
   });
 
-  it('leaves knowledge-free deploys untouched with the gate off', async () => {
+  it('leaves knowledge-free deploys untouched', async () => {
     const manifest = JSON.stringify({
       manifestVersion: '2',
       server: { name: 'plain_app', title: 'Plain', version: '1.0.0' },

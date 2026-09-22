@@ -17,11 +17,10 @@ import type {
   KnowledgeStatusResponse,
 } from '@noodle-borg/wire-contracts';
 import { sendJson } from './http.js';
-import { type KnowledgeTenantRef, knowledgeEnableCommand } from './routes.js';
+import type { KnowledgeTenantRef } from './routes.js';
 
 export interface KnowledgeStatusDeps {
   readonly revisionStore: KnowledgeRevisionStore;
-  readonly knowledgeEnabled: (tenant: KnowledgeTenantRef) => Promise<boolean>;
   /** The active deployment's compiled knowledge components, or undefined when none is active. */
   readonly activeKnowledge: (tenant: KnowledgeTenantRef) => Promise<
     | {
@@ -44,14 +43,6 @@ export interface KnowledgeStatusDeps {
     tenant: KnowledgeTenantRef,
     component: CompiledKnowledgeComponent,
   ) => Promise<KnowledgeCrawlState>;
-}
-
-function gateClosed(res: ServerResponse, tenant: KnowledgeTenantRef): void {
-  sendJson(res, 403, {
-    code: 'knowledge_not_enabled',
-    error: 'knowledge is not enabled for this org/app/env',
-    fix: knowledgeEnableCommand(tenant),
-  });
 }
 
 async function componentSummary(
@@ -81,7 +72,6 @@ export async function handleKnowledgeList(
   tenant: KnowledgeTenantRef,
   deps: KnowledgeStatusDeps,
 ): Promise<void> {
-  if (!(await deps.knowledgeEnabled(tenant))) return gateClosed(res, tenant);
   const active = await deps.activeKnowledge(tenant);
   const components: KnowledgeComponentSummary[] = [];
   for (const component of active?.components ?? []) {
@@ -105,7 +95,6 @@ export async function handleKnowledgeStatus(
   componentName: string,
   deps: KnowledgeStatusDeps,
 ): Promise<void> {
-  if (!(await deps.knowledgeEnabled(tenant))) return gateClosed(res, tenant);
   const active = await deps.activeKnowledge(tenant);
   const component = active?.components.find((candidate) => candidate.name === componentName);
   if (active === undefined || component === undefined) {
@@ -145,7 +134,6 @@ export async function handleKnowledgeRefresh(
   componentName: string,
   deps: KnowledgeStatusDeps,
 ): Promise<void> {
-  if (!(await deps.knowledgeEnabled(tenant))) return gateClosed(res, tenant);
   const active = await deps.activeKnowledge(tenant);
   const component = active?.components.find((candidate) => candidate.name === componentName);
   if (component === undefined || deps.refresh === undefined) {

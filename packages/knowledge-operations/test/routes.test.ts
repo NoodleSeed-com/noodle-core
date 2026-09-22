@@ -38,7 +38,6 @@ function fakeRes(captured: CapturedResponse): import('node:http').ServerResponse
 function makeDeps(overrides?: Partial<KnowledgeRouteDeps>): KnowledgeRouteDeps {
   return {
     staging: new InMemoryKnowledgeStagingStore(),
-    knowledgeEnabled: async () => true,
     maxBodyBytes: 2 * 1024 * 1024,
     ...overrides,
   };
@@ -112,24 +111,6 @@ describe('knowledge preflight route', () => {
     expect(captured.status).toBe(400);
     expect((captured.body as { code: string }).code).toBe('invalid_knowledge_request');
   });
-
-  it('fails closed with the exact enable command when the gate is off', async () => {
-    const captured: CapturedResponse = {};
-    const request = {
-      components: [{ name: 'product', documents: [{ sha256: sha('a'), bytes: 1 }] }],
-    };
-    await handleKnowledgePreflight(
-      fakeReq(JSON.stringify(request)),
-      fakeRes(captured),
-      tenant,
-      makeDeps({ knowledgeEnabled: async () => false }),
-    );
-    expect(captured.status).toBe(403);
-    const body = captured.body as { code: string; fix: string };
-    expect(body.code).toBe('knowledge_not_enabled');
-    expect(body.fix).toContain('NOODLE_KNOWLEDGE_ENABLED');
-    expect(body.fix).toContain('acme');
-  });
 });
 
 describe('knowledge document upload route', () => {
@@ -182,13 +163,6 @@ describe('knowledge document upload route', () => {
       deps,
     );
     expect(captured.status).toBe(413);
-  });
-
-  it('fails closed when the gate is off', async () => {
-    const deps = makeDeps({ knowledgeEnabled: async () => false });
-    const captured: CapturedResponse = {};
-    await handleKnowledgeDocumentUpload(fakeReq('x'), fakeRes(captured), tenant, sha('x'), deps);
-    expect(captured.status).toBe(403);
   });
 
   it('rejects an invalid sha path segment', async () => {

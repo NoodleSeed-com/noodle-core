@@ -221,12 +221,6 @@ describe('dev()', () => {
       name: 'MODEL_KEY',
       value: 'test-model-key',
     });
-    setLocalConfigValue(tmp, {
-      kind: 'variable',
-      scope,
-      name: 'NOODLE_KNOWLEDGE_ENABLED',
-      value: 'true',
-    });
     const lines: string[] = [];
     const handle = await dev({
       manifestPath: file,

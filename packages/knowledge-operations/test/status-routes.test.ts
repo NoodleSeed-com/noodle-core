@@ -39,10 +39,7 @@ function fakeRes(captured: Captured): import('node:http').ServerResponse {
 async function publishedDeps(): Promise<KnowledgeStatusDeps> {
   const staging = new InMemoryKnowledgeStagingStore();
   const revisionStore = new InMemoryKnowledgeRevisionStore();
-  const hooks = createKnowledgeDeployHooks(
-    { staging, revisionStore },
-    { knowledgeEnabled: async () => true },
-  );
+  const hooks = createKnowledgeDeployHooks({ staging, revisionStore }, {});
   const text = 'published product text';
   const components = [
     {
@@ -76,7 +73,6 @@ async function publishedDeps(): Promise<KnowledgeStatusDeps> {
   await withKnowledgePublication(hooks, tenant, 'deploy-1', components, async () => 'ok');
   return {
     revisionStore,
-    knowledgeEnabled: async () => true,
     activeKnowledge: async () => ({ components, deploymentId: 'deploy-1' }),
   };
 }
@@ -113,17 +109,6 @@ describe('knowledge list route', () => {
     });
     expect(captured.status).toBe(200);
     expect((captured.body as { components: unknown[] }).components).toEqual([]);
-  });
-
-  it('fails closed when the gate is off', async () => {
-    const deps = await publishedDeps();
-    const captured: Captured = {};
-    await handleKnowledgeList(fakeReq(), fakeRes(captured), tenant, {
-      ...deps,
-      knowledgeEnabled: async () => false,
-    });
-    expect(captured.status).toBe(403);
-    expect((captured.body as { code: string }).code).toBe('knowledge_not_enabled');
   });
 });
 
@@ -265,16 +250,5 @@ describe('knowledge refresh route', () => {
     await handleKnowledgeRefresh(fakeReq(), fakeRes(noSites), tenant, 'product', docOnly);
     expect(noSites.status).toBe(400);
     expect((noSites.body as { code: string }).code).toBe('knowledge_no_sites');
-  });
-
-  it('fails closed when the gate is off', async () => {
-    const deps = await publishedDeps();
-    const captured: Captured = {};
-    await handleKnowledgeRefresh(fakeReq(), fakeRes(captured), tenant, 'product', {
-      ...deps,
-      knowledgeEnabled: async () => false,
-      refresh: async () => ({ status: 'completed', pagesIndexed: 0 }),
-    });
-    expect(captured.status).toBe(403);
   });
 });

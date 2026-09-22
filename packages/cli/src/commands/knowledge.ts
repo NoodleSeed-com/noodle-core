@@ -51,21 +51,14 @@ function usageFailure(message: string): CliFailure {
   };
 }
 
-function serviceFailure(
-  error: unknown,
-  target: { org: string; app: string; env: string },
-): CliFailure {
+function serviceFailure(error: unknown): CliFailure {
   if (error instanceof ServiceRequestError) {
-    const gated = error.code === 'knowledge_not_enabled';
-    const enable =
-      `noodle variables set NOODLE_KNOWLEDGE_ENABLED --value true --runtime cloud ` +
-      `--scope env --org ${target.org} --app ${target.app} --env ${target.env}`;
     return {
       code: error.code ?? 'service_error',
       message: error.message,
       cause: `The service responded with HTTP ${error.status}.`,
-      fix: gated ? enable : 'Check the target org/app/env and your access.',
-      next: gated ? enable : 'noodle knowledge list',
+      fix: 'Check the target org/app/env and your access.',
+      next: 'noodle knowledge list',
       exitCode: error.status === 403 ? EXIT.FAILURE : EXIT.UNREACHABLE,
     };
   }
@@ -285,6 +278,6 @@ export async function runKnowledge(
     }
     return 0;
   } catch (error) {
-    return printCliFailure('knowledge', serviceFailure(error, target), args.json);
+    return printCliFailure('knowledge', serviceFailure(error), args.json);
   }
 }

@@ -111,26 +111,6 @@ describe('noodle knowledge', () => {
     expect(joined).toContain('missing');
   });
 
-  it('surfaces the fail-closed gate error with its fix command', async () => {
-    const exit = await runKnowledge(['list', ...target, '--json'], {}, HOME, {
-      fetchImpl: fetchReturning(
-        {
-          code: 'knowledge_not_enabled',
-          error: 'knowledge is not enabled for this org/app/env',
-          fix: 'noodle variables set NOODLE_KNOWLEDGE_ENABLED --value true',
-        },
-        403,
-      ),
-    });
-    expect(exit).not.toBe(0);
-    const parsed = JSON.parse([...output, ...errors].join('\n')) as {
-      ok: boolean;
-      error: { message: string; next?: string; fix?: string };
-    };
-    expect(parsed.ok).toBe(false);
-    expect(JSON.stringify(parsed.error)).toContain('NOODLE_KNOWLEDGE_ENABLED');
-  });
-
   it('renders crawl state and budget on status when present', async () => {
     const exit = await runKnowledge(['status', 'product', ...target], {}, HOME, {
       fetchImpl: fetchReturning({

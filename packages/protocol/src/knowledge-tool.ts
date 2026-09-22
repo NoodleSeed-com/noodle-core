@@ -2,7 +2,7 @@
  * The generated `search_<name>` tool (ADR 0202 D4), shared by both era handlers. Like
  * `noodle_context`, it is a reserved non-fulfilment tool: listed from `server.knowledge`,
  * executed through the injected deployment-bound port, never through the fulfilment engine.
- * Gate off (or no port) ⇒ the tool is absent from listing and unknown at call time.
+ * A missing runtime port keeps the tool absent from listing and unknown at call time.
  */
 import type { RuntimeArtifact } from '@noodle-borg/compiler';
 import type { ExecuteDeps, KnowledgeSearchHit } from '@noodle-borg/runtime';
@@ -17,14 +17,13 @@ export function findKnowledgeComponent(
   return artifact.server.knowledge?.find((component) => component.generatedTool.name === toolName);
 }
 
-/** Listing predicate: the artifact declares knowledge AND the deployment's port is live. */
+/** Listing predicate: the artifact declares knowledge and the deployment has a search port. */
 export async function knowledgeToolsEnabled(
   artifact: RuntimeArtifact,
   deps: ExecuteDeps,
 ): Promise<boolean> {
   if ((artifact.server.knowledge?.length ?? 0) === 0) return false;
-  if (deps.knowledgeSearch === undefined) return false;
-  return deps.knowledgeSearch.enabled();
+  return deps.knowledgeSearch !== undefined;
 }
 
 export type KnowledgeCallOutcome =
@@ -40,7 +39,7 @@ export async function runKnowledgeSearchTool(
   const coerced = coerceToolArguments(component.generatedTool.inputSchema, rawArguments);
   if (coerced.issues.length > 0) return { kind: 'invalid', issues: coerced.issues };
   if (deps.knowledgeSearch === undefined) {
-    return { kind: 'error', reason: 'not_enabled', message: 'knowledge search is unavailable' };
+    return { kind: 'error', reason: 'provider_error', message: 'knowledge search is unavailable' };
   }
   const request = coerced.value as { query: string; limit?: number };
   const outcome = await deps.knowledgeSearch.search(component.name, request);

@@ -1,6 +1,6 @@
 /**
- * Runtime `search_<name>` execution (ADR 0202 amendment 2026-08-18): feature gate → bundled
- * BM25 for documents → bundled BM25 over the crawled site corpus → deterministic RRF fusion with
+ * Runtime `search_<name>` execution (ADR 0202 amendment 2026-08-18): bundled BM25 for documents
+ * → bundled BM25 over the crawled site corpus → deterministic RRF fusion with
  * the exact origin/path policy postfilter. Every query is in-process and free; the crawl-page
  * budget is enforced at crawl time (`crawl-lifecycle.ts`), not here. Before a component's first
  * completed crawl the site corpus is honestly empty, with the crawl state as the operator
@@ -18,7 +18,7 @@ import {
 } from '@noodle-borg/knowledge/portable';
 import { searchSiteCorpus } from './crawl-lifecycle.js';
 import type { KnowledgeDeployHooks } from './publication.js';
-import { type KnowledgeTenantRef, knowledgeEnableCommand } from './routes.js';
+import type { KnowledgeTenantRef } from './routes.js';
 
 /** The component facts the executor needs; a structural subset of the compiled component. */
 export interface KnowledgeSearchComponent {
@@ -32,7 +32,6 @@ export interface KnowledgeSearchRequest {
 }
 
 export interface KnowledgeSearchExecutor {
-  enabled(tenant: KnowledgeTenantRef): Promise<boolean>;
   /** Throws `KnowledgeError` or `SearchBudgetExhaustedError`; never returns partial truth. */
   search(
     tenant: KnowledgeTenantRef,
@@ -43,22 +42,13 @@ export interface KnowledgeSearchExecutor {
 
 export interface KnowledgeSearchExecutorDeps {
   readonly hooks: KnowledgeDeployHooks;
-  readonly knowledgeEnabled: (tenant: KnowledgeTenantRef) => Promise<boolean>;
 }
 
 export function createKnowledgeSearchExecutor(
   deps: KnowledgeSearchExecutorDeps,
 ): KnowledgeSearchExecutor {
   return {
-    enabled: (tenant) => deps.knowledgeEnabled(tenant),
-
     async search(tenant, component, request) {
-      if (!(await deps.knowledgeEnabled(tenant))) {
-        throw new KnowledgeError(
-          'request',
-          `knowledge is not enabled for this org/app/env; run: ${knowledgeEnableCommand(tenant)}`,
-        );
-      }
       if (request.query.length < MIN_QUERY_CHARS || request.query.length > MAX_QUERY_CHARS) {
         throw new KnowledgeError(
           'request',

@@ -11,17 +11,12 @@ const scope = { org: tenant.org, app: tenant.app, env: tenant.env };
 const sha = (text: string): string => createHash('sha256').update(text).digest('hex');
 
 async function publishedHarness(options?: {
-  enabled?: boolean;
   sites?: { origin: string; include: string[] }[];
   sitePages?: [string, string, string][];
 }) {
   const staging = new InMemoryKnowledgeStagingStore();
   const revisionStore = new InMemoryKnowledgeRevisionStore();
-  const enabled = options?.enabled ?? true;
-  const hooks = createKnowledgeDeployHooks(
-    { staging, revisionStore },
-    { knowledgeEnabled: async () => true },
-  );
+  const hooks = createKnowledgeDeployHooks({ staging, revisionStore }, {});
   const text = 'alpha document about pricing plans';
   const component = {
     name: 'product',
@@ -59,7 +54,7 @@ async function publishedHarness(options?: {
       })),
     );
   }
-  const executor = createKnowledgeSearchExecutor({ hooks, knowledgeEnabled: async () => enabled });
+  const executor = createKnowledgeSearchExecutor({ hooks });
   return { executor, component };
 }
 
@@ -95,14 +90,6 @@ describe('knowledge search executor', () => {
     const hits = await executor.search(tenant, component, { query: 'pricing plans', limit: 10 });
     expect(hits.some((hit) => hit.sourceKind === 'document')).toBe(true);
     expect(hits.some((hit) => hit.sourceKind === 'site')).toBe(false);
-  });
-
-  it('reports disabled through enabled() and refuses search when the gate is off', async () => {
-    const { executor, component } = await publishedHarness({ enabled: false });
-    expect(await executor.enabled(tenant)).toBe(false);
-    await expect(executor.search(tenant, component, { query: 'pricing' })).rejects.toThrow(
-      /not enabled/,
-    );
   });
 
   it('bounds the requested limit and rejects an out-of-bounds query', async () => {

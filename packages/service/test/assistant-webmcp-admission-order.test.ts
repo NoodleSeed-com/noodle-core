@@ -15,11 +15,9 @@ import {
 /**
  * Where a WebMCP bridge call's budget is spent, relative to the work the apps route does (ADR 0220).
  *
- * A browser agent retries far faster than a human, so a refusal that has already resolved the
- * deployment's knowledge gate hands an agent loop a way to spend the surface's resources on calls the
- * platform decided to reject before it looked. The refusal has to come first, and the only honest
- * proof is a probe on the work itself: `resolveAssistantKnowledge` awaits the deployment-bound port's
- * `enabled()`, so counting that counts the work.
+ * A browser agent retries far faster than a human, so a refusal that has already executed a knowledge
+ * search hands an agent loop a way to spend resources on calls the platform decided to reject. The
+ * refusal has to come first, and the only honest proof is a probe on the retrieval work itself.
  */
 
 const ORIGIN = 'https://www.acme.test';
@@ -78,7 +76,7 @@ describe('WebMCP bridge admission runs before the apps route resolves anything',
     // probe does fire on the path a bridge call takes when the budget lets it through.
     const admitted = await bridgeCall({ killed: false });
     expect(admitted.status).toBe(200);
-    expect(admitted.knowledgeGateReads).toBeGreaterThan(0);
+    expect(admitted.knowledgeSearches).toBeGreaterThan(0);
 
     const refused = await bridgeCall({ killed: true });
     expect(refused.status).toBe(429);
@@ -86,24 +84,18 @@ describe('WebMCP bridge admission runs before the apps route resolves anything',
     // but an earlier 429 added to this route later (an origin throttle, a mint cap) would keep this
     // test green while the ordering invariant it exists for went uncovered.
     expect(refused.code).toBe('daily_bridge_budget_exhausted');
-    expect(refused.knowledgeGateReads).toBe(0);
+    expect(refused.knowledgeSearches).toBe(0);
   });
 });
 
 async function bridgeCall(options: { readonly killed: boolean }): Promise<{
   readonly status: number;
   readonly code: unknown;
-  readonly knowledgeGateReads: number;
+  readonly knowledgeSearches: number;
 }> {
   const configStore = new InMemoryConfigStore();
   const registry = new ServerRegistry(undefined, undefined, configStore);
   const scope = { level: 'env' as const, ...tenant };
-  await configStore.setConfigValue({
-    kind: 'variable',
-    scope,
-    name: 'NOODLE_KNOWLEDGE_ENABLED',
-    value: 'true',
-  });
   await configStore.setConfigValue({
     kind: 'secret',
     scope,
@@ -111,9 +103,8 @@ async function bridgeCall(options: { readonly killed: boolean }): Promise<{
     value: 'provider-secret',
   });
 
-  // Counts exactly the await `resolveAssistantKnowledge` performs before it can answer. `wireKnowledge`
-  // takes its registry structurally, so the real wiring stays and only the bound port is observed.
-  const gateReads = vi.fn();
+  // Keep the real deployment-bound port and count only retrieval execution.
+  const searches = vi.fn();
   const stores = defaultKnowledgeStores();
   wireKnowledge(
     {
@@ -123,9 +114,9 @@ async function bridgeCall(options: { readonly killed: boolean }): Promise<{
           if (!port) throw new Error('knowledge search factory missing');
           return {
             ...port,
-            enabled: () => {
-              gateReads();
-              return port.enabled();
+            search: (componentName, request) => {
+              searches();
+              return port.search(componentName, request);
             },
           };
         }),
@@ -178,7 +169,7 @@ async function bridgeCall(options: { readonly killed: boolean }): Promise<{
 
   // Minting resolves nothing about knowledge; only the apps route does. Count from here so the
   // assertion is about the bridge call alone.
-  gateReads.mockClear();
+  searches.mockClear();
 
   const response = await fetch(`${base}/v1/assistant/apps`, {
     method: 'POST',
@@ -187,13 +178,17 @@ async function bridgeCall(options: { readonly killed: boolean }): Promise<{
       origin: ORIGIN,
       'content-type': 'application/json',
     },
-    body: JSON.stringify({ bridge: 'webmcp', method: 'tools/call', params: { name: 'ask' } }),
+    body: JSON.stringify({
+      bridge: 'webmcp',
+      method: 'tools/call',
+      params: { name: 'search_product', arguments: { query: 'platform' } },
+    }),
   });
   const payload = (await response.json().catch(() => ({}))) as { readonly code?: unknown };
   return {
     status: response.status,
     code: payload.code,
-    knowledgeGateReads: gateReads.mock.calls.length,
+    knowledgeSearches: searches.mock.calls.length,
   };
 }
 

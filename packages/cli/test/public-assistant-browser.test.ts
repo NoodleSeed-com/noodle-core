@@ -319,8 +319,6 @@ describe('a knowledge answer in a real browser (ADR 0202)', () => {
     for (const [name, value] of [
       ['MODEL_URL', 'https://models.example/v1'],
       ['MODEL', 'test'],
-      // The browser E2E fixture enables the gate explicitly (rollout keeps it off by default).
-      ['NOODLE_KNOWLEDGE_ENABLED', 'true'],
     ]) {
       await registry.configStore.setConfigValue({ kind: 'variable', scope, name, value });
     }

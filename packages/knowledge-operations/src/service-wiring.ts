@@ -51,8 +51,8 @@ export interface KnowledgeServiceStores {
   readonly crawlState?: CrawlStateStore;
   /**
    * Composition seams for tests and BYO providers: fetcher selection defaults to the managed
-   * first-party crawler; the deploy gate defaults to always-provisioned (the managed crawler
-   * needs no provisioning — BYO configuration checks bind here).
+   * first-party crawler; the managed crawler needs no provisioning and BYO configuration checks
+   * bind here.
    */
   readonly fetcherFor?: (tenant: KnowledgeTenantRef, component: CrawlableComponent) => SiteFetcher;
   /** BYO index selection override; defaults to declaration-driven provider adapters. */
@@ -91,16 +91,13 @@ export function budgetCeilingsResolver(
   };
 }
 
-/** Assemble route deps over the service's managed-config resolver (`NOODLE_KNOWLEDGE_ENABLED`). */
+/** Assemble the always-available knowledge route dependencies. */
 export function buildKnowledgeRouteDeps(
   stores: KnowledgeServiceStores,
-  resolveVariables: (tenant: KnowledgeTenantRef) => Promise<Record<string, string>>,
   maxBodyBytes: number,
 ): KnowledgeRouteDeps {
   return {
     staging: stores.staging,
-    knowledgeEnabled: async (tenant) =>
-      (await resolveVariables(tenant)).NOODLE_KNOWLEDGE_ENABLED === 'true',
     maxBodyBytes,
     ...(stores.codec === undefined ? {} : { codec: stores.codec }),
   };
@@ -156,7 +153,7 @@ export function wireKnowledge(
   readonly crawlState: CrawlStateStore;
 } {
   const resolved = stores ?? defaultKnowledgeStores();
-  const deps = buildKnowledgeRouteDeps(resolved, resolveVariables, maxBodyBytes);
+  const deps = buildKnowledgeRouteDeps(resolved, maxBodyBytes);
   const ceilings = budgetCeilingsResolver(resolveVariables);
   // The managed first-party crawler needs no provisioning, so the deploy gate defaults open;
   // BYO provider configuration checks replace this seam when a component declares a provider.
@@ -225,7 +222,6 @@ export function wireKnowledge(
     return knowledgeIndexFromDeclaration(resolvedDeclaration, config, scope);
   };
   const hooks = createKnowledgeDeployHooks(resolved, {
-    knowledgeEnabled: deps.knowledgeEnabled,
     siteProvisioned,
     indexFor: resolved.indexFor ?? defaultIndexFor,
   });
@@ -257,12 +253,10 @@ export function wireKnowledge(
   };
   const bareExecutor = createKnowledgeSearchExecutor({
     hooks,
-    knowledgeEnabled: deps.knowledgeEnabled,
   });
   // Refresh-on-traffic: serving a sites component also checks whether its refresh is due and
   // kicks the crawl in the background — the visitor's answer never waits on it.
   const executor: KnowledgeSearchExecutor = {
-    enabled: bareExecutor.enabled,
     search: async (tenant, component, request) => {
       const hits = await bareExecutor.search(tenant, component, request);
       if (component.sites.length > 0) {
@@ -294,7 +288,6 @@ export function wireKnowledge(
   registry.setKnowledgeDeployHooks(crawlingHooks, knowledgeSearchPortFactory(executor));
   const status: KnowledgeStatusDeps = {
     revisionStore: resolved.revisionStore,
-    knowledgeEnabled: deps.knowledgeEnabled,
     crawlState: (tenant, componentName) => crawlState.get(tenant, componentName),
     refresh: (tenant, component) => runComponentCrawl(crawlDeps, tenant, component),
     // Mirrors the fail-closed deploy gate above: without the managed project every site() is

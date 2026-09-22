@@ -31,10 +31,7 @@ async function harness(options?: { budget?: { org: number; app: number } }) {
   const revisionStore = new InMemoryKnowledgeRevisionStore();
   const crawlState = new InMemoryCrawlStateStore();
   const budgetStore = new InMemorySearchBudgetStore();
-  const hooks = createKnowledgeDeployHooks(
-    { staging, revisionStore },
-    { knowledgeEnabled: async () => true },
-  );
+  const hooks = createKnowledgeDeployHooks({ staging, revisionStore }, {});
   const text = 'alpha document about pricing plans';
   const component = {
     name: 'product',
@@ -64,9 +61,8 @@ async function harness(options?: { budget?: { org: number; app: number } }) {
     crawlState,
     budget,
     fetcherFor: () => fetcher,
-    knowledgeEnabled: async () => true,
   };
-  const executor = createKnowledgeSearchExecutor({ hooks, knowledgeEnabled: async () => true });
+  const executor = createKnowledgeSearchExecutor({ hooks });
   return {
     staging,
     revisionStore,

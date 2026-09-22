@@ -39,7 +39,6 @@ export {
   handleKnowledgePreflight,
   type KnowledgeRouteDeps,
   type KnowledgeTenantRef,
-  knowledgeEnableCommand,
   knowledgeTenantKey,
 } from './routes.js';
 export {

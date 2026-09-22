@@ -1,7 +1,7 @@
 /**
  * Knowledge control-plane route handlers (ADR 0202 as amended). The service dispatch
  * authorizes the request and parses the tenant path, then delegates here; these handlers own
- * validation, the feature gate, staging, and wire shapes — never auth.
+ * validation, staging, and wire shapes — never auth.
  */
 import { createHash } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
@@ -23,8 +23,6 @@ export interface KnowledgeTenantRef {
 
 export interface KnowledgeRouteDeps {
   readonly staging: KnowledgeStagingStore;
-  /** Managed-config feature gate (`NOODLE_KNOWLEDGE_ENABLED`), resolved org → app → env. */
-  readonly knowledgeEnabled: (tenant: KnowledgeTenantRef) => Promise<boolean>;
   readonly maxBodyBytes: number;
   /** Seals staged bytes at rest; the service injects its secret-box codec. */
   readonly codec?: DocumentTextCodec;
@@ -34,22 +32,6 @@ export interface KnowledgeRouteDeps {
 
 export function knowledgeTenantKey(tenant: KnowledgeTenantRef): string {
   return `${tenant.org}/${tenant.app}/${tenant.env}`;
-}
-
-/** The one command that turns the feature on for a tenant; every fail-closed error names it. */
-export function knowledgeEnableCommand(tenant: KnowledgeTenantRef): string {
-  return (
-    `noodle variables set NOODLE_KNOWLEDGE_ENABLED --value true --runtime cloud ` +
-    `--scope env --org ${tenant.org} --app ${tenant.app} --env ${tenant.env}`
-  );
-}
-
-function sendGateClosed(res: ServerResponse, tenant: KnowledgeTenantRef): void {
-  sendJson(res, 403, {
-    code: 'knowledge_not_enabled',
-    error: 'knowledge is not enabled for this org/app/env',
-    fix: knowledgeEnableCommand(tenant),
-  });
 }
 
 const SHA256_HEX = /^[0-9a-f]{64}$/;
@@ -65,7 +47,6 @@ export async function handleKnowledgePreflight(
   tenant: KnowledgeTenantRef,
   deps: KnowledgeRouteDeps,
 ): Promise<void> {
-  if (!(await deps.knowledgeEnabled(tenant))) return sendGateClosed(res, tenant);
   const body = await readBody(req, deps.maxBodyBytes);
   if (!body.ok) return sendJson(res, body.status, { error: body.error });
   let request: ReturnType<typeof knowledgePreflightRequestSchema.parse>;
@@ -113,7 +94,6 @@ export async function handleKnowledgeDocumentUpload(
   sha256: string,
   deps: KnowledgeRouteDeps,
 ): Promise<void> {
-  if (!(await deps.knowledgeEnabled(tenant))) return sendGateClosed(res, tenant);
   if (!SHA256_HEX.test(sha256)) {
     return sendJson(res, 400, {
       code: 'invalid_knowledge_request',

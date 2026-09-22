@@ -95,7 +95,6 @@ describe('assistant loop knowledge tools', () => {
     for (const [name, value] of [
       ['ASSISTANT_MODEL_BASE_URL', 'https://models.example/v1'],
       ['ASSISTANT_MODEL', 'acme-model'],
-      ['NOODLE_KNOWLEDGE_ENABLED', 'true'],
     ] as const) {
       await configStore.setConfigValue({ kind: 'variable', scope, name, value });
     }
@@ -147,7 +146,7 @@ describe('assistant loop knowledge tools', () => {
     });
     expect(sessionResponse.status).toBe(201);
     const session = await sessionResponse.json();
-    return { base, modelFetch, session, configStore, scope };
+    return { base, modelFetch, session };
   }
 
   function turn(base: string, token: string, message: string): Promise<Response> {
@@ -221,27 +220,6 @@ describe('assistant loop knowledge tools', () => {
     expect(secondBody).toContain('Pricing guide');
     expect(secondBody).toContain('pricing starts at ten dollars');
   });
-
-  it('unlists the tool when the gate is flipped off after deploy (kill switch)', async () => {
-    const { base, modelFetch, session, configStore, scope } = await start();
-    await configStore.setConfigValue({
-      kind: 'variable',
-      scope,
-      name: 'NOODLE_KNOWLEDGE_ENABLED',
-      value: 'false',
-    });
-    modelFetch.mockResolvedValueOnce(
-      modelReply({
-        choices: [{ message: { role: 'assistant', content: 'Hello.' } }],
-        usage: { prompt_tokens: 5, completion_tokens: 2 },
-      }),
-    );
-    const response = await turn(base, session.token, 'Hello');
-    expect(response.status).toBe(200);
-    await response.text();
-    const body = String(modelFetch.mock.calls[0]?.[1]?.body);
-    expect(body).not.toContain('search_product');
-  });
 });
 
 describe('assistant/MCP argument-validation parity', () => {
@@ -279,7 +257,6 @@ describe('assistant/MCP argument-validation parity', () => {
     const knowledge = {
       components: [component] as never,
       port: {
-        enabled: async () => true,
         search: async (name: string, request: unknown) => {
           searches.push({ name, request });
           return { ok: true as const, hits: [] };

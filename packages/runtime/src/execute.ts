@@ -93,10 +93,9 @@ export interface KnowledgeSearchHit {
 
 /**
  * Deployment-bound knowledge retrieval port (structural; the service adapts its executor).
- * `enabled` gates listing as well as calls — a disabled surface lists no knowledge tools.
+ * Presence of the port makes declared knowledge tools available.
  */
 export interface KnowledgeSearchPort {
-  enabled(): Promise<boolean>;
   search(
     componentName: string,
     request: { readonly query: string; readonly limit?: number | undefined },
@@ -104,7 +103,7 @@ export interface KnowledgeSearchPort {
     | { readonly ok: true; readonly hits: readonly KnowledgeSearchHit[] }
     | {
         readonly ok: false;
-        readonly reason: 'budget_exhausted' | 'not_enabled' | 'provider_error';
+        readonly reason: 'budget_exhausted' | 'provider_error';
         readonly message: string;
       }
   >;

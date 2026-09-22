@@ -144,36 +144,6 @@ describe('prepareKnowledgeDocumentsForDeploy', () => {
       }),
     ).rejects.toMatchObject({ stage: 'validate' });
   });
-
-  it('surfaces the service fail-closed error with its fix command', async () => {
-    const root = projectWith({ 'knowledge/a.md': 'alpha text' });
-    const fetchImpl = (async () =>
-      new Response(
-        JSON.stringify({
-          code: 'knowledge_not_enabled',
-          error: 'knowledge is not enabled for this org/app/env',
-          fix: 'noodle variables set NOODLE_KNOWLEDGE_ENABLED --value true',
-        }),
-        { status: 403 },
-      )) as unknown as typeof fetch;
-    const attempt = prepareKnowledgeDocumentsForDeploy({
-      manifest: manifestWith([
-        {
-          name: 'product',
-          title: 'Product',
-          description: 'Docs',
-          documents: [{ path: 'knowledge/a.md', title: 'A', sha256: sha('alpha text'), bytes: 10 }],
-          sites: [],
-        },
-      ]),
-      rootDir: root,
-      ...target,
-      fetchImpl,
-    });
-    await expect(attempt).rejects.toBeInstanceOf(KnowledgeDeployError);
-    await expect(attempt).rejects.toMatchObject({ stage: 'preflight' });
-    await expect(attempt).rejects.toThrow(/NOODLE_KNOWLEDGE_ENABLED/);
-  });
 });
 
 /**

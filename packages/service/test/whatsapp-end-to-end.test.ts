@@ -72,15 +72,15 @@ describe.skipIf(!databaseUrl)('WhatsApp channel through real HTTP and encrypted 
       new ChannelSecretBoxCipher(new SecretBox(staticMasterKeyProvider(randomBytes(32)))),
     );
     await store.ensureSchema();
-    for (const [name, value] of [
-      ['WHATSAPP_API_KEY', providerSecret],
-      ['WHATSAPP_WEBHOOK_SECRET', callbackSecret],
-    ])
+    for (const [name, value] of Object.entries({
+      WHATSAPP_API_KEY: providerSecret,
+      WHATSAPP_WEBHOOK_SECRET: callbackSecret,
+    }))
       await registry.configStore.setConfigValue({
         kind: 'secret',
         scope: { level: 'env', ...tenant },
-        name: name!,
-        value: value!,
+        name,
+        value,
       });
     const knowledge = defaultKnowledgeStores();
     wireKnowledge(
@@ -89,12 +89,6 @@ describe.skipIf(!databaseUrl)('WhatsApp channel through real HTTP and encrypted 
       (ref) => registry.configStore.resolveConfigValues('variable', { level: 'env', ...ref }),
       1024 * 1024,
     );
-    await registry.configStore.setConfigValue({
-      kind: 'variable',
-      scope: { level: 'env', ...tenant },
-      name: 'NOODLE_KNOWLEDGE_ENABLED',
-      value: 'true',
-    });
     await knowledge.staging.put(
       'acme/site/prod',
       documentSha,
@@ -138,7 +132,8 @@ describe.skipIf(!databaseUrl)('WhatsApp channel through real HTTP and encrypted 
               return Response.json(webhook);
             }
             if (endpoint.pathname === '/messages') {
-              sent.push(JSON.parse(init!.body as string));
+              if (typeof init?.body !== 'string') throw new Error('message body missing');
+              sent.push(JSON.parse(init.body));
               return Response.json({ messages: [{ id: `wamid.${sent.length}` }] });
             }
             throw new Error('unexpected provider operation');
@@ -162,7 +157,8 @@ describe.skipIf(!databaseUrl)('WhatsApp channel through real HTTP and encrypted 
           }),
         },
         assistantModelFetch: async (_url, init) => {
-          const input = JSON.parse(init!.body as string);
+          if (typeof init?.body !== 'string') throw new Error('model request body missing');
+          const input = JSON.parse(init.body);
           modelRequests.push(input);
           if (!input.messages.some((message: { role: string }) => message.role === 'tool'))
             return Response.json({

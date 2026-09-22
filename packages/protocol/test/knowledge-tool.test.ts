@@ -7,7 +7,7 @@ import { connectV2Client, createTestDualEraHandler, testServedArtifact } from '.
 
 /**
  * The generated `search_<name>` tool (ADR 0202 D4) projected through both MCP eras from one
- * artifact. Gate off ⇒ the tool is absent from listing, not merely refused at call time.
+ * artifact. A missing runtime port keeps the tool absent from listing, not merely refused at call time.
  */
 
 const HITS = [
@@ -53,14 +53,13 @@ function withKnowledge(artifact: RuntimeArtifact = resolvedArtifact()): RuntimeA
 
 function port(overrides?: Partial<KnowledgeSearchPort>): KnowledgeSearchPort {
   return {
-    enabled: async () => true,
     search: async () => ({ ok: true, hits: HITS }),
     ...overrides,
   };
 }
 
 describe('generated knowledge search tool (legacy era)', () => {
-  it('lists and calls search_<name> when the port is enabled', async () => {
+  it('lists and calls search_<name> when the runtime port is available', async () => {
     const client = await connectClientTo({
       artifact: withKnowledge(),
       deps: { ...buildDeps(), knowledgeSearch: port() },
@@ -81,14 +80,7 @@ describe('generated knowledge search tool (legacy era)', () => {
     expect(result.structuredContent).toMatchObject({ hits: [{ title: 'Pricing guide' }] });
   });
 
-  it('omits the tool from listing when the gate is off or the port is absent', async () => {
-    const gateOff = await connectClientTo({
-      artifact: withKnowledge(),
-      deps: { ...buildDeps(), knowledgeSearch: port({ enabled: async () => false }) },
-    });
-    expect((await gateOff.listTools()).tools.map((tool) => tool.name)).not.toContain(
-      'search_product',
-    );
+  it('omits the tool from listing when the runtime port is absent', async () => {
     const noPort = await connectClientTo({ artifact: withKnowledge(), deps: buildDeps() });
     expect((await noPort.listTools()).tools.map((tool) => tool.name)).not.toContain(
       'search_product',
@@ -156,6 +148,18 @@ describe('generated knowledge search tool (2026-07-28 era)', () => {
         arguments: { query: 'pricing' },
       });
       expect(result.structuredContent).toMatchObject({ hits: [{ title: 'Pricing guide' }] });
+    } finally {
+      await close();
+    }
+  });
+
+  it('omits the generated tool when the runtime port is absent', async () => {
+    const handler = createTestDualEraHandler(testServedArtifact(withKnowledge), {});
+    const { client, close } = await connectV2Client(handler, 'pinned-modern-no-knowledge-port');
+    try {
+      expect((await client.listTools()).tools.map((tool) => tool.name)).not.toContain(
+        'search_product',
+      );
     } finally {
       await close();
     }

@@ -81,7 +81,6 @@ function harness(selected: KnowledgeIndex) {
   const hooks = createKnowledgeDeployHooks(
     { staging, revisionStore },
     {
-      knowledgeEnabled: async () => true,
       indexFor: async (_scope, componentName, declaration) => {
         seen.push({ componentName, declaration });
         // The wireKnowledge implementation resolves a declaration (or looks the component up)

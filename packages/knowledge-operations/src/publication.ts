@@ -17,7 +17,7 @@ import {
   type SearchRequest,
   type StagedDocument,
 } from '@noodle-borg/knowledge/portable';
-import { type KnowledgeTenantRef, knowledgeEnableCommand, knowledgeTenantKey } from './routes.js';
+import { type KnowledgeTenantRef, knowledgeTenantKey } from './routes.js';
 import type { KnowledgeServiceStores } from './service-wiring.js';
 
 export interface KnowledgeDeployFailure {
@@ -90,7 +90,6 @@ const SWEEP_INTERVAL_MS = 10 * 60 * 1000;
 export function createKnowledgeDeployHooks(
   stores: KnowledgeServiceStores,
   options: {
-    readonly knowledgeEnabled: (tenant: KnowledgeTenantRef) => Promise<boolean>;
     /** Managed site datastore existence; when bound, a site() deploy fails before activation. */
     readonly siteProvisioned?: (tenant: KnowledgeTenantRef) => Promise<boolean>;
     /**
@@ -190,15 +189,6 @@ export function createKnowledgeDeployHooks(
   const hooks: KnowledgeDeployHooks = {
     async publish(tenant, deploymentId, components) {
       const withDocuments = components.filter((component) => component.documents.length > 0);
-      if (components.length > 0 && !(await options.knowledgeEnabled(tenant))) {
-        throw new KnowledgePublicationError([
-          {
-            code: 'knowledge_not_enabled',
-            path: 'knowledge',
-            message: `knowledge is not enabled for this org/app/env; run: ${knowledgeEnableCommand(tenant)}`,
-          },
-        ]);
-      }
       const withSites = components.filter((component) => component.sites.length > 0);
       if (withSites.length > 0 && options.siteProvisioned !== undefined) {
         if (!(await options.siteProvisioned(tenant))) {
