@@ -30,6 +30,10 @@ import {
   handleApplicationConnections,
 } from './business-information-connections.js';
 import {
+  type BusinessConversationRouteDeps,
+  handleApplicationConversations,
+} from './business-information-conversations.js';
+import {
   handleBusinessNotice,
   handleOrganizationAgreement,
 } from './business-information-notice.js';
@@ -54,6 +58,7 @@ import { handleNativeRecordLifecycle } from './business-native-lifecycle.js';
 
 export interface BusinessInformationDispatchDeps
   extends BusinessActivityRouteDeps,
+    BusinessConversationRouteDeps,
     BusinessConnectionRouteDeps,
     Partial<Omit<BusinessChannelRouteDeps, keyof BusinessInformationRouteDeps>> {
   readonly logger: Logger;
@@ -137,6 +142,10 @@ export function dispatchBusinessInformationRoutes(
   )
     return run(req, res, deps, () =>
       handleApplicationActivity(req, res, url, installationRef, deps),
+    );
+  if (installationRef.action === 'conversations')
+    return run(req, res, deps, () =>
+      handleApplicationConversations(req, res, url, installationRef, deps),
     );
   if (installationRef.action === 'connections')
     return run(req, res, deps, () => handleApplicationConnections(req, res, installationRef, deps));

@@ -1,5 +1,6 @@
 /** Solution installation/operator catalog. Imports only dependency-free sibling data. */
 
+import { SOLUTION_CONVERSATIONS } from './catalog-data-solution-conversations.js';
 import { SOLUTION_DRAFTS } from './catalog-data-solution-drafts.js';
 import {
   AUTH_TOKEN,
@@ -194,6 +195,7 @@ export const CATALOG_SOLUTIONS: CommandSpec = {
         },
       ],
     },
+    SOLUTION_CONVERSATIONS,
     {
       name: 'activity',
       summary: 'Inspect payload-free operation evidence and its retention policy.',

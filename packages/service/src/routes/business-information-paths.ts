@@ -18,11 +18,14 @@ export interface SolutionInstallationRef {
     | 'assignees'
     | 'records'
     | 'activity'
+    | 'conversations'
     | 'export'
     | 'source';
   readonly connectionId?: string;
   readonly connectionAction?: 'connect' | 'disconnect';
   readonly sourceAction?: 'pause' | 'resume' | 'refresh';
+  readonly conversationAction?: 'list' | 'show' | 'export' | 'forget';
+  readonly conversationId?: string;
 }
 
 export interface PublicSolutionIntakeRef {
@@ -63,6 +66,27 @@ export function parseSolutionInstallationPath(
           action: 'connections',
           ...(connectionId === undefined ? {} : { connectionId }),
           ...(connectionAction === undefined ? {} : { connectionAction }),
+        };
+  }
+  const conversations =
+    /^\/v1\/orgs\/([^/]+)\/solution-installations\/([^/]+)\/conversations(?:\/(export|forget|cv_[A-Za-z0-9_-]{8,64}))?$/.exec(
+      pathname,
+    );
+  if (conversations !== null) {
+    const org = decoded(conversations, 1),
+      installationId = decoded(conversations, 2),
+      segment = conversations[3];
+    return org === undefined || installationId === undefined
+      ? undefined
+      : {
+          org,
+          installationId,
+          action: 'conversations',
+          ...(segment === undefined
+            ? { conversationAction: 'list' }
+            : segment === 'export' || segment === 'forget'
+              ? { conversationAction: segment }
+              : { conversationAction: 'show', conversationId: segment }),
         };
   }
   const application =

@@ -116,6 +116,8 @@ export interface ServiceOptions {
   readonly conversationHistory?: {
     readonly store: ConversationHistoryStore;
     readonly policy: ConversationPolicySource;
+    /** Binds operator paging cursors across instances; a per-process random key when absent. */
+    readonly identityKey?: string;
   };
   /** Durable environment-scoped renderer appearance overrides. */
   readonly assistantAppearance?: AssistantAppearanceSettingsStore;

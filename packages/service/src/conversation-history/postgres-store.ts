@@ -5,10 +5,13 @@ import type { TenantRef } from '../store.js';
 import {
   CONVERSATION_DAY_MS,
   type ConversationChannel,
+  type ConversationForgetResult,
   type ConversationHeader,
   type ConversationHistoryStore,
   type ConversationItem,
+  type ConversationListPosition,
   type ConversationSubject,
+  type ConversationSummary,
   conversationTenantKey,
   type StoredConversation,
   type StoredConversationItem,
@@ -179,6 +182,76 @@ export class PostgresConversationHistoryStore implements ConversationHistoryStor
       lastMessageAt: Number(row.last_message_at),
       items,
     };
+  }
+
+  async list(
+    tenant: TenantRef,
+    input: {
+      readonly now: number;
+      readonly limit: number;
+      readonly after?: ConversationListPosition;
+      readonly channel?: ConversationChannel;
+    },
+  ): Promise<readonly ConversationSummary[]> {
+    // Ids compare in code-unit order ("C") so the keyset matches every other store.
+    const { rows } = await this.pool.query<HeaderRow & { id: string; item_count: number }>(
+      `SELECT c.id, c.channel, c.subject_kind, c.subject_ref, c.started_at, c.last_message_at,
+              COUNT(*)::int AS item_count
+       FROM assistant_conversations c JOIN assistant_conversation_items i
+         ON i.tenant_key = c.tenant_key AND i.conversation_id = c.id AND i.expires_at > $2
+       WHERE c.tenant_key = $1 AND ($3::text IS NULL OR c.channel = $3)
+         AND ($4::bigint IS NULL OR c.last_message_at < $4
+              OR (c.last_message_at = $4 AND c.id COLLATE "C" < $5::text COLLATE "C"))
+       GROUP BY c.tenant_key, c.id
+       ORDER BY c.last_message_at DESC, c.id COLLATE "C" DESC LIMIT $6`,
+      [
+        conversationTenantKey(tenant),
+        input.now,
+        input.channel ?? null,
+        input.after?.lastMessageAt ?? null,
+        input.after?.id ?? null,
+        input.limit,
+      ],
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      channel: row.channel,
+      subject: { kind: row.subject_kind, ref: row.subject_ref },
+      startedAt: Number(row.started_at),
+      lastMessageAt: Number(row.last_message_at),
+      itemCount: row.item_count,
+    }));
+  }
+
+  forget(tenant: TenantRef, id: string): Promise<ConversationForgetResult> {
+    return this.#erase('id = $2', [conversationTenantKey(tenant), id]);
+  }
+
+  forgetSubject(
+    tenant: TenantRef,
+    subject: ConversationSubject,
+  ): Promise<ConversationForgetResult> {
+    return this.#erase('subject_kind = $2 AND subject_ref = $3', [
+      conversationTenantKey(tenant),
+      subject.kind,
+      subject.ref,
+    ]);
+  }
+
+  /** Items are deleted and counted before their conversations, whose cascade would hide the count. */
+  #erase(match: string, values: readonly unknown[]): Promise<ConversationForgetResult> {
+    return withPostgresTransaction(this.pool, async (client) => {
+      const selected = `SELECT id FROM assistant_conversations WHERE tenant_key = $1 AND ${match} FOR UPDATE`;
+      const items = await client.query(
+        `DELETE FROM assistant_conversation_items WHERE tenant_key = $1 AND conversation_id IN (${selected})`,
+        [...values],
+      );
+      const conversations = await client.query(
+        `DELETE FROM assistant_conversations WHERE tenant_key = $1 AND ${match}`,
+        [...values],
+      );
+      return { conversations: conversations.rowCount ?? 0, items: items.rowCount ?? 0 };
+    });
   }
 
   async purgeExpired(input: { readonly limit?: number }): Promise<number> {

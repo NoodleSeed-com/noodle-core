@@ -2,10 +2,13 @@ import type { TenantRef } from '../store.js';
 import {
   CONVERSATION_DAY_MS,
   type ConversationChannel,
+  type ConversationForgetResult,
   type ConversationHeader,
   type ConversationHistoryStore,
   type ConversationItem,
+  type ConversationListPosition,
   type ConversationSubject,
+  type ConversationSummary,
   conversationTenantKey,
   type StoredConversation,
   type StoredConversationItem,
@@ -86,6 +89,73 @@ export class InMemoryConversationHistoryStore implements ConversationHistoryStor
       lastMessageAt: row.lastMessageAt,
       items,
     };
+  }
+
+  async list(
+    tenant: TenantRef,
+    input: {
+      readonly now: number;
+      readonly limit: number;
+      readonly after?: ConversationListPosition;
+      readonly channel?: ConversationChannel;
+    },
+  ): Promise<readonly ConversationSummary[]> {
+    const tenantKey = conversationTenantKey(tenant);
+    const { after } = input;
+    return [...this.#rows.values()]
+      .filter(
+        (row) =>
+          conversationTenantKey(row.header.tenant) === tenantKey &&
+          (input.channel === undefined || row.header.channel === input.channel) &&
+          (after === undefined ||
+            row.lastMessageAt < after.lastMessageAt ||
+            (row.lastMessageAt === after.lastMessageAt && row.header.id < after.id)),
+      )
+      .map((row) => ({
+        id: row.header.id,
+        channel: row.header.channel,
+        subject: row.header.subject,
+        startedAt: row.startedAt,
+        lastMessageAt: row.lastMessageAt,
+        itemCount: row.items.filter((item) => item.expiresAt > input.now).length,
+      }))
+      .filter((row) => row.itemCount > 0)
+      .sort((left, right) =>
+        left.lastMessageAt !== right.lastMessageAt
+          ? right.lastMessageAt - left.lastMessageAt
+          : left.id < right.id
+            ? 1
+            : -1,
+      )
+      .slice(0, input.limit);
+  }
+
+  async forget(tenant: TenantRef, id: string): Promise<ConversationForgetResult> {
+    const key = rowKey(tenant, id);
+    const row = this.#rows.get(key);
+    if (!row) return { conversations: 0, items: 0 };
+    this.#rows.delete(key);
+    return { conversations: 1, items: row.items.length };
+  }
+
+  async forgetSubject(
+    tenant: TenantRef,
+    subject: ConversationSubject,
+  ): Promise<ConversationForgetResult> {
+    const tenantKey = conversationTenantKey(tenant);
+    const removed = { conversations: 0, items: 0 };
+    for (const [key, row] of this.#rows) {
+      if (
+        conversationTenantKey(row.header.tenant) !== tenantKey ||
+        row.header.subject.kind !== subject.kind ||
+        row.header.subject.ref !== subject.ref
+      )
+        continue;
+      this.#rows.delete(key);
+      removed.conversations += 1;
+      removed.items += row.items.length;
+    }
+    return removed;
   }
 
   async purgeExpired(input: { readonly limit?: number }): Promise<number> {

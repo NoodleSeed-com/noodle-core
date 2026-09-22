@@ -1,4 +1,3 @@
-import { createHash, randomBytes } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { DailyCounterStore } from '@noodle-borg/admission-limits/portable';
@@ -71,7 +70,9 @@ import { resolveRecoveryMode, serveRecoveryQuarantine } from './recovery-quarant
 import { ServerRegistry } from './registry.js';
 import { assistantStoreOptions, createPostgresAssistantStores } from './serve-assistant-stores.js';
 import {
+  createConversationHistoryOptions,
   createLocalOperationStores,
+  createOperationEvidenceOptions,
   createPostgresOperationStores,
 } from './serve-operation-stores.js';
 import type { RunningService, ServeServiceOptions } from './serve-options.js';
@@ -393,25 +394,17 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
   const alertTimer = setInterval(() => alertEvaluator.maybeSweep(), ALERT_EVALUATION_INTERVAL_MS);
   alertTimer.unref?.();
 
-  const operationEvidence = businessInformationEnabled
-    ? {
-        store: operationStores.evidence,
-        coordination: operationStores.coordination,
-        epoch: operationEvidenceEpoch,
-        identityKey: createHash('sha256')
-          .update('operation-evidence\0')
-          .update(
-            options.operationEvidenceIdentityKey ??
-              options.businessInformationSourceIdentityKey ??
-              options.secretMasterKey ??
-              randomBytes(32),
-          )
-          .digest('hex'),
-        ...(options.clock === undefined
-          ? {}
-          : { now: () => options.clock?.().getTime() ?? Date.now() }),
-      }
-    : undefined;
+  const operationEvidence = createOperationEvidenceOptions(
+    options,
+    operationStores,
+    operationEvidenceEpoch,
+    businessInformationEnabled,
+  );
+  const conversationHistory = createConversationHistoryOptions(
+    options,
+    operationStores,
+    businessInformationEnabled,
+  );
   let businessInformationTimer: NodeJS.Timeout | undefined;
   let stopBusinessInformationSweep: (() => void) | undefined;
   let businessInformationSourceTimer: NodeJS.Timeout | undefined;
@@ -420,6 +413,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       [
         businessInformationStore,
         businessInformationSourceStore,
+        conversationHistory?.store,
         operationEvidence === undefined
           ? undefined
           : {
@@ -711,6 +705,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       ...handlerBaseOptions,
       ...(whatsapp ? { whatsapp } : {}),
       ...(operationEvidence === undefined ? {} : { operationEvidence }),
+      ...(conversationHistory === undefined ? {} : { conversationHistory }),
       ...(connectionRuntime === undefined ? {} : { connectionRuntime }),
       ...(knowledge === undefined ? {} : { knowledge }),
       ...(capabilities === undefined ? {} : { capabilities }),

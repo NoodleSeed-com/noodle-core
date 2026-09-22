@@ -17,7 +17,6 @@ import {
   type TenantRouteRef,
 } from '@noodle-borg/transport-http';
 import { AnonymousConsumerLimiter, createAdmissionGate } from './admission.js';
-import { ApplicationActivity } from './application-activity.js';
 import { createApplicationServingRuntime } from './application-runtime-target.js';
 import { createArchivePreflight } from './archive-preflight.js';
 import { ArchiveSweeper, resolveArchiveRetentionDays } from './archive-sweeper.js';
@@ -94,6 +93,7 @@ import { handleRollback } from './routes/rollback.js';
 import { createServicePrincipalDispatcher } from './routes/service-principals-dispatch.js';
 import { createServiceProbeDispatcher } from './routes/service-probes.js';
 import { dispatchWhatsAppRoutes } from './routes/whatsapp.js';
+import { createHistoryProjections } from './service-history-projections.js';
 import { servicePrincipalDataPlaneHooks } from './service-principal-data-plane.js';
 import { InMemoryAlertRuleStore } from './store/alert-rules.js';
 import { type AuditSink, StdoutAuditSink } from './store/audit.js';
@@ -147,14 +147,7 @@ export function createServiceHandler(
   const { publicTenantRouting } = mcp.mcpRoutingOptions(options, controlPlane);
   const resolveEndpointOptions = (org: string) =>
     mcp.endpointUrlOptionsForOrg(options, controlPlane, org);
-  const activity =
-    options.operationEvidence === undefined
-      ? undefined
-      : new ApplicationActivity({
-          ...options.operationEvidence,
-          allowance: async (org, request) =>
-            moduleHost.resolveActivityHistoryAllowance?.(org, request),
-        });
+  const { activity, conversations } = createHistoryProjections(options, moduleHost);
   const withIntentMode = createIntentTargetResolver(intentSettings, intentPreviewOrgs);
   const {
     activateInstallation,
@@ -398,6 +391,7 @@ export function createServiceHandler(
         activateInstallation,
         readInstallationActivation,
         ...(activity === undefined ? {} : { activity }),
+        ...(conversations === undefined ? {} : { conversations }),
         ...(options.connectionRuntime === undefined
           ? {}
           : {

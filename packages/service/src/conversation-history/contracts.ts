@@ -57,6 +57,29 @@ export interface StoredConversation extends ConversationHeader {
   readonly items: readonly StoredConversationItem[];
 }
 
+/** A list row: metadata only, so listing never opens sealed content. */
+export interface ConversationSummary {
+  readonly id: string;
+  readonly channel: ConversationChannel;
+  readonly subject: ConversationSubject;
+  readonly startedAt: number;
+  readonly lastMessageAt: number;
+  /** Items still unexpired at the listing time. */
+  readonly itemCount: number;
+}
+
+/** Keyset position: newest first by last message time, then id (code-unit order) descending. */
+export interface ConversationListPosition {
+  readonly lastMessageAt: number;
+  readonly id: string;
+}
+
+/** Physical rows removed by an erasure. */
+export interface ConversationForgetResult {
+  readonly conversations: number;
+  readonly items: number;
+}
+
 export interface ConversationHistoryStore {
   /**
    * Appends items, each expiring `days` after its own time, creating the conversation on first write.
@@ -78,6 +101,20 @@ export interface ConversationHistoryStore {
   reown(tenant: TenantRef, id: string, subject: ConversationSubject): Promise<boolean>;
   /** Only items unexpired at `now`: the access cutoff is immediate, whatever the purge backlog. */
   read(tenant: TenantRef, id: string, now: number): Promise<StoredConversation | undefined>;
+  /** Conversations with at least one item unexpired at `now`, newest first, strictly after `after`. */
+  list(
+    tenant: TenantRef,
+    input: {
+      readonly now: number;
+      readonly limit: number;
+      readonly after?: ConversationListPosition;
+      readonly channel?: ConversationChannel;
+    },
+  ): Promise<readonly ConversationSummary[]>;
+  /** Erases one conversation and every item, expired or not. Unknown ids remove nothing. */
+  forget(tenant: TenantRef, id: string): Promise<ConversationForgetResult>;
+  /** Erases every conversation of exactly this subject kind and reference in this tenant. */
+  forgetSubject(tenant: TenantRef, subject: ConversationSubject): Promise<ConversationForgetResult>;
   /** Physically removes expired items, then expired conversations; returns rows removed. */
   purgeExpired(input: { readonly limit?: number }): Promise<number>;
 }

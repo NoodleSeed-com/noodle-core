@@ -221,6 +221,10 @@ const HANDLER_FAMILY_SURFACES = {
     'solutions activity preview',
     'solutions activity settings get',
     'solutions activity settings set',
+    'solutions conversations list',
+    'solutions conversations show',
+    'solutions conversations export',
+    'solutions conversations forget',
     'solutions connections list',
     'solutions connections connect',
     'solutions connections disconnect',
@@ -445,6 +449,22 @@ const NESTED_HANDLER_CASES = [
   {
     implementation: 'solutions_activity_export',
     argv: ['solutions', 'activity', 'export', 'installation', '--org', 'organization', '--json'],
+    exit: 3,
+  },
+  {
+    implementation: 'solutions_conversations_forget',
+    argv: [
+      'solutions',
+      'conversations',
+      'forget',
+      'installation',
+      '--customer',
+      'customer',
+      '--confirm',
+      '--org',
+      'organization',
+      '--json',
+    ],
     exit: 3,
   },
   {

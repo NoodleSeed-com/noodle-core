@@ -12,6 +12,7 @@ import { EXIT, printJsonOk } from './output.js';
 import { authRequired, printCliFailure, serviceFailure, usageError } from './shared.js';
 import { runSolutionActivity } from './solutions-activity.js';
 import { runSolutionConnections } from './solutions-connections.js';
+import { runSolutionConversations } from './solutions-conversations.js';
 import { runSolutionOperations } from './solutions-coordination.js';
 import { runSolutionDrafts } from './solutions-drafts.js';
 import { runSolutionInstallationOptions } from './solutions-installation-options.js';
@@ -146,6 +147,8 @@ export async function runSolutions(
     return runSolutionOnboarding(rest[0], rest.slice(1), env, home, options);
   if (rest[0] === 'operations') return runSolutionOperations(rest.slice(1), env, home, options);
   if (rest[0] === 'activity') return runSolutionActivity(rest.slice(1), env, home, options);
+  if (rest[0] === 'conversations')
+    return runSolutionConversations(rest.slice(1), env, home, options);
   if (rest[0] === 'connections') return runSolutionConnections(rest.slice(1), env, home, options);
   if (rest[0] === 'installation-options')
     return runSolutionInstallationOptions(rest.slice(1), env, home, options);
