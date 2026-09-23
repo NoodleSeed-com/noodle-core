@@ -215,6 +215,8 @@ export interface ServiceOptions {
   readonly readinessProbe?: () => Promise<boolean>;
   /** Deployment-owned whole-candidate restore isolation; never an application/operator database setting. */
   readonly recoveryMode?: import('./recovery-quarantine.js').RecoveryMode;
+  /** `serve-only` only on a revision staged before approval: no background work, probes only. */
+  readonly runMode?: import('./run-mode.js').ServiceRunMode;
   /**
    * Verify an owner access token for `owner-only` deployments (OA-1). Threaded to the MCP router's
    * front-door. When absent, owner-only endpoints fail closed (`401`).

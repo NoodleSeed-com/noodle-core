@@ -13,7 +13,6 @@ import { InMemoryControlPlaneStore } from '@noodle-borg/control-plane/portable';
 import { createPostgresKnowledgeStores } from '@noodle-borg/knowledge-operations';
 import type { IntentEventStore, RequestEventStore } from '@noodle-borg/module';
 import {
-  createTelemetryRuntime,
   ensureIntentCaptureSchema,
   InMemoryIntentCaptureSettingsStore,
   InMemoryIntentEventStore,
@@ -26,7 +25,6 @@ import {
 import { SecretBox, staticMasterKeyProvider } from '@noodle-borg/runtime';
 import { PostgresStateHandleStore } from '@noodle-borg/runtime/postgres';
 import { noopLogger } from '@noodle-borg/transport-http';
-import { ALERT_EVALUATION_INTERVAL_MS, AlertEvaluator } from './alert-evaluator.js';
 import { createApplicationConnections } from './application-connections.js';
 import { resolveApplicationRuntimeTarget } from './application-runtime-target.js';
 import { type AssetStore, InMemoryAssetStore } from './assets.js';
@@ -44,9 +42,7 @@ import {
   PostgresBusinessInformationStore,
   PostgresSourceIngestionStore,
 } from './business-information/postgres.js';
-import { retentionSweepTrigger } from './business-information/retention-sweeper.js';
 import { fenceSourceStore } from './business-information/source-credential-fence.js';
-import { drainSourceIngestion } from './business-information/source-ingestion-coordinator.js';
 import { SecretBoxPayloadCipher } from './business-information-cipher.js';
 import { createPostgresWhatsApp } from './channels/composition.js';
 import { InMemoryConnectionStore, PostgresConnectionStore } from './connections/store.js';
@@ -68,7 +64,13 @@ import type { ServiceOptions } from './options.js';
 import { assertPostgresStoreOwnership } from './persistence-options.js';
 import { resolveRecoveryMode, serveRecoveryQuarantine } from './recovery-quarantine.js';
 import { ServerRegistry } from './registry.js';
+import { serveOnlyHandler } from './run-mode.js';
 import { assistantStoreOptions, createPostgresAssistantStores } from './serve-assistant-stores.js';
+import {
+  startAnalyticsAndAlerts,
+  startRetentionSweep,
+  startSourceIngestion,
+} from './serve-background-work.js';
 import {
   createConversationHistoryOptions,
   createLocalOperationStores,
@@ -117,6 +119,8 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
   if (recoveryMode === 'reopened' && options.operationEvidenceEpoch === undefined)
     throw new Error('Reopened recovery requires an explicit operation evidence epoch');
   const buildInfo = options.buildInfo ?? resolveBuildInfo();
+  // A staged revision (serve-only) starts no background work and makes no boot-time write below.
+  const background = (options.runMode ?? 'full') === 'full';
   const serviceConfigSource = resolveServiceConfigSource({
     ...(options.serviceConfigDir !== undefined ? { dir: options.serviceConfigDir } : {}),
     ...(options.serviceConfigSource !== undefined ? { explicit: options.serviceConfigSource } : {}),
@@ -366,34 +370,13 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
     });
   }
 
-  // Analytics write-behind buffer + Stage-A default retention (ADR 0121): capture is enqueue-only on the
-  // request path; the durable stream is pruned on boot and periodically to the retention window.
-  // The retention override fails closed at boot (mirroring resolveArchiveRetentionDays): a negative or
-  // fractional value would flip the prune cutoff into the future and delete the entire stream.
-  const retentionDays = options.requestEventRetentionDays ?? 30;
-  if (!Number.isInteger(retentionDays) || retentionDays < 1) {
-    throw new Error('requestEventRetentionDays must be a positive integer number of days');
-  }
-  // The runtime owns its buffers/timers lifecycle and, when a logger is present, the periodic
-  // `telemetry.health` pipeline-health heartbeat (#1309).
-  const telemetry = createTelemetryRuntime(requestEventStore, intentEventStore, retentionDays, {
-    ...(options.logger === undefined ? {} : { heartbeatLogger: options.logger }),
+  const { telemetry, alertTimer } = startAnalyticsAndAlerts({
+    options,
+    requestEventStore,
+    intentEventStore,
+    alertRuleStore,
   });
   const { requestEventBuffer, intentEventBuffer } = telemetry;
-
-  // Analytics alerting evaluator (E2, ADR 0130): a periodic edge-triggered sweep over enabled
-  // alert rules with single-attempt SSRF-guarded webhook delivery. The interval timer mirrors the
-  // retention prune above; `maybeSweep` throttles internally, so a boot sweep is safe here too.
-  const alertEvaluator = new AlertEvaluator({
-    alertRules: alertRuleStore,
-    requestEvents: requestEventStore,
-    allowLoopbackWebhooks: options.alertWebhookAllowLoopback === true,
-    logger: options.logger ?? noopLogger,
-    ...(options.clock !== undefined ? { clock: options.clock } : {}),
-  });
-  alertEvaluator.maybeSweep();
-  const alertTimer = setInterval(() => alertEvaluator.maybeSweep(), ALERT_EVALUATION_INTERVAL_MS);
-  alertTimer.unref?.();
 
   const operationEvidence = createOperationEvidenceOptions(
     options,
@@ -409,8 +392,8 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
   let businessInformationTimer: NodeJS.Timeout | undefined;
   let stopBusinessInformationSweep: (() => void) | undefined;
   let businessInformationSourceTimer: NodeJS.Timeout | undefined;
-  if (businessInformationStore !== undefined) {
-    const sweep = retentionSweepTrigger(
+  if (businessInformationStore !== undefined && background) {
+    const sweep = startRetentionSweep(
       [
         businessInformationStore,
         businessInformationSourceStore,
@@ -426,14 +409,12 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       ],
       options.logger ?? noopLogger,
     );
-    stopBusinessInformationSweep = sweep.close;
-    sweep();
-    businessInformationTimer = setInterval(sweep, 15 * 60 * 1000);
-    businessInformationTimer.unref?.();
+    stopBusinessInformationSweep = sweep.stop;
+    businessInformationTimer = sweep.timer;
   }
 
   let welcomeEmailTimer: NodeJS.Timeout | undefined;
-  if (options.welcomeEmailSender !== undefined) {
+  if (options.welcomeEmailSender !== undefined && background) {
     welcomeEmailTimer = startWelcomeEmailWorker({
       store: controlPlaneStore,
       sender: options.welcomeEmailSender,
@@ -455,6 +436,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       logger: options.logger ?? noopLogger,
       postgresPool: pgPool?.pool,
       audit: auditStore,
+      runMode: background ? 'full' : 'serve-only',
       ...(options.clock === undefined ? {} : { clock: options.clock }),
     }),
   );
@@ -462,10 +444,10 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
   try {
     const loadedModules = bootedModules.loaded;
 
-    for (const domain of options.signupAllowedDomains ?? []) {
+    for (const domain of background ? (options.signupAllowedDomains ?? []) : []) {
       await controlPlaneStore.allowSignup({ kind: 'domain', value: domain });
     }
-    for (const subject of options.signupAllowedSubjects ?? []) {
+    for (const subject of background ? (options.signupAllowedSubjects ?? []) : []) {
       await controlPlaneStore.allowSignup({ kind: 'subject', value: subject });
     }
 
@@ -550,7 +532,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       );
     }
     // `local` is a system-owned loopback namespace even when loopback auth is enabled.
-    if (isLoopbackHost(host)) {
+    if (isLoopbackHost(host) && background) {
       await controlPlaneStore.createOrg({ slug: 'local', displayName: 'Local' });
     }
 
@@ -633,7 +615,11 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
     // into eager recompile-all-on-boot (boot-time validation of every server, for a pinned/on-prem instance).
     const recovered = store && options.warmAll ? await registry.recover() : undefined;
 
-    if (businessInformationSourceStore !== undefined && businessInformationStore !== undefined) {
+    if (
+      businessInformationSourceStore !== undefined &&
+      businessInformationStore !== undefined &&
+      background
+    ) {
       const sourceCoordinator = new SourceIngestionCoordinator({
         store: businessInformationSourceStore,
         executor:
@@ -653,23 +639,10 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
         validateRecord: (_binding, value) => validateManagedPayload(value),
         ...(options.clock === undefined ? {} : { now: options.clock }),
       });
-      const sweepSources = (): void => {
-        void drainSourceIngestion(sourceCoordinator).catch((error: unknown) => {
-          (options.logger ?? noopLogger).error('business_information.source.failed', {
-            name: error instanceof Error ? error.name : 'unknown',
-            code:
-              typeof error === 'object' &&
-              error !== null &&
-              'code' in error &&
-              typeof error.code === 'string'
-                ? error.code
-                : 'source_scan_failed',
-          });
-        });
-      };
-      sweepSources();
-      businessInformationSourceTimer = setInterval(sweepSources, 30_000);
-      businessInformationSourceTimer.unref?.();
+      businessInformationSourceTimer = startSourceIngestion(
+        sourceCoordinator,
+        options.logger ?? noopLogger,
+      );
     }
 
     // Readiness reflects durable-store reachability. Built here so the handler never imports `pg`; a
@@ -692,7 +665,7 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
         ...(businessInformationTimer === undefined ? {} : { businessInformationTimer }),
         ...(stopBusinessInformationSweep === undefined ? {} : { stopBusinessInformationSweep }),
         ...(businessInformationSourceTimer === undefined ? {} : { businessInformationSourceTimer }),
-        alertTimer,
+        ...(alertTimer === undefined ? {} : { alertTimer }),
         ...(moduleHost === undefined ? {} : { moduleHost }),
         ...(pgPool === undefined ? {} : { postgresPool: pgPool }),
       });
@@ -757,8 +730,9 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
     };
     let http: Server | undefined;
     try {
-      const listeningHttp = createServer(createServiceHandler(registry, handlerOptions));
-      whatsapp?.worker.start();
+      const handler = createServiceHandler(registry, handlerOptions);
+      const listeningHttp = createServer(background ? handler : serveOnlyHandler(handler));
+      if (background) whatsapp?.worker.start();
       http = listeningHttp;
       await listenHttpServer(listeningHttp, options.port ?? 8787, host);
       const { port } = listeningHttp.address() as AddressInfo;

@@ -245,7 +245,7 @@ export function createServiceHandler(
     logger,
     ...(options.clock !== undefined ? { clock: options.clock } : {}),
   });
-  archiveSweeper.maybeSweep();
+  if (options.runMode !== 'serve-only') archiveSweeper.maybeSweep();
   const moduleRouteDeps = {
     routes: [
       ...moduleHost.routes,

@@ -1,4 +1,4 @@
-import type { AuditSink } from '@noodle-borg/module';
+import type { AuditSink, ServiceRunMode } from '@noodle-borg/module';
 import {
   type LoadedServiceModule,
   loadModules,
@@ -16,6 +16,7 @@ export interface ServiceModuleBootstrapOptions {
   readonly postgresPool: unknown;
   readonly audit: AuditSink | undefined;
   readonly clock?: () => Date;
+  readonly runMode?: ServiceRunMode;
 }
 
 export async function bootstrapServiceModules(options: ServiceModuleBootstrapOptions): Promise<{
@@ -32,6 +33,7 @@ export async function bootstrapServiceModules(options: ServiceModuleBootstrapOpt
     {
       logger: options.logger,
       clock: options.clock ?? (() => new Date()),
+      runMode: options.runMode ?? 'full',
       ...(options.postgresPool === undefined
         ? {}
         : { stores: { postgresPool: () => options.postgresPool } }),

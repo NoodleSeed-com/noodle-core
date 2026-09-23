@@ -151,9 +151,17 @@ export interface DeploymentPackageBinding {
 export type ReadinessProbe = () => boolean | Promise<boolean>;
 export type ModuleDispose = () => void | Promise<void>;
 
+/**
+ * `serve-only` is a revision staged in production before approval (ADR 0144): it serves read-only
+ * probes and must start no worker, timer, queue consumer or projector and write nothing at boot.
+ */
+export type ServiceRunMode = 'full' | 'serve-only';
+
 export interface ModuleHostContext {
   readonly logger: ModuleLogger;
   readonly clock: () => Date;
+  /** Absent means `full`. A module that starts background work or writes at boot must honor `serve-only`. */
+  readonly runMode?: ServiceRunMode;
   readonly options?: Readonly<Record<string, unknown>>;
   readonly stores?: ModuleStores;
   readonly tenants?: TenantRegistryView;

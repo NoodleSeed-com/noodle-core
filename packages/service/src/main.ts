@@ -20,6 +20,7 @@ import { resolveWhatsAppMetaConfig } from './channels/meta-config.js';
 import { resolveMcpProtocolMode } from './mcp-protocol-runtime.js';
 import { GoogleOAuthAuthenticator } from './oauth/google.js';
 import { resolveRecoveryMode } from './recovery-quarantine.js';
+import { parseServiceRunMode } from './run-mode.js';
 import { serveService } from './serve.js';
 import type { PostgresPool } from './store/cloudsql-pool.js';
 import { ResendEmailSender, resolveWelcomeEmailConfig } from './welcome-email.js';
@@ -28,6 +29,7 @@ const LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
 
 export { parseBusinessOnboarding } from './business-onboarding.js';
 export { resolveRecoveryMode } from './recovery-quarantine.js';
+export { parseServiceRunMode } from './run-mode.js';
 
 import { type BusinessOnboardingOptions, parseBusinessOnboarding } from './business-onboarding.js';
 
@@ -39,6 +41,7 @@ export interface ServiceMainOverrides {
   }[];
   readonly businessOnboarding?: BusinessOnboardingOptions;
   readonly recoveryMode?: import('./recovery-quarantine.js').RecoveryMode;
+  readonly runMode?: import('./run-mode.js').ServiceRunMode;
   readonly postgresPool?: PostgresPool;
   readonly wrappingMasterKey?: WrappingMasterKey;
   readonly modules?: readonly ModuleInput[];
@@ -252,6 +255,7 @@ export async function runServiceMain(overrides: ServiceMainOverrides = {}): Prom
             businessOnboarding: parseBusinessOnboarding(process.env.NOODLE_ORGANIZATION_AGREEMENT),
           }),
     ...(deploymentRecoveryMode === undefined ? {} : { recoveryMode: deploymentRecoveryMode }),
+    runMode: overrides.runMode ?? parseServiceRunMode(process.env.NOODLE_RUN_MODE),
     port,
     logger,
     developerMcp: true,

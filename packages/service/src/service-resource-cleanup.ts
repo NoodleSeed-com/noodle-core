@@ -13,7 +13,7 @@ export interface ServiceResourceCleanupInput {
   readonly businessInformationTimer?: NodeJS.Timeout;
   readonly stopBusinessInformationSweep?: () => void;
   readonly businessInformationSourceTimer?: NodeJS.Timeout;
-  readonly alertTimer: NodeJS.Timeout;
+  readonly alertTimer?: NodeJS.Timeout;
   readonly moduleHost?: { dispose(): Promise<void> };
   readonly postgresPool?: AsyncCloseable;
 }
@@ -27,7 +27,7 @@ export async function closeServiceResources(input: ServiceResourceCleanupInput):
   if (input.businessInformationSourceTimer !== undefined) {
     clearInterval(input.businessInformationSourceTimer);
   }
-  clearInterval(input.alertTimer);
+  if (input.alertTimer !== undefined) clearInterval(input.alertTimer);
 
   const errors: unknown[] = [];
   const moduleHost = input.moduleHost;
