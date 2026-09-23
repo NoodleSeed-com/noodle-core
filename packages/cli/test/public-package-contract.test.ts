@@ -204,7 +204,12 @@ describe('@noodleseed/one supported package contract', () => {
       name: packageJson.name,
       bin: packageJson.bin,
       engines: packageJson.engines,
-      exports: packageJson.exports,
+      // As published: materialize-cli-bundles strips the workspace source condition.
+      exports: JSON.parse(
+        JSON.stringify(packageJson.exports, (key, value) =>
+          key === '@noodle-borg/source' ? undefined : value,
+        ),
+      ),
     }).toEqual(golden.package);
     expect(readFileSync(join(packageRoot, 'react/styles.css'), 'utf8').length).toBeGreaterThan(0);
   });

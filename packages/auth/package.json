@@ -11,6 +11,7 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "@noodle-borg/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }

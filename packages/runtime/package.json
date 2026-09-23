@@ -11,10 +11,12 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "@noodle-borg/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./postgres": {
+      "@noodle-borg/source": "./src/postgres.ts",
       "types": "./dist/postgres.d.ts",
       "import": "./dist/postgres.js"
     }

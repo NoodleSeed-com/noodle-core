@@ -11,10 +11,12 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "@noodle-borg/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./command": {
+      "@noodle-borg/source": "./src/command.ts",
       "types": "./dist/command.d.ts",
       "import": "./dist/command.js"
     }

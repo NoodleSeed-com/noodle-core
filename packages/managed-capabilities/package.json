@@ -11,22 +11,27 @@
   "types": "./dist/portable.d.ts",
   "exports": {
     ".": {
+      "@noodle-borg/source": "./src/portable.ts",
       "types": "./dist/portable.d.ts",
       "import": "./dist/portable.js"
     },
     "./portable": {
+      "@noodle-borg/source": "./src/portable.ts",
       "types": "./dist/portable.d.ts",
       "import": "./dist/portable.js"
     },
     "./contracts": {
+      "@noodle-borg/source": "./src/operator-contracts.ts",
       "types": "./dist/operator-contracts.d.ts",
       "import": "./dist/operator-contracts.js"
     },
     "./testing": {
+      "@noodle-borg/source": "./src/conformance.ts",
       "types": "./dist/conformance.d.ts",
       "import": "./dist/conformance.js"
     },
     "./postgres": {
+      "@noodle-borg/source": "./src/postgres.ts",
       "types": "./dist/postgres.d.ts",
       "import": "./dist/postgres.js"
     }

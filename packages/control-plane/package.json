@@ -11,10 +11,12 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "@noodle-borg/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./portable": {
+      "@noodle-borg/source": "./src/portable.ts",
       "types": "./dist/portable.d.ts",
       "import": "./dist/portable.js"
     }

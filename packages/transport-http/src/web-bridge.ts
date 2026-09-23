@@ -65,5 +65,5 @@ export async function writeWebResponse(res: ServerResponse, response: Response):
     res.end();
     return;
   }
-  await pipeline(Readable.fromWeb(response.body), res);
+  await pipeline(Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]), res);
 }

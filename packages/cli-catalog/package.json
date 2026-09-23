@@ -11,78 +11,97 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "@noodle-borg/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./account": {
+      "@noodle-borg/source": "./src/catalog-data-account.ts",
       "types": "./dist/catalog-data-account.d.ts",
       "import": "./dist/catalog-data-account.js"
     },
     "./assistant": {
+      "@noodle-borg/source": "./src/catalog-data-assistant.ts",
       "types": "./dist/catalog-data-assistant.d.ts",
       "import": "./dist/catalog-data-assistant.js"
     },
     "./auth-discovery": {
+      "@noodle-borg/source": "./src/catalog-data-auth-discovery.ts",
       "types": "./dist/catalog-data-auth-discovery.d.ts",
       "import": "./dist/catalog-data-auth-discovery.js"
     },
     "./billing": {
+      "@noodle-borg/source": "./src/catalog-data-billing.ts",
       "types": "./dist/catalog-data-billing.d.ts",
       "import": "./dist/catalog-data-billing.js"
     },
     "./bootstrap-authoring": {
+      "@noodle-borg/source": "./src/catalog-data-bootstrap-authoring.ts",
       "types": "./dist/catalog-data-bootstrap-authoring.d.ts",
       "import": "./dist/catalog-data-bootstrap-authoring.js"
     },
     "./bootstrap-pre-auth": {
+      "@noodle-borg/source": "./src/catalog-data-bootstrap-pre-auth.ts",
       "types": "./dist/catalog-data-bootstrap-pre-auth.d.ts",
       "import": "./dist/catalog-data-bootstrap-pre-auth.js"
     },
     "./config": {
+      "@noodle-borg/source": "./src/catalog-data-config.ts",
       "types": "./dist/catalog-data-config.d.ts",
       "import": "./dist/catalog-data-config.js"
     },
     "./core": {
+      "@noodle-borg/source": "./src/catalog-data-core.ts",
       "types": "./dist/catalog-data-core.d.ts",
       "import": "./dist/catalog-data-core.js"
     },
     "./distributions": {
+      "@noodle-borg/source": "./src/catalog-data-distributions.ts",
       "types": "./dist/catalog-data-distributions.d.ts",
       "import": "./dist/catalog-data-distributions.js"
     },
     "./hosted-deployment": {
+      "@noodle-borg/source": "./src/catalog-data-hosted-deployment.ts",
       "types": "./dist/catalog-data-hosted-deployment.d.ts",
       "import": "./dist/catalog-data-hosted-deployment.js"
     },
     "./hosted-governance": {
+      "@noodle-borg/source": "./src/catalog-data-hosted-governance.ts",
       "types": "./dist/catalog-data-hosted-governance.d.ts",
       "import": "./dist/catalog-data-hosted-governance.js"
     },
     "./hosted-observability": {
+      "@noodle-borg/source": "./src/catalog-data-hosted-observability.ts",
       "types": "./dist/catalog-data-hosted-observability.d.ts",
       "import": "./dist/catalog-data-hosted-observability.js"
     },
     "./local-authoring": {
+      "@noodle-borg/source": "./src/catalog-data-local-authoring.ts",
       "types": "./dist/catalog-data-local-authoring.d.ts",
       "import": "./dist/catalog-data-local-authoring.js"
     },
     "./platform-auth": {
+      "@noodle-borg/source": "./src/catalog-data-platform-auth.ts",
       "types": "./dist/catalog-data-platform-auth.d.ts",
       "import": "./dist/catalog-data-platform-auth.js"
     },
     "./policy": {
+      "@noodle-borg/source": "./src/catalog-data-policy.ts",
       "types": "./dist/catalog-data-policy.d.ts",
       "import": "./dist/catalog-data-policy.js"
     },
     "./tenant-admin": {
+      "@noodle-borg/source": "./src/catalog-data-tenant-admin.ts",
       "types": "./dist/catalog-data-tenant-admin.d.ts",
       "import": "./dist/catalog-data-tenant-admin.js"
     },
     "./tenant-resources": {
+      "@noodle-borg/source": "./src/catalog-data-tenant-resources.ts",
       "types": "./dist/catalog-data-tenant-resources.d.ts",
       "import": "./dist/catalog-data-tenant-resources.js"
     },
     "./types": {
+      "@noodle-borg/source": "./src/catalog-types.ts",
       "types": "./dist/catalog-types.d.ts",
       "import": "./dist/catalog-types.js"
     }

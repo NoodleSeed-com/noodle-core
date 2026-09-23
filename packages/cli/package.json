@@ -9,14 +9,17 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "@noodle-borg/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./platform": {
+      "@noodle-borg/source": "./src/platform.ts",
       "types": "./dist/platform.d.ts",
       "import": "./dist/platform.js"
     },
     "./react": {
+      "@noodle-borg/source": "./src/react.ts",
       "types": "./dist/react.d.ts",
       "import": "./dist/react.js"
     },

@@ -11,18 +11,22 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "@noodle-borg/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./portable": {
+      "@noodle-borg/source": "./src/portable.ts",
       "types": "./dist/portable.d.ts",
       "import": "./dist/portable.js"
     },
     "./conformance": {
+      "@noodle-borg/source": "./src/conformance.ts",
       "types": "./dist/conformance.d.ts",
       "import": "./dist/conformance.js"
     },
     "./limits": {
+      "@noodle-borg/source": "./src/limits.ts",
       "types": "./dist/limits.d.ts",
       "import": "./dist/limits.js"
     }
