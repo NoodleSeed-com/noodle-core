@@ -51,9 +51,9 @@ export function createHistoryProjections(
 }
 
 /**
- * Capture follows the installation history setting under the live plan allowance (ADR 0241). A tenant
- * with no single installation, setting opt-in or verified allowance records nothing, and the read never
- * creates a setting.
+ * Capture follows the installation history setting under the live plan allowance (ADR 0241): every
+ * installation records at the plan default unless an Owner/Admin changed it. A tenant with no single
+ * installation or verified allowance records nothing, and the read never creates a setting.
  */
 function settingsConversationPolicy(
   installations: BusinessInformationStore | undefined,

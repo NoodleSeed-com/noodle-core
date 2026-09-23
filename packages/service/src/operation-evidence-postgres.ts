@@ -85,7 +85,7 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
     await this.pool.query(
       'CREATE TABLE IF NOT EXISTS operation_history_settings (scope_key text PRIMARY KEY, days integer NOT NULL CHECK(days BETWEEN 1 AND 365), revision integer NOT NULL)',
     );
-    // NULL is never opted in (ADR 0241 decision 8): upgraded rows keep today's no-capture behaviour.
+    // NULL is no chosen duration (ADR 0241 decision 8): the installation records at the plan default.
     await this.pool.query(
       'ALTER TABLE operation_history_settings ADD COLUMN IF NOT EXISTS conversation_days integer CHECK (conversation_days BETWEEN 0 AND 365)',
     );

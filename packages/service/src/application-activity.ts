@@ -22,7 +22,6 @@ import {
   type HistorySettingsChange,
   historySettingsProjection,
   lazyHistorySetting,
-  newInstallationHistorySetting,
   planHistorySettingsChange,
 } from './application-history-settings.js';
 import { resolveApplicationRuntimeTarget } from './application-runtime-target.js';
@@ -317,7 +316,7 @@ export class ApplicationActivity {
     const current = await this.settings(scope, true, local);
     if (current.projection.revision !== input.expectedRevision)
       throw new ActivityPolicyError('activity_conflict');
-    const plan = planHistorySettingsChange(current.setting, input, current.allowance.maximumDays);
+    const plan = planHistorySettingsChange(current.setting, input, current.allowance);
     if (!plan) throw new ActivityPolicyError('activity_invalid');
     const store = this.options.conversationHistory;
     const window = (method: 'countOutsideWindow' | 'capExpiry') =>
@@ -352,17 +351,6 @@ export class ApplicationActivity {
       settings: (await this.settings(scope, true, local)).projection,
       audit: plan.audit,
     };
-  }
-  /**
-   * Writes a new installation's first setting so it records conversations from day one. Runs only for a
-   * created installation, before anything reads (and lazily creates) a not-enabled setting.
-   */
-  async initializeHistory(scope: InstallationScope): Promise<boolean> {
-    return this.options.store.setRetention(
-      scope,
-      newInstallationHistorySetting(await this.allowance(scope)),
-      undefined,
-    );
   }
   /** The capture policy: side-effect free, so the capture path never creates a setting. */
   async conversationPolicy(scope: InstallationScope): Promise<ConversationPolicy> {

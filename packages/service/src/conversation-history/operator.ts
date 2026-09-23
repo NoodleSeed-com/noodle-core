@@ -376,7 +376,7 @@ export function conversationReadBound(policy: ConversationPolicy, now: number): 
 
 /** The live window in days: the chosen duration under the plan maximum; 0 hides everything. */
 function conversationWindowDays(policy: ConversationPolicy): number {
-  return Math.max(0, Math.min(policy.conversationDays ?? 0, policy.maximumDays));
+  return Math.max(0, Math.min(policy.conversationDays, policy.maximumDays));
 }
 
 /** An opaque keyset position bound to the purpose, scope and page shape that `binding` hashes. */

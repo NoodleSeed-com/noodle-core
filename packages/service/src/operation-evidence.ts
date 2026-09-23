@@ -47,7 +47,7 @@ export interface OperationEvidenceCursor {
  */
 export interface OperationHistorySettingValue {
   readonly days: number;
-  /** Null until an Owner/Admin opts in, so existing installations never start recording; 0 is Off. */
+  /** Null until an Owner/Admin chooses a duration, meaning the live plan default; 0 is Off. */
   readonly conversationDays: number | null;
   readonly sources: Readonly<Record<ConversationSource, boolean>>;
 }

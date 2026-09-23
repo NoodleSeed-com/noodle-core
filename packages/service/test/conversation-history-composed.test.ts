@@ -19,8 +19,8 @@ import type { TenantRef } from '../src/store.js';
 
 /**
  * Capture through the hosted composition (ADR 0241): no policy is injected, so each tenant's
- * installation history setting decides. An existing installation records nothing until it opts in; a
- * newly created one records from day one; Off hides existing history and stops new capture.
+ * installation history setting decides. Every installation, existing or newly created, records at the
+ * plan default with no opt-in (ADR 0241 decision 8); Off hides existing history and stops new capture.
  */
 const ORIGIN = 'https://www.acme.test';
 const EXISTING: TenantRef = { org: 'acme', app: 'site', env: 'prod' };
@@ -183,7 +183,7 @@ describe('conversation capture through the hosted composition', () => {
       slug: 'acme',
       owner: { subject: 'owner', email: 'owner@example.test' },
     });
-    const allowance = async () => ({ maximumDays: 30, defaultDays: 30, revision: 'plan-v1' });
+    const allowance = async () => ({ maximumDays: 30, defaultDays: 7, revision: 'plan-v1' });
     const contributions = { resolveActivityHistoryAllowance: allowance };
     http = createServer(
       createServiceHandler(registry, {
@@ -304,25 +304,48 @@ describe('conversation capture through the hosted composition', () => {
     if (http) await new Promise<void>((resolve) => http.close(() => resolve()));
   });
 
-  it('records nothing for an existing installation until an Owner opts in', async () => {
-    await webTurn(EXISTING, 'sara_91', 'Do you ship to Dubai?');
-    expect(await recorded(EXISTING, customer('sara_91'))).toEqual([]);
-    await whatsapp(`My card is ${CARD}`);
-    expect(await whatsappConversations()).toEqual([]);
-    // Nothing is recorded, so the first reply's AI disclosure states no retention window.
-    expect(sent.at(-1)?.text?.body).toMatch(/^I’m Acme’s AI assistant\.\n\n/);
-    expect((await historySettings('site-prod')).conversations.state).toBe('not_enabled');
-
-    await historySettings('site-prod', { conversations: { retentionDays: 14 } });
+  it('records an existing installation at the plan default with no opt-in', async () => {
+    // The capture path runs before anything has read (and lazily created) the setting.
+    const before = Date.now();
     await webTurn(EXISTING, 'omar_7', 'Do you ship to Dubai?');
     expect(await recorded(EXISTING, customer('omar_7'))).toEqual([
       ['user', 'Do you ship to Dubai?'],
       ['assistant', 'We ship to Dubai.'],
     ]);
+    const id = await history.findRecent(EXISTING, 'website', customer('omar_7'), 0);
+    const read = id ? await history.read(EXISTING, id, Date.now()) : undefined;
+    for (const item of read?.items ?? []) expect(item.expiresAt - item.at).toBe(7 * 86_400_000);
+    expect(read?.items[0]?.at).toBeGreaterThanOrEqual(before);
+    expect((await historySettings('site-prod')).conversations).toMatchObject({
+      state: 'on',
+      retentionDays: 7,
+    });
+    // The widget states the same default window when a signed-in customer's session is minted.
+    const { client, secret } = await assistants.createClient({
+      name: 'backend',
+      tenant: EXISTING,
+      deploymentId: deployments.get(key(EXISTING)) ?? '',
+      allowedOrigins: [ORIGIN],
+      now: new Date(),
+    });
+    const minted = await fetch(`${base}/v1/assistant/sessions`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Basic ${Buffer.from(`${client.id}:${secret}`).toString('base64')}`,
+      },
+      body: JSON.stringify({ origin: ORIGIN, user: { id: 'omar_7' } }),
+    });
+    expect(minted.status, await minted.clone().text()).toBe(201);
+    expect((await minted.json()).history).toEqual({ retentionDays: 7 });
   });
 
-  it('records an opted-in WhatsApp exchange under the participant with card numbers masked', async () => {
+  it('records a WhatsApp exchange under the participant with card numbers masked', async () => {
     await whatsapp(`Charge my card ${CARD} please`);
+    // The first reply's AI disclosure states the default window.
+    expect(sent.at(-1)?.text?.body).toMatch(
+      /^I’m Acme’s AI assistant\. Chats are kept for 7 days\.\n\n/,
+    );
     const [conversation, ...others] = await whatsappConversations();
     expect(others).toEqual([]);
     expect(conversation?.subject.kind).toBe('participant');
@@ -409,14 +432,14 @@ describe('conversation capture through the hosted composition', () => {
     const { data } = await created.json();
     expect((await historySettings(data.installation.id)).conversations).toMatchObject({
       state: 'on',
-      retentionDays: 30,
+      retentionDays: 7,
     });
     await webTurn(CREATED, 'noor_2', 'Do you ship to Dubai?');
     expect(await recorded(CREATED, customer('noor_2'))).toHaveLength(2);
   });
 
-  it('records a Preview environment for three days without its opt-in, apart from production', async () => {
-    expect((await historySettings('site-dev')).conversations.state).toBe('not_enabled');
+  it('records a Preview environment for three days whatever its setting, apart from production', async () => {
+    await historySettings('site-dev', { conversations: 'off' });
     const before = Date.now();
     await webTurn(PREVIEW, 'builder_test', 'Do you ship to Dubai?');
     const id = await history.findRecent(PREVIEW, 'website', customer('builder_test'), 0);
@@ -429,6 +452,6 @@ describe('conversation capture through the hosted composition', () => {
     expect(production.map((row) => row.id)).not.toContain(id);
     expect(id ? await history.read(EXISTING, id, Date.now()) : undefined).toBeUndefined();
     expect(await recorded(EXISTING, customer('builder_test'))).toEqual([]);
-    expect((await historySettings('site-dev')).conversations.state).toBe('not_enabled');
+    expect((await historySettings('site-dev')).conversations.state).toBe('off');
   });
 });

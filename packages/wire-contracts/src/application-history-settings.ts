@@ -30,9 +30,12 @@ export const ApplicationHistorySettingsSchema = z.strictObject({
     maximumDays: DaysSchema,
     defaultDays: DaysSchema,
   }),
-  /** `not_enabled`: never opted in, so nothing is recorded; `off`: an Owner/Admin turned it off. */
+  /**
+   * `on` records for `retentionDays` (the plan default until an Owner/Admin changes it, ADR 0241
+   * decision 8); `off`: an Owner/Admin turned it off.
+   */
   conversations: z.strictObject({
-    state: z.enum(['not_enabled', 'off', 'on']),
+    state: z.enum(['off', 'on']),
     retentionDays: DaysSchema.optional(),
     sources: HistorySourcesSchema,
     /**

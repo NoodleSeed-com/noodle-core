@@ -1160,15 +1160,15 @@ describe('retention notice on every session response (ADR 0241 decision 17)', ()
     expect((await fresh.json()).history).toEqual({ retentionDays: 14 });
   });
 
-  it('states the visitor window on an anonymous mint and nothing without an opt-in', async () => {
+  it('states the visitor window on an anonymous mint and nothing when conversations are off', async () => {
     const recorded = await start({ history: { maximumDays: 7, conversationDays: 30 } });
     const visitor = await mintAnonymous(recorded.base, recorded.embed.embedId);
     expect((visitor as { history?: unknown }).history).toEqual({ retentionDays: 7 });
 
-    const notOptedIn = await start({ history: { maximumDays: 30 } });
-    const client = await createClient(notOptedIn.base);
+    const off = await start({ history: { maximumDays: 30, conversationDays: 0 } });
+    const client = await createClient(off.base);
     const minted = await elevate(
-      notOptedIn.base,
+      off.base,
       { authorization: basic(client) },
       { user: { id: 'u_7' } },
     );

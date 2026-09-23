@@ -47,7 +47,10 @@ export function historyDisabledSurfaces(assistant: unknown): readonly HistoryDis
   ];
 }
 
-/** A setting created lazily on first read never opts in: only new installations record by default. */
+/**
+ * A setting created lazily on first read keeps no conversation duration of its own, so it records at
+ * the live plan default like every installation without a chosen duration (ADR 0241 decision 8).
+ */
 export function lazyHistorySetting(
   allowance: ActivityHistoryAllowance,
 ): OperationHistorySettingValue {
@@ -58,11 +61,16 @@ export function lazyHistorySetting(
   };
 }
 
-/** A newly created installation records conversations from day one (ADR 0241 decisions 7 and 8). */
-export function newInstallationHistorySetting(
+/**
+ * The one rule for a stored conversation duration: none chosen (no setting, or a NULL duration) is the
+ * live plan default; 0 is Off. Applications without an installation have no setting and record nothing
+ * upstream of this.
+ */
+function chosenConversationDays(
+  setting: OperationHistorySettingValue | undefined,
   allowance: ActivityHistoryAllowance,
-): OperationHistorySettingValue {
-  return { ...lazyHistorySetting(allowance), conversationDays: allowance.defaultDays };
+): number {
+  return setting?.conversationDays ?? allowance.defaultDays;
 }
 
 export function historySettingsProjection(
@@ -71,7 +79,7 @@ export function historySettingsProjection(
   revision: string,
   canEdit: boolean,
 ) {
-  const days = setting.conversationDays;
+  const days = chosenConversationDays(setting, allowance);
   return {
     revision,
     canEdit,
@@ -81,8 +89,7 @@ export function historySettingsProjection(
       defaultDays: allowance.defaultDays,
     },
     conversations: {
-      state:
-        days === null ? ('not_enabled' as const) : days === 0 ? ('off' as const) : ('on' as const),
+      state: days === 0 ? ('off' as const) : ('on' as const),
       ...(days ? { retentionDays: Math.min(days, allowance.maximumDays) } : {}),
       sources: {
         websiteVisitors: setting.sources.website_visitors,
@@ -93,9 +100,12 @@ export function historySettingsProjection(
   };
 }
 
-/** Days currently recorded: never-opted-in and Off both keep nothing new. */
-function recordedDays(setting: OperationHistorySettingValue, maximumDays: number): number {
-  return Math.min(setting.conversationDays ?? 0, maximumDays);
+/** Days currently recorded under the plan maximum; Off keeps nothing new. */
+function recordedDays(
+  setting: OperationHistorySettingValue,
+  allowance: ActivityHistoryAllowance,
+): number {
+  return Math.min(chosenConversationDays(setting, allowance), allowance.maximumDays);
 }
 
 /**
@@ -105,7 +115,7 @@ function recordedDays(setting: OperationHistorySettingValue, maximumDays: number
 export function planHistorySettingsChange(
   current: OperationHistorySetting,
   change: HistorySettingsChange,
-  maximumDays: number,
+  allowance: ActivityHistoryAllowance,
 ):
   | {
       readonly next: OperationHistorySettingValue;
@@ -119,6 +129,7 @@ export function planHistorySettingsChange(
       : change.conversations === 'off'
         ? 0
         : change.conversations.retentionDays;
+  const { maximumDays } = allowance;
   // Only requested durations meet the cap: a value stored before a downgrade stays, read as clamped.
   if (
     (change.activityDays ?? 0) > maximumDays ||
@@ -135,33 +146,28 @@ export function planHistorySettingsChange(
     changed.push(wire);
   }
   const next = { days, conversationDays, sources };
-  const before = recordedDays(current, maximumDays);
-  const after = recordedDays(next, maximumDays);
+  const before = recordedDays(current, allowance);
+  const after = recordedDays(next, allowance);
+  const chosen = chosenConversationDays(next, allowance);
   return {
     next,
     ...(before > 0 && after < before ? { shortened: after } : {}),
     audit: {
       activityDays: days,
-      conversationDays:
-        conversationDays === null
-          ? 'not_enabled'
-          : conversationDays === 0
-            ? 'off'
-            : conversationDays,
+      conversationDays: chosen === 0 ? 'off' : chosen,
       sourcesChanged: changed.length === 0 ? 'none' : changed.join(','),
     },
   };
 }
 
-/** The capture policy for a stored setting; absent until an Owner/Admin or a new installation opts in. */
+/** The capture policy for an installation's setting; one not yet created records at the plan default. */
 export function conversationPolicyFromSetting(
   setting: OperationHistorySetting | undefined,
   allowance: ActivityHistoryAllowance,
 ): ConversationPolicy {
   return {
     maximumDays: allowance.maximumDays,
-    ...(setting?.conversationDays === null || setting === undefined
-      ? {}
-      : { conversationDays: setting.conversationDays, sources: { ...setting.sources } }),
+    conversationDays: chosenConversationDays(setting, allowance),
+    sources: { ...(setting?.sources ?? ALL_CONVERSATION_SOURCES) },
   };
 }

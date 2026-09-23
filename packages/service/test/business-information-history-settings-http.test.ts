@@ -224,33 +224,43 @@ describe('the live plan allowance bounds staff reads', () => {
     expect(await unavailable.json()).toMatchObject({ code: 'conversation_unavailable' });
   });
 
-  it('shows nothing for an installation that never opted in', async () => {
+  it('shows an existing installation its history within the plan default, with no opt-in', async () => {
     await seedConversation('cv_legacy_conversation', [1]);
-    expect(await visible()).toEqual({});
+    await seedConversation('cv_older_conversation', [40]);
+    expect(await visible()).toEqual({ cv_legacy_conversation: 1 });
   });
 });
 
 describe('installation history settings API', () => {
-  it('reads an existing installation as not enabled, with every channel switch on, for any reader', async () => {
+  it('records an existing installation at the plan default, every channel on, with no opt-in', async () => {
+    // The capture policy reads no setting row and creates none: an absent setting is the default.
+    expect(await activity.conversationPolicy(scope)).toEqual({
+      maximumDays: 90,
+      conversationDays: 30,
+      sources: { website_visitors: true, signed_in_customers: true, whatsapp: true },
+    });
     const viewer = await read('viewer');
     expect(viewer).toMatchObject({
       canEdit: false,
       activity: { retentionDays: 30, maximumDays: 90, defaultDays: 30 },
       conversations: {
-        state: 'not_enabled',
+        state: 'on',
+        retentionDays: 30,
         sources: { websiteVisitors: true, signedInCustomers: true, whatsapp: true },
       },
     });
-    expect(viewer.conversations.retentionDays).toBeUndefined();
     expect((await read()).canEdit).toBe(true);
-    expect(await activity.conversationPolicy(scope)).toEqual({ maximumDays: 90 });
+    // The lazily created setting also means the default, and follows the live plan default.
+    maximumDays = 14;
+    expect((await read()).conversations).toMatchObject({ state: 'on', retentionDays: 14 });
+    expect(await activity.conversationPolicy(scope)).toMatchObject({ conversationDays: 14 });
   });
 
-  it('opts in, changes channel switches and Activity under one revision, and audits scalars only', async () => {
+  it('changes the duration, channel switches and Activity under one revision, auditing scalars only', async () => {
     const original = (await read()).revision;
     const saved = await save({
       activityDays: 60,
-      conversations: { retentionDays: 14 },
+      conversations: { retentionDays: 60 },
       sources: { whatsapp: false },
     });
     expect(saved).toMatchObject({
@@ -261,14 +271,14 @@ describe('installation history settings API', () => {
         activity: { retentionDays: 60 },
         conversations: {
           state: 'on',
-          retentionDays: 14,
+          retentionDays: 60,
           sources: { websiteVisitors: true, signedInCustomers: true, whatsapp: false },
         },
       },
     });
     expect(await activity.conversationPolicy(scope)).toEqual({
       maximumDays: 90,
-      conversationDays: 14,
+      conversationDays: 60,
       sources: { website_visitors: true, signed_in_customers: true, whatsapp: false },
     });
     const events = await audit.list({ org: 'acme', eventType: 'config.history.settings_changed' });
@@ -277,7 +287,7 @@ describe('installation history settings API', () => {
       actorSubject: 'owner',
       app: 'travel',
       env: 'prod',
-      details: { activityDays: 60, conversationDays: 14, sourcesChanged: 'whatsapp' },
+      details: { activityDays: 60, conversationDays: 60, sourcesChanged: 'whatsapp' },
     });
     // A stale revision never overwrites the newer setting.
     expect(saved.settings.revision).not.toBe(original);
@@ -321,12 +331,18 @@ describe('installation history settings API', () => {
     expect(changes).toHaveLength(2);
   });
 
-  it('turning conversations on from not enabled is not a shortening', async () => {
-    await seedConversation('cv_unrelated_conversation', [5]);
-    expect(await save({ conversations: { retentionDays: 1 }, dryRun: true })).toMatchObject({
-      shortensConversations: false,
-      impact: { conversations: 0, items: 0 },
+  it('shortening from the plan default counts existing history, and audits the effective days', async () => {
+    await seedConversation('cv_older_conversation', [20]);
+    await seedConversation('cv_recent_conversation', [5]);
+    expect(await save({ conversations: { retentionDays: 7 }, dryRun: true })).toMatchObject({
+      shortensConversations: true,
+      impact: { conversations: 1, items: 1 },
     });
+    expect(await save({ activityDays: 10 })).toMatchObject({ shortensConversations: false });
+    const events = await audit.list({ org: 'acme', eventType: 'config.history.settings_changed' });
+    expect(events.map((event) => event.details)).toEqual([
+      { activityDays: 10, conversationDays: 30, sourcesChanged: 'none' },
+    ]);
   });
 
   it('after a downgrade, changes only what is asked and validates only changed durations', async () => {

@@ -194,12 +194,12 @@ export interface ConversationHistoryStore {
 }
 
 /**
- * What the business chose, bounded by its plan. `conversationDays` is absent until an Owner/Admin opts
- * in, so existing workspaces keep today's short-lived behaviour (ADR 0241 decision 8).
+ * What the business chose, bounded by its plan: every installation records at the plan default until
+ * an Owner/Admin changes it, and 0 is Off (ADR 0241 decision 8). No policy at all records nothing.
  */
 export interface ConversationPolicy {
   readonly maximumDays: number;
-  readonly conversationDays?: number;
+  readonly conversationDays: number;
   readonly sources?: Partial<Record<ConversationSource, boolean>>;
 }
 
@@ -212,7 +212,7 @@ export function effectiveConversationDays(
   policy: ConversationPolicy | undefined,
   source: ConversationSource,
 ): number {
-  if (policy?.conversationDays === undefined || policy.sources?.[source] === false) return 0;
+  if (policy === undefined || policy.sources?.[source] === false) return 0;
   return Math.max(0, Math.min(policy.conversationDays, policy.maximumDays));
 }
 

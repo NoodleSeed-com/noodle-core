@@ -306,7 +306,7 @@ describe('customer-backend conversation list', () => {
 
   it('returns nothing when the business does not record, and 503 when policy cannot be read', async () => {
     await seed(ACME, 'cv_sara_kept', 'sara', [['user', 'kept']], T0 - 1_000);
-    for (const off of [undefined, { maximumDays: 30 }, { maximumDays: 30, conversationDays: 0 }]) {
+    for (const off of [undefined, { maximumDays: 30, conversationDays: 0 }]) {
       policy = off;
       const response = await call('list', { user: { id: 'sara' } });
       expect(response.status).toBe(200);

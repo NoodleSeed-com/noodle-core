@@ -7,7 +7,7 @@ import {
 
 /**
  * ADR 0241 decision 18: a Preview environment's conversations are kept this long, whatever the stored
- * opt-in or recording switches, and never longer than the plan maximum.
+ * duration or recording switches, and never longer than the plan maximum.
  */
 export const PREVIEW_CONVERSATION_DAYS = 3;
 
@@ -22,7 +22,7 @@ export interface EnvironmentReader {
 /**
  * A Preview environment is a deployed environment of an app whose production environment is another,
  * designated one. An unknown environment, an app with no resolved production designation, or an
- * unreadable registry keeps production semantics, so a live chat never loses its opt-in or reaches a
+ * unreadable registry keeps production semantics, so a live chat never loses its setting or reaches a
  * Builder by default.
  */
 export function previewEnvironments(registry: EnvironmentReader): PreviewEnvironmentSource {

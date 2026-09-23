@@ -62,7 +62,7 @@ export class CustomerConversations {
     const policy = await this.options.policy(client.tenant).catch(() => {
       throw new ConversationHistoryError('conversation_unavailable');
     });
-    // A business that has not opted in records nothing, so it has nothing to list.
+    // An application without an installation records nothing, so it has nothing to list.
     if (policy !== undefined && !Number.isInteger(policy.maximumDays))
       throw new ConversationHistoryError('conversation_unavailable');
     const notBefore = policy === undefined ? now + 1 : conversationReadBound(policy, now);

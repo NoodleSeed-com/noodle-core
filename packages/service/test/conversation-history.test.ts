@@ -50,9 +50,8 @@ async function only(store: ConversationHistoryStore, id: string) {
 }
 
 describe('effective conversation days', () => {
-  it('is off until a business explicitly opts in (existing workspaces, ADR 0241 decision 8)', () => {
+  it('records nothing without a policy (no installation) or when turned off', () => {
     expect(effectiveConversationDays(undefined, 'website_visitors')).toBe(0);
-    expect(effectiveConversationDays({ maximumDays: 7 }, 'website_visitors')).toBe(0);
     expect(effectiveConversationDays({ maximumDays: 7, conversationDays: 0 }, 'whatsapp')).toBe(0);
   });
   it('is capped by the plan maximum and honours per-channel switches', () => {

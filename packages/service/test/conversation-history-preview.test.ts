@@ -61,7 +61,7 @@ describe('Preview environments (ADR 0241 decision 18)', () => {
 });
 
 describe('Preview conversation policy', () => {
-  const notEnabled: ConversationPolicy = { maximumDays: 30 };
+  const off: ConversationPolicy = { maximumDays: 30, conversationDays: 0 };
   const production: ConversationPolicy = {
     maximumDays: 30,
     conversationDays: 14,
@@ -73,9 +73,9 @@ describe('Preview conversation policy', () => {
       async (tenant) => tenant.env === 'dev',
     );
 
-  it('records every Preview source for three days, whatever the stored opt-in or switches', async () => {
+  it('records every Preview source for three days, whatever the stored duration or switches', async () => {
     expect(PREVIEW_CONVERSATION_DAYS).toBe(3);
-    for (const stored of [notEnabled, production, { ...production, conversationDays: 0 }]) {
+    for (const stored of [off, production, { ...production, conversationDays: 0 }]) {
       const effective = await policy(stored)(PREVIEW);
       for (const source of ['website_visitors', 'signed_in_customers', 'whatsapp'] as const)
         expect(effectiveConversationDays(effective, source), source).toBe(3);
@@ -83,14 +83,18 @@ describe('Preview conversation policy', () => {
   });
 
   it('never exceeds the plan maximum and never invents a policy', async () => {
-    expect(await policy({ maximumDays: 1 })(PREVIEW)).toMatchObject({ conversationDays: 1 });
-    expect(await policy({ maximumDays: 0 })(PREVIEW)).toMatchObject({ conversationDays: 0 });
+    expect(await policy({ maximumDays: 1, conversationDays: 0 })(PREVIEW)).toMatchObject({
+      conversationDays: 1,
+    });
+    expect(await policy({ maximumDays: 0, conversationDays: 0 })(PREVIEW)).toMatchObject({
+      conversationDays: 0,
+    });
     expect(await policy(undefined)(PREVIEW)).toBeUndefined();
   });
 
   it('leaves the production policy unchanged', async () => {
     expect(await policy(production)(PRODUCTION)).toBe(production);
-    expect(await policy(notEnabled)(PRODUCTION)).toBe(notEnabled);
+    expect(await policy(off)(PRODUCTION)).toBe(off);
   });
 });
 

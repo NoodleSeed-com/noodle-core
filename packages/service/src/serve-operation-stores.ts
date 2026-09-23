@@ -73,7 +73,7 @@ export function createOperationEvidenceOptions(
 
 /**
  * Conversation history composition (ADR 0241). No policy is injected, so capture follows each
- * installation's history setting: new installations record, existing ones only after an opt-in.
+ * installation's history setting: every installation records at the plan default unless changed.
  */
 export function createConversationHistoryOptions(
   options: ServeServiceOptions,

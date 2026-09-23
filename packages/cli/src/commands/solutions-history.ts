@@ -189,9 +189,7 @@ function describe(data: Settings): string {
     `Activity: ${activity.retentionDays} day(s); plan maximum ${activity.maximumDays}, default ${activity.defaultDays}.`,
     conversations.state === 'on'
       ? `Conversations: ${conversations.retentionDays} day(s).`
-      : conversations.state === 'off'
-        ? 'Conversations: off.'
-        : 'Conversations: not enabled; set --conversation-days to start recording.',
+      : 'Conversations: off.',
     `Recording: website visitors ${channel(conversations.sources.websiteVisitors)}, signed-in customers ${channel(conversations.sources.signedInCustomers)}, WhatsApp ${channel(conversations.sources.whatsapp)}.`,
     ...(conversations.disabledByApplication
       ? [

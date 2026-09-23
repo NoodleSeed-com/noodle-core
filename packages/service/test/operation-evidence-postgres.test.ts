@@ -36,7 +36,8 @@ describe.skipIf(databaseUrl === undefined)('PostgreSQL operation evidence', () =
       started_at bigint NOT NULL, execution_deadline bigint NOT NULL, history_expires_at bigint NOT NULL,
       outcome text NOT NULL, completed_at bigint, PRIMARY KEY(scope_key,id)
     )`);
-    // A setting written before conversation history existed never opted in and keeps every switch on.
+    // A setting written before conversation history existed has no chosen duration (the plan default)
+    // and keeps every switch on.
     await pool.query(
       'CREATE TABLE operation_history_settings (scope_key text PRIMARY KEY, days integer NOT NULL CHECK(days BETWEEN 1 AND 365), revision integer NOT NULL)',
     );
@@ -46,7 +47,7 @@ describe.skipIf(databaseUrl === undefined)('PostgreSQL operation evidence', () =
     await store.ensureSchema();
     legacySetting = await store.readRetention(legacy);
   });
-  it('upgrades an existing setting without opting it into conversation history', () => {
+  it('upgrades an existing setting with no chosen conversation duration', () => {
     expect(legacySetting).toEqual({
       days: 9,
       conversationDays: null,
