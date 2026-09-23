@@ -19,11 +19,15 @@ import {
 } from '../src/conversation-history/contracts.js';
 import { InMemoryConversationHistoryStore } from '../src/conversation-history/memory-store.js';
 import { ApplicationConversations } from '../src/conversation-history/operator.js';
+import { withPreviewConversations } from '../src/conversation-history/preview.js';
 import { dispatchBusinessInformationRoutes } from '../src/routes/business-information-dispatch.js';
 import { InMemoryAuditStore } from '../src/store/audit.js';
 
 const scope = { org: 'acme', app: 'travel', env: 'prod', installationId: 'travel-prod' };
 const otherScope = { org: 'acme', app: 'other', env: 'prod', installationId: 'other-prod' };
+/** The same application's Preview environment (ADR 0241 decision 18). */
+const previewScope = { org: 'acme', app: 'travel', env: 'dev', installationId: 'travel-dev' };
+const isPreview = async (tenant: { readonly env: string }) => tenant.env === 'dev';
 const now = Date.parse('2026-09-06T12:00:00Z');
 const sara: ConversationSubject = { kind: 'customer', ref: 'sara_91' };
 let http: Server;
@@ -50,7 +54,11 @@ async function start() {
   });
   const conversations = new ApplicationConversations({
     store: history,
-    policy: async () => ({ maximumDays: 365, conversationDays: 365 }),
+    policy: withPreviewConversations(
+      async () => ({ maximumDays: 365, conversationDays: 365 }),
+      isPreview,
+    ),
+    preview: isPreview,
     identityKey: 'conversation-http-fixture-key-over-thirty-two-characters',
     now: () => now,
   });
@@ -104,7 +112,7 @@ beforeEach(async () => {
   composed = true;
   erased = [];
   bound = true;
-  for (const target of [scope, otherScope]) {
+  for (const target of [scope, otherScope, previewScope]) {
     await records.createInstallation({
       scope: target,
       profileKey: 'travel',
@@ -221,6 +229,63 @@ describe('workspace roles for conversation history (ADR 0241 decision 10)', () =
         manage ? 200 : 403,
       );
     }
+  });
+});
+
+describe('Builder Preview chats (ADR 0241 decision 18)', () => {
+  it('lets Builders read only Preview conversations, and keeps export, review and forget by role', async () => {
+    await workspaceAuthority();
+    for (const role of ['owner', 'administrator', 'builder', 'operator', 'viewer']) {
+      await seed(id(`preview_${role}`), { target: previewScope });
+      await seed(id(`live_${role}`));
+      const manage = role === 'owner' || role === 'administrator';
+      const listed = await get('travel-dev/conversations', role);
+      expect(listed.status, `${role} preview list`).toBe(200);
+      const page = ConversationListResponseSchema.parse(await listed.json()).data;
+      expect(page.preview).toEqual({ retentionDays: 3 });
+      expect(page.conversations.map((row) => row.id)).toContain(id(`preview_${role}`));
+      expect(page.conversations.map((row) => row.id)).not.toContain(id(`live_${role}`));
+      expect(
+        (await get(`travel-dev/conversations/${id(`preview_${role}`)}`, role)).status,
+        `${role} preview show`,
+      ).toBe(200);
+      expect(
+        (await get('travel-dev/conversations/export', role)).status,
+        `${role} preview export`,
+      ).toBe(manage ? 200 : 403);
+      expect(
+        (await forget({ conversationId: id(`preview_${role}`) }, role, 'travel-dev')).status,
+        `${role} preview forget`,
+      ).toBe(manage ? 200 : 403);
+    }
+    // Builders read Preview chats, never production ones, and cannot review or note either.
+    expect((await get('travel-prod/conversations', 'builder')).status).toBe(403);
+    expect((await get(`travel-prod/conversations/${id('live_builder')}`, 'builder')).status).toBe(
+      403,
+    );
+    expect(
+      (
+        await fetch(`${base}/travel-dev/conversations/${id('preview_viewer')}`, {
+          method: 'PATCH',
+          headers: { authorization: 'Bearer builder', 'content-type': 'application/json' },
+          body: JSON.stringify({ reviewStatus: 'reviewed' }),
+        })
+      ).status,
+    ).toBe(403);
+    const production = ConversationListResponseSchema.parse(
+      await (await get('travel-prod/conversations')).json(),
+    ).data;
+    expect(production.preview).toBeUndefined();
+    expect(production.conversations.map((row) => row.id)).not.toContain(id('preview_viewer'));
+  });
+
+  it('keeps Preview items for three days, however long the stored window', async () => {
+    await seed(id('preview_old'), { target: previewScope, at: now - 4 * CONVERSATION_DAY_MS });
+    await seed(id('preview_new'), { target: previewScope });
+    const page = ConversationListResponseSchema.parse(
+      await (await get('travel-dev/conversations')).json(),
+    ).data;
+    expect(page.conversations.map((row) => row.id)).toEqual([id('preview_new')]);
   });
 });
 

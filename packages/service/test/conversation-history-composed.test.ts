@@ -25,6 +25,9 @@ import type { TenantRef } from '../src/store.js';
 const ORIGIN = 'https://www.acme.test';
 const EXISTING: TenantRef = { org: 'acme', app: 'site', env: 'prod' };
 const CREATED: TenantRef = { org: 'acme', app: 'shop', env: 'prod' };
+/** A Preview environment of the existing site: deployed after production, so never production. */
+const PREVIEW: TenantRef = { org: 'acme', app: 'site', env: 'dev' };
+const key = (tenant: TenantRef) => `${tenant.app}/${tenant.env}`;
 const CARD = '4242 4242 4242 4242';
 const manifest = (name: string) => `manifestVersion: "2"
 server:
@@ -80,7 +83,7 @@ describe('conversation capture through the hosted composition', () => {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   async function webTurn(tenant: TenantRef, subject: string, message: string) {
-    const deploymentId = deployments.get(tenant.app) ?? '';
+    const deploymentId = deployments.get(key(tenant)) ?? '';
     const { client } = await assistants.createClient({
       name: 'web',
       tenant,
@@ -257,27 +260,29 @@ describe('conversation capture through the hosted composition', () => {
     );
     await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
-    for (const tenant of [EXISTING, CREATED]) {
+    for (const tenant of [EXISTING, CREATED, PREVIEW]) {
       const deployed = await registry.deploy(tenant, manifest(tenant.app), {
         accessMode: 'public',
       });
       if (!deployed.ok) throw new Error(JSON.stringify(deployed.errors));
-      deployments.set(tenant.app, deployed.deploymentId);
+      deployments.set(key(tenant), deployed.deploymentId);
     }
-    // An installation that predates conversation history: written straight to the store.
-    const target = await registry.getActiveByTenant(EXISTING);
-    if (!target) throw new Error('deployment unavailable');
-    const deploymentId = deployments.get(EXISTING.app) ?? '';
-    await business.createInstallation({
-      scope: { ...EXISTING, installationId: 'site-prod' },
-      definition: privateDefinitionFromDeployment(
-        { publisherOrg: 'acme', app: 'site', environment: 'prod', deploymentId },
-        { ...EXISTING, environment: 'prod', deploymentId, artifact: target.served.artifact },
-      ),
-      managedCollections: ['leads'],
-      actorSubject: 'owner',
-      actorEmail: 'owner@example.test',
-    });
+    // Installations that predate conversation history: written straight to the store.
+    for (const tenant of [EXISTING, PREVIEW]) {
+      const target = await registry.getActiveByTenant(tenant);
+      if (!target) throw new Error('deployment unavailable');
+      const deploymentId = deployments.get(key(tenant)) ?? '';
+      await business.createInstallation({
+        scope: { ...tenant, installationId: `site-${tenant.env}` },
+        definition: privateDefinitionFromDeployment(
+          { publisherOrg: 'acme', app: 'site', environment: tenant.env, deploymentId },
+          { ...tenant, environment: tenant.env, deploymentId, artifact: target.served.artifact },
+        ),
+        managedCollections: ['leads'],
+        actorSubject: 'owner',
+        actorEmail: 'owner@example.test',
+      });
+    }
     const configured = await owner('/v1/orgs/acme/apps/site/envs/prod/channels/whatsapp', 'PUT', {
       expectedRevision: 0,
       phoneNumberId: 'owned',
@@ -394,7 +399,7 @@ describe('conversation capture through the hosted composition', () => {
         publisherOrg: 'acme',
         app: 'shop',
         environment: 'prod',
-        deploymentId: deployments.get(CREATED.app),
+        deploymentId: deployments.get(key(CREATED)),
       },
       appSlug: 'shop',
       environment: 'prod',
@@ -408,5 +413,22 @@ describe('conversation capture through the hosted composition', () => {
     });
     await webTurn(CREATED, 'noor_2', 'Do you ship to Dubai?');
     expect(await recorded(CREATED, customer('noor_2'))).toHaveLength(2);
+  });
+
+  it('records a Preview environment for three days without its opt-in, apart from production', async () => {
+    expect((await historySettings('site-dev')).conversations.state).toBe('not_enabled');
+    const before = Date.now();
+    await webTurn(PREVIEW, 'builder_test', 'Do you ship to Dubai?');
+    const id = await history.findRecent(PREVIEW, 'website', customer('builder_test'), 0);
+    const preview = id ? await history.read(PREVIEW, id, Date.now()) : undefined;
+    expect(preview?.items).toHaveLength(2);
+    for (const item of preview?.items ?? []) expect(item.expiresAt - item.at).toBe(3 * 86_400_000);
+    expect(preview?.items[0]?.at).toBeGreaterThanOrEqual(before);
+    // The production installation never lists or reads the Preview conversation.
+    const production = await history.list(EXISTING, { now: Date.now(), limit: 100 });
+    expect(production.map((row) => row.id)).not.toContain(id);
+    expect(id ? await history.read(EXISTING, id, Date.now()) : undefined).toBeUndefined();
+    expect(await recorded(EXISTING, customer('builder_test'))).toEqual([]);
+    expect((await historySettings('site-dev')).conversations.state).toBe('not_enabled');
   });
 });

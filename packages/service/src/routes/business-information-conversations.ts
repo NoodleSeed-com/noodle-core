@@ -1,17 +1,21 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import type { ControlPlaneIdentity } from '@noodle-borg/control-plane/portable';
 import { readJsonBody, sendJson } from '@noodle-borg/transport-http';
 import { ConversationReviewRequestSchema } from '@noodle-borg/wire-contracts';
 import type { BusinessPermission } from '../business-information/contracts.js';
+import { businessGrantAllows } from '../business-information/model.js';
 import {
   type ApplicationConversations,
   ConversationHistoryError,
   type ConversationWorkingMemoryEraser,
 } from '../conversation-history/operator.js';
+import { sendForbidden } from '../http-util.js';
 import {
   type BusinessInformationRouteDeps,
   requireIdentity,
   requireInstallationPermission,
 } from './business-information.js';
+import { resolveBusinessStaffGrant } from './business-information-access.js';
 import type { SolutionInstallationRef } from './business-information-paths.js';
 
 export interface BusinessConversationRouteDeps extends BusinessInformationRouteDeps {
@@ -53,7 +57,11 @@ export async function handleApplicationConversations(
   const identity = await requireIdentity(req, res, deps);
   if (identity === false) return;
   // A review's permissions follow its fields, so it is read-authorized before its body is parsed.
-  let permissions: readonly BusinessPermission[] = [PERMISSIONS[route]];
+  let permissions: readonly BusinessPermission[] = [
+    action === 'list' || action === 'show'
+      ? await readPermission(ref, identity, deps)
+      : PERMISSIONS[route],
+  ];
   const authorize = async () => {
     const [last = PERMISSIONS[route], ...earlier] = [...permissions].reverse();
     for (const permission of earlier)
@@ -102,7 +110,11 @@ export async function handleApplicationConversations(
         env: authorized.scope.env,
         actorSubject: identity.subject,
       });
-    if (await authorize()) sendJson(res, 200, result.response);
+    if (!(await authorize())) return;
+    // A Preview read is answered only while the environment is still a Preview.
+    if (fence === 'drafts:preview' && !(await deps.conversations.isPreview(authorized.scope)))
+      return sendForbidden(res, 'business permission required: records:read');
+    sendJson(res, 200, result.response);
   } catch (error) {
     if (!(error instanceof ConversationHistoryError)) throw error;
     sendJson(
@@ -115,4 +127,25 @@ export async function handleApplicationConversations(
       { code: error.code, error: error.message },
     );
   }
+}
+
+/**
+ * ADR 0241 decision 18: a Builder never holds `records:read`, but reads a Preview environment's
+ * conversations under `drafts:preview`. Every other caller keeps the ordinary read permission, so a
+ * production installation still denies Builders.
+ */
+async function readPermission(
+  ref: SolutionInstallationRef,
+  identity: ControlPlaneIdentity,
+  deps: BusinessConversationRouteDeps,
+): Promise<BusinessPermission> {
+  if (ref.installationId === undefined || !deps.conversations) return 'records:read';
+  const installation = await deps.store.getInstallationById(ref.org, ref.installationId);
+  if (installation === undefined) return 'records:read';
+  const grant = await resolveBusinessStaffGrant(deps, installation.scope, identity.subject);
+  return !businessGrantAllows(grant, 'records:read') &&
+    businessGrantAllows(grant, 'drafts:preview') &&
+    (await deps.conversations.isPreview(installation.scope))
+    ? 'drafts:preview'
+    : 'records:read';
 }

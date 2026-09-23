@@ -28,7 +28,9 @@ export type BusinessPermission =
   | 'records:status'
   | 'records:note'
   | 'records:delete'
-  | 'records:export';
+  | 'records:export'
+  /** Workspace Builders and administrators read Preview-environment conversations (ADR 0241). */
+  | 'drafts:preview';
 
 export const MANAGED_REQUEST_STATUSES = ['new', 'in_progress', 'resolved', 'closed'] as const;
 export type ManagedRequestStatus = (typeof MANAGED_REQUEST_STATUSES)[number];

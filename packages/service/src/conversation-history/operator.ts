@@ -25,6 +25,7 @@ import {
   type ConversationSummary,
   type StoredConversation,
 } from './contracts.js';
+import type { PreviewEnvironmentSource } from './preview.js';
 
 /** Fence each local store effect with current staff authority. */
 type ConversationLocalOperation = <T>(operation: () => Promise<T>) => Promise<T>;
@@ -37,6 +38,8 @@ export interface ApplicationConversationsOptions {
    * its window, so a downgrade narrows access at once; absent or failing policy fails closed.
    */
   readonly policy: ConversationPolicySource;
+  /** Preview environments (ADR 0241 decision 18); absent means every tenant is production. */
+  readonly preview?: PreviewEnvironmentSource;
   /** Binds opaque cursors to their purpose, installation, page size and channel. */
   readonly identityKey: string;
   readonly now?: () => number;
@@ -71,6 +74,12 @@ const PAGE = { list: { default: 50, maximum: 100 }, export: { default: 25, maxim
  */
 export class ApplicationConversations {
   constructor(readonly options: ApplicationConversationsOptions) {}
+
+  /** Whether this installation serves a Preview environment; failure keeps production rules. */
+  async isPreview(scope: InstallationScope): Promise<boolean> {
+    const tenant: TenantRef = { org: scope.org, app: scope.app, env: scope.env };
+    return (await this.options.preview?.(tenant).catch(() => false)) ?? false;
+  }
 
   async project(
     scope: InstallationScope,
@@ -198,6 +207,7 @@ export class ApplicationConversations {
           data: {
             conversations: page.summaries.map(summary),
             ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+            ...((await this.isPreview(scope)) ? { preview: { retentionDays: page.days } } : {}),
           },
         }),
         audits: [],
@@ -254,7 +264,7 @@ export class ApplicationConversations {
     });
     const after = decodeConversationCursor(cursor, binding);
     const now = this.#now();
-    const notBefore = await this.#notBefore(tenant, now);
+    const { notBefore, days } = await this.#window(tenant, now);
     const rows = await local(() =>
       this.options.store.list(tenant, {
         now,
@@ -270,6 +280,7 @@ export class ApplicationConversations {
     return {
       now,
       notBefore,
+      days,
       summaries,
       nextCursor: rows.length > limit && last ? encodeConversationCursor(binding, last) : undefined,
     };
@@ -285,10 +296,14 @@ export class ApplicationConversations {
    * nothing deleted, which is all the business history contract forbids.
    */
   async #notBefore(tenant: TenantRef, now: number): Promise<number> {
+    return (await this.#window(tenant, now)).notBefore;
+  }
+
+  async #window(tenant: TenantRef, now: number) {
     const policy = await this.options.policy(tenant).catch(() => undefined);
     if (!policy || !Number.isInteger(policy.maximumDays))
       throw new ConversationHistoryError('conversation_unavailable');
-    return conversationReadBound(policy, now);
+    return { days: conversationWindowDays(policy), notBefore: conversationReadBound(policy, now) };
   }
 
   #hash(value: unknown) {
@@ -355,8 +370,13 @@ function detail(conversation: StoredConversation, windowMs: number) {
 
 /** Oldest visible item time under a policy's live window; Off hides every item. */
 export function conversationReadBound(policy: ConversationPolicy, now: number): number {
-  const days = Math.max(0, Math.min(policy.conversationDays ?? 0, policy.maximumDays));
+  const days = conversationWindowDays(policy);
   return days === 0 ? now + 1 : now - days * CONVERSATION_DAY_MS;
+}
+
+/** The live window in days: the chosen duration under the plan maximum; 0 hides everything. */
+function conversationWindowDays(policy: ConversationPolicy): number {
+  return Math.max(0, Math.min(policy.conversationDays ?? 0, policy.maximumDays));
 }
 
 /** An opaque keyset position bound to the purpose, scope and page shape that `binding` hashes. */

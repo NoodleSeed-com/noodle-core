@@ -14,6 +14,7 @@ const operations: Readonly<Record<BusinessPermission, WorkspacePermission | unde
   'records:note': 'records:write',
   'records:delete': 'records:erase',
   'records:export': 'records:export',
+  'drafts:preview': 'drafts:preview',
 };
 
 export function workspacePermissionForBusinessOperation(permission: BusinessPermission) {

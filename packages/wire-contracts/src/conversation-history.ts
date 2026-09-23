@@ -65,12 +65,15 @@ export const ConversationShowSchema = z.strictObject({
 });
 
 const NextCursorSchema = z.string().min(1).max(2048);
+/** Present only for a Preview environment, whose conversations keep a short fixed window. */
+const PreviewWindowSchema = z.strictObject({ retentionDays: z.number().int().min(0).max(365) });
 
 export const ConversationListResponseSchema = z.strictObject({
   ok: z.literal(true),
   data: z.strictObject({
     conversations: z.array(ConversationSummarySchema).max(100),
     nextCursor: NextCursorSchema.optional(),
+    preview: PreviewWindowSchema.optional(),
   }),
 });
 /** Show and review both answer with the conversation as staff now see it. */
@@ -140,6 +143,7 @@ export const ConversationListClientResponseSchema = z.object({
   data: z.object({
     conversations: z.array(ClientSummarySchema).max(100),
     nextCursor: NextCursorSchema.optional(),
+    preview: z.object(PreviewWindowSchema.shape).optional(),
   }),
 });
 export const ConversationShowClientResponseSchema = z.object({

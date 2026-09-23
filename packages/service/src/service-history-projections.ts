@@ -4,6 +4,7 @@ import { historyDisabledSurfaces } from './application-history-settings.js';
 import type { BusinessInformationStore } from './business-information/contracts.js';
 import type { ConversationPolicySource } from './conversation-history/contracts.js';
 import { ApplicationConversations } from './conversation-history/operator.js';
+import { previewEnvironments, withPreviewConversations } from './conversation-history/preview.js';
 import type { ModuleHost } from './modules/host.js';
 import type { ServiceOptions } from './options.js';
 import type { ServerRegistry } from './registry.js';
@@ -13,7 +14,7 @@ export function createHistoryProjections(
   options: ServiceOptions,
   moduleHost: ModuleHost,
   installations: BusinessInformationStore | undefined,
-  registry: Pick<ServerRegistry, 'getActiveByTenant'>,
+  registry: Pick<ServerRegistry, 'getActiveByTenant' | 'getEnvironment' | 'listEnvironments'>,
 ) {
   const history = options.conversationHistory;
   const activity =
@@ -29,14 +30,18 @@ export function createHistoryProjections(
               (await registry.getActiveByTenant(scope))?.served.artifact.server.assistant,
             ),
         });
-  const conversationPolicy: ConversationPolicySource =
-    history?.policy ?? settingsConversationPolicy(installations, activity);
+  const preview = previewEnvironments(registry);
+  const conversationPolicy: ConversationPolicySource = withPreviewConversations(
+    history?.policy ?? settingsConversationPolicy(installations, activity),
+    preview,
+  );
   const conversations =
     history === undefined
       ? undefined
       : new ApplicationConversations({
           store: history.store,
           policy: conversationPolicy,
+          preview,
           identityKey: history.identityKey ?? randomBytes(32).toString('hex'),
           ...(options.clock === undefined
             ? {}

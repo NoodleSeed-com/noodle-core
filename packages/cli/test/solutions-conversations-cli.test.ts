@@ -89,6 +89,23 @@ describe('solutions conversations CLI', () => {
     expect(text).toContain('participant wa_4821');
     expect(text).toContain('needs attention');
     expect(text).toContain('Next cursor: next');
+    expect(text).not.toContain('Preview');
+  });
+
+  it('states a Preview environment and its fixed window (ADR 0241 decision 18)', async () => {
+    const request = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        ok: true,
+        data: { conversations: [summary], preview: { retentionDays: 3 } },
+      }),
+    );
+    expect(await run(['list', 'install', ...flags], request)).toBe(0);
+    expect(JSON.parse(String(log.mock.calls[0]?.[0])).data.preview).toEqual({ retentionDays: 3 });
+    log.mockClear();
+    expect(await run(['list', 'install', ...human], request)).toBe(0);
+    expect(String(log.mock.calls[0]?.[0])).toMatch(
+      /^Preview environment: conversations are kept for 3 days\.\n/,
+    );
   });
 
   it('shows one conversation with its messages and private notes', async () => {

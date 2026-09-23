@@ -179,6 +179,11 @@ export async function runSolutionConversations(
       else
         console.log(
           [
+            ...('preview' in data && data.preview
+              ? [
+                  `Preview environment: conversations are kept for ${data.preview.retentionDays} days.`,
+                ]
+              : []),
             ...(exported
               ? exported.conversations.flatMap((row) => [line(row), ...row.items.map(itemLine)])
               : data.conversations.map(line)),
