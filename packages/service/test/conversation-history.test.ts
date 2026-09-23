@@ -118,6 +118,18 @@ describe('conversation capture', () => {
     expect(JSON.stringify(items)).not.toContain('GF-8');
   });
 
+  it('derives the web conversation id from the session id (the Console transcript link pins this vector)', async () => {
+    const { history, store } = capture(optedIn);
+    await history.recordSessionTurn(
+      session('anonymous', 'anon_9f'),
+      [{ role: 'user', content: 'hi', kind: 'visible' }],
+      recording,
+    );
+    expect(
+      await store.findRecent(TENANT, 'website', { kind: 'anonymous', ref: 'anon_9f' }, 0),
+    ).toBe('cv_Oh17aEi6SBbXLuLy2YuVtG');
+  });
+
   it('follows the per-channel switch for the current caller', async () => {
     const { history, store } = capture({ ...optedIn, sources: { website_visitors: false } });
     await history.recordSessionTurn(
