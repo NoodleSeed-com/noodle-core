@@ -46,6 +46,70 @@ describe('Meta Cloud API adapter', () => {
       redirect: 'manual',
     });
   });
+  // Shape observed on Noodle Seed's test number on 2026-09-22: the WABA has no working payment method.
+  const paymentBlocked = (phone: string, extra: object[] = []) => ({
+    id: asset.phoneNumberId,
+    health_status: {
+      can_send_message: 'BLOCKED',
+      entities: [
+        {
+          entity_type: 'PHONE_NUMBER',
+          id: asset.phoneNumberId,
+          can_send_message: phone,
+          can_receive_call_sip: 'BLOCKED',
+          errors: [{ error_code: 138024, error_description: 'SIP not enabled' }],
+        },
+        {
+          entity_type: 'WABA',
+          id: asset.wabaId,
+          can_send_message: 'BLOCKED',
+          errors: [{ error_code: 141006, error_description: 'payment method error' }],
+        },
+        { entity_type: 'BUSINESS', id: '944146554851705', can_send_message: 'AVAILABLE' },
+        ...extra,
+      ],
+    },
+  });
+  it('treats a payment block on business-initiated messages as limited for a reply-only channel', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json(paymentBlocked('AVAILABLE')));
+    expect(await adapter(fetcher).health()).toEqual({
+      phoneNumberId: asset.phoneNumberId,
+      canSend: true,
+      status: 'LIMITED',
+    });
+  });
+  it.each([
+    ['the phone number itself is blocked', paymentBlocked('BLOCKED')],
+    [
+      'another entity is blocked for another reason',
+      paymentBlocked('AVAILABLE', [
+        {
+          entity_type: 'APP',
+          id: '931692592882983',
+          can_send_message: 'BLOCKED',
+          errors: [{ error_code: 131031, error_description: 'account locked' }],
+        },
+      ]),
+    ],
+    [
+      'a blocked entity carries no reason',
+      {
+        id: asset.phoneNumberId,
+        health_status: {
+          can_send_message: 'BLOCKED',
+          entities: [
+            { entity_type: 'PHONE_NUMBER', id: asset.phoneNumberId, can_send_message: 'AVAILABLE' },
+            { entity_type: 'WABA', id: asset.wabaId, can_send_message: 'BLOCKED' },
+          ],
+        },
+      },
+    ],
+  ])('stays blocked when %s', async (_case, body) => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(body));
+    expect(await adapter(fetcher).health()).toMatchObject({ canSend: false, status: 'BLOCKED' });
+  });
   it('refuses unrecognized health and an unavailable Graph API', async () => {
     const unknown = vi
       .fn<typeof fetch>()

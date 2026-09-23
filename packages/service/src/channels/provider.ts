@@ -63,21 +63,62 @@ export async function boundedJson(response: Response): Promise<unknown> {
     await reader.cancel().catch(() => undefined);
   }
 }
-/** Parse a Cloud API health read: the node id and its aggregate `can_send_message`. */
+const sendState = z.enum(['AVAILABLE', 'LIMITED', 'BLOCKED']);
+/**
+ * Health errors that block only business-initiated conversations. 141006 reads "There is an error
+ * with the payment method. This will block business initiated conversations." (observed on a WABA
+ * with no payment method, 2026-09-22). Channels only reply inside the customer service window,
+ * where non-template messages are free (https://developers.facebook.com/docs/whatsapp/pricing/).
+ */
+const REPLY_SAFE_BLOCKS = new Set([141006]);
+/**
+ * Parse a Cloud API health read. The aggregate `can_send_message` is BLOCKED when any entity is;
+ * it is downgraded to LIMITED only when the phone number itself can send and every blocked entity
+ * names nothing but reply-safe errors.
+ */
 export async function cloudApiHealth(response: Response): Promise<WhatsAppHealth> {
   if (!response.ok) throw new ChannelError('provider_unavailable');
   const parsed = z
     .object({
       id: identifier,
-      health_status: z.object({ can_send_message: z.enum(['AVAILABLE', 'LIMITED', 'BLOCKED']) }),
+      health_status: z.object({
+        can_send_message: sendState,
+        entities: z
+          .array(
+            z.object({
+              entity_type: z.string().max(64),
+              can_send_message: sendState.optional(),
+              errors: z
+                .array(z.object({ error_code: z.number().int() }))
+                .max(50)
+                .optional(),
+            }),
+          )
+          .max(20)
+          .optional(),
+      }),
     })
     .safeParse(await boundedJson(response));
   if (!parsed.success) throw new ChannelError('provider_response_invalid');
+  const { can_send_message: aggregate, entities = [] } = parsed.data.health_status;
+  const phone = entities.find((entity) => entity.entity_type === 'PHONE_NUMBER');
+  const replySafe =
+    aggregate === 'BLOCKED' &&
+    phone !== undefined &&
+    phone.can_send_message !== 'BLOCKED' &&
+    entities
+      .filter((entity) => entity.can_send_message === 'BLOCKED')
+      .every(({ errors = [] }) => {
+        return (
+          errors.length > 0 && errors.every((error) => REPLY_SAFE_BLOCKS.has(error.error_code))
+        );
+      });
+  const status = replySafe ? 'LIMITED' : aggregate;
   return {
     phoneNumberId: parsed.data.id,
     // LIMITED meets provider messaging requirements; provider limits still govern each send.
-    canSend: parsed.data.health_status.can_send_message !== 'BLOCKED',
-    status: parsed.data.health_status.can_send_message,
+    canSend: status !== 'BLOCKED',
+    status,
   };
 }
 export async function cloudApiSetBlocked(
