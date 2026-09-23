@@ -18,6 +18,7 @@ export interface SolutionInstallationRef {
     | 'assignees'
     | 'records'
     | 'activity'
+    | 'history'
     | 'conversations'
     | 'export'
     | 'source';
@@ -90,7 +91,7 @@ export function parseSolutionInstallationPath(
         };
   }
   const application =
-    /^\/v1\/orgs\/([^/]+)\/solution-installations\/([^/]+)\/(activate|settings|notice|record-lifecycle|channels|operations\/coordination(?:\/resolve)?|activity(?:\/(?:settings|export|preview))?)$/.exec(
+    /^\/v1\/orgs\/([^/]+)\/solution-installations\/([^/]+)\/(activate|settings|notice|record-lifecycle|channels|operations\/coordination(?:\/resolve)?|history\/settings|activity(?:\/(?:export|preview))?)$/.exec(
       pathname,
     );
   if (application !== null) {
@@ -105,12 +106,14 @@ export function parseSolutionInstallationPath(
             ? 'coordination'
             : application[3]?.startsWith('activity')
               ? 'activity'
-              : (application[3] as
-                  | 'activate'
-                  | 'settings'
-                  | 'notice'
-                  | 'record-lifecycle'
-                  | 'channels'),
+              : application[3] === 'history/settings'
+                ? 'history'
+                : (application[3] as
+                    | 'activate'
+                    | 'settings'
+                    | 'notice'
+                    | 'record-lifecycle'
+                    | 'channels'),
         };
   }
   let match = /^\/v1\/orgs\/([^/]+)\/solution-installations$/.exec(pathname);

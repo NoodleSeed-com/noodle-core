@@ -72,8 +72,8 @@ export function createOperationEvidenceOptions(
 }
 
 /**
- * Conversation history composition (ADR 0241). Capture stays off: no business has opted in yet, so the
- * policy is always absent and only the operator API and retention sweep see the store.
+ * Conversation history composition (ADR 0241). No policy is injected, so capture follows each
+ * installation's history setting: new installations record, existing ones only after an opt-in.
  */
 export function createConversationHistoryOptions(
   options: ServeServiceOptions,
@@ -84,7 +84,6 @@ export function createConversationHistoryOptions(
   if (!businessInformationEnabled) return undefined;
   return {
     store: operationStores.history,
-    policy: async () => undefined,
     identityKey: createHash('sha256')
       .update('conversation-history\0')
       .update(

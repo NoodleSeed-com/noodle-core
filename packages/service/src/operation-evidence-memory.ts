@@ -6,6 +6,7 @@ import {
   type OperationEvidenceRecord,
   type OperationEvidenceStore,
   type OperationHistorySetting,
+  type OperationHistorySettingValue,
   operationEvidenceKey,
 } from './operation-evidence.js';
 import {
@@ -19,11 +20,21 @@ export class InMemoryOperationEvidenceStore implements OperationEvidenceStore {
   async readRetention(scope: InstallationScope) {
     return this.#settings.get(operationEvidenceKey(scope, ''));
   }
-  async setRetention(scope: InstallationScope, days: number, expectedRevision: number | undefined) {
+  async setRetention(
+    scope: InstallationScope,
+    setting: OperationHistorySettingValue,
+    expectedRevision: number | undefined,
+  ) {
     const key = operationEvidenceKey(scope, '');
     const previous = this.#settings.get(key);
     if (previous?.revision !== expectedRevision) return false;
-    this.#settings.set(key, { days, revision: (previous?.revision ?? 0) + 1 });
+    const { days, conversationDays, sources } = setting;
+    this.#settings.set(key, {
+      days,
+      conversationDays,
+      sources: { ...sources },
+      revision: (previous?.revision ?? 0) + 1,
+    });
     return true;
   }
   readonly #records = new Map<string, OperationEvidenceRecord>();

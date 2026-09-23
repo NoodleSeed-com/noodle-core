@@ -7,6 +7,7 @@ import type {
 } from '@noodle-borg/assistant-gateway/portable';
 import { assistantConfirmationProposal } from '@noodle-borg/assistant-gateway/portable';
 import type { InvocationContext } from '@noodle-borg/runtime';
+import { sessionSurfaceHistory } from '../conversation-history/capture.js';
 import type { AssistantRouteDeps } from './assistant.js';
 import { narrateInteractionResolution } from './assistant-agent.js';
 
@@ -43,7 +44,11 @@ export async function narrateResolvedInteraction(
         { role: 'assistant' as const, content: generated.narration, kind: 'visible' as const },
       ];
       await deps.store.appendHistory(session.id, rows);
-      await deps.conversations?.recordSessionTurn(session, rows);
+      await deps.conversations?.recordSessionTurn(
+        session,
+        rows,
+        sessionSurfaceHistory(target.served.artifact.server.assistant, session),
+      );
     }
     if (generated.suggestions.length > 0) {
       await deps.store.replaceLatestSuggestions(session.id, {

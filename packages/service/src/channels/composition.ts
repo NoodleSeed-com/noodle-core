@@ -52,7 +52,7 @@ export function createWhatsAppRuntime(
               return installation && history.activity
                 ? Math.min(
                     allowance.maximumDays,
-                    (await history.activity.settings(installation.scope, false)).projection
+                    (await history.activity.settings(installation.scope, false)).projection.activity
                       .retentionDays,
                   )
                 : allowance.maximumDays;

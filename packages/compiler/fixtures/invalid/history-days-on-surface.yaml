@@ -1,0 +1,24 @@
+# Invalid: a surface may declare only `history: false` (ADR 0241 decision 11). How many days a recorded
+# surface keeps is the business's setting (ADR 0212), never a manifest value.
+manifestVersion: "1"
+server:
+  name: acme_support
+  version: 1.0.0
+  title: Acme Support
+  assistant:
+    model:
+      kind: noodle-managed
+    allowedOrigins:
+      - https://app.acme.test
+    surfaces:
+      - mode: authenticated
+        origins:
+          - https://app.acme.test
+        history: 30
+tools:
+  - name: get_order
+    description: Look up an order.
+    inputSchema:
+      type: object
+    fulfilment:
+      use: acme.get_order

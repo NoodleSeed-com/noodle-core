@@ -403,6 +403,10 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 4000
+                          },
+                          "history": {
+                            "type": "boolean",
+                            "const": false
                           }
                         },
                         "required": ["kind", "channel", "mode", "capabilities"],
@@ -493,6 +497,10 @@
                               }
                             },
                             "additionalProperties": false
+                          },
+                          "history": {
+                            "type": "boolean",
+                            "const": false
                           }
                         },
                         "required": ["mode", "origins"],
@@ -2564,6 +2572,10 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 4000
+                          },
+                          "history": {
+                            "type": "boolean",
+                            "const": false
                           }
                         },
                         "required": ["kind", "channel", "mode", "capabilities"],
@@ -2654,6 +2666,10 @@
                               }
                             },
                             "additionalProperties": false
+                          },
+                          "history": {
+                            "type": "boolean",
+                            "const": false
                           }
                         },
                         "required": ["mode", "origins"],

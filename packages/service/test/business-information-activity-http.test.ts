@@ -5,7 +5,8 @@ import { InMemoryControlPlaneStore } from '@noodle-borg/control-plane/portable';
 import { noopLogger, sendJson } from '@noodle-borg/transport-http';
 import {
   ApplicationActivityListResponseSchema,
-  ApplicationActivitySettingsResponseSchema,
+  ApplicationHistorySettingsResponseSchema,
+  ApplicationHistorySettingsSaveResponseSchema,
 } from '@noodle-borg/wire-contracts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ActivityHistoryAllowance, ApplicationActivity } from '../src/application-activity.js';
@@ -129,8 +130,8 @@ function get(path: string, subject = 'owner') {
   return fetch(`${base}/${path}`, { headers: { authorization: `Bearer ${subject}` } });
 }
 function patch(body: unknown, subject = 'owner') {
-  return fetch(`${base}/travel-prod/activity/settings`, {
-    method: 'PATCH',
+  return fetch(`${base}/travel-prod/history/settings`, {
+    method: 'PUT',
     headers: { authorization: `Bearer ${subject}`, 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
@@ -188,7 +189,7 @@ describe('workspace activity authority at the local effect', () => {
     for (const role of ['owner', 'administrator', 'builder', 'operator', 'viewer', 'manager']) {
       const read = role !== 'builder' && role !== 'manager';
       const manage = role === 'owner' || role === 'administrator';
-      for (const path of ['activity', 'activity/settings', 'activity/preview'])
+      for (const path of ['activity', 'history/settings', 'activity/preview'])
         expect((await get(`travel-prod/${path}`, role)).status, `${role} ${path}`).toBe(
           read ? 200 : 403,
         );
@@ -196,11 +197,11 @@ describe('workspace activity authority at the local effect', () => {
         expect((await get(`travel-prod/${path}`, role)).status, `${role} ${path}`).toBe(
           manage ? 200 : 403,
         );
-      const settings = ApplicationActivitySettingsResponseSchema.parse(
-        await (await get('travel-prod/activity/settings')).json(),
+      const settings = ApplicationHistorySettingsResponseSchema.parse(
+        await (await get('travel-prod/history/settings')).json(),
       ).data;
       expect(
-        (await patch({ expectedRevision: settings.revision, retentionDays: 7 }, role)).status,
+        (await patch({ expectedRevision: settings.revision, activityDays: 7 }, role)).status,
         role,
       ).toBe(manage ? 200 : 403);
     }
@@ -230,8 +231,8 @@ describe('workspace activity authority at the local effect', () => {
 
   it('does not save retention after an administrator is removed during policy resolution', async () => {
     const workspaces = await workspaceAuthority();
-    const settings = ApplicationActivitySettingsResponseSchema.parse(
-      await (await get('travel-prod/activity/settings')).json(),
+    const settings = ApplicationHistorySettingsResponseSchema.parse(
+      await (await get('travel-prod/history/settings')).json(),
     ).data;
     const previous = await evidence.readRetention(scope);
     const write = vi.spyOn(evidence, 'setRetention');
@@ -246,7 +247,7 @@ describe('workspace activity authority at the local effect', () => {
       });
     };
     expect(
-      (await patch({ expectedRevision: settings.revision, retentionDays: 7 }, 'administrator'))
+      (await patch({ expectedRevision: settings.revision, activityDays: 7 }, 'administrator'))
         .status,
     ).toBe(403);
     expect(write).not.toHaveBeenCalled();
@@ -286,27 +287,26 @@ describe('application Activity HTTP projection', () => {
     expect((await get('travel-prod/activity', 'viewer')).status).toBe(403);
   });
   it('exposes read-only settings to viewers and requires administrator authority, tier limits and exact CAS for changes', async () => {
-    const viewer = ApplicationActivitySettingsResponseSchema.parse(
-      await (await get('travel-prod/activity/settings', 'viewer')).json(),
+    const viewer = ApplicationHistorySettingsResponseSchema.parse(
+      await (await get('travel-prod/history/settings', 'viewer')).json(),
     ).data;
     expect(viewer.canEdit).toBe(false);
     expect(
-      (await patch({ expectedRevision: viewer.revision, retentionDays: 7 }, 'viewer')).status,
+      (await patch({ expectedRevision: viewer.revision, activityDays: 7 }, 'viewer')).status,
     ).toBe(403);
-    expect((await patch({ expectedRevision: viewer.revision, retentionDays: 31 })).status).toBe(
-      400,
-    );
-    const result = await patch({ expectedRevision: viewer.revision, retentionDays: 7 });
+    expect((await patch({ expectedRevision: viewer.revision, activityDays: 31 })).status).toBe(400);
+    const result = await patch({ expectedRevision: viewer.revision, activityDays: 7 });
     expect(result.status).toBe(200);
-    const saved = ApplicationActivitySettingsResponseSchema.parse(await result.json()).data;
-    expect(saved).toMatchObject({ retentionDays: 7, maximumDays: 30, canEdit: true });
-    expect((await patch({ expectedRevision: viewer.revision, retentionDays: 8 })).status).toBe(409);
+    const saved = ApplicationHistorySettingsSaveResponseSchema.parse(await result.json()).data
+      .settings;
+    expect(saved).toMatchObject({ activity: { retentionDays: 7, maximumDays: 30 }, canEdit: true });
+    expect((await patch({ expectedRevision: viewer.revision, activityDays: 8 })).status).toBe(409);
     allowance = { maximumDays: 7, defaultDays: 7, revision: 'free-v2' };
-    expect((await patch({ expectedRevision: saved.revision, retentionDays: 7 })).status).toBe(409);
-    const current = ApplicationActivitySettingsResponseSchema.parse(
-      await (await get('travel-prod/activity/settings')).json(),
+    expect((await patch({ expectedRevision: saved.revision, activityDays: 7 })).status).toBe(409);
+    const current = ApplicationHistorySettingsResponseSchema.parse(
+      await (await get('travel-prod/history/settings')).json(),
     ).data;
-    expect(current.maximumDays).toBe(7);
+    expect(current.activity.maximumDays).toBe(7);
   });
   it('pages equal timestamps without skipping and rejects reuse across installation, page size or policy', async () => {
     await Promise.all(['a', 'b', 'c'].map((id) => seed(id)));
@@ -493,7 +493,9 @@ describe('application Activity HTTP projection', () => {
   it.each([
     'settings/settings',
     'channels/settings',
-    'activity/settings/settings',
+    'activity/settings',
+    'history/settings/settings',
+    'history',
   ])('does not route unintended settings aliases: %s', async (path) => {
     expect((await get(`travel-prod/${path}`)).status).toBe(404);
   });

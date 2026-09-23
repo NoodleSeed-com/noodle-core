@@ -32,6 +32,11 @@ const cases: ReadonlyArray<{ file: string; code: CompileErrorCode; path: string 
     code: 'invalid_shape',
     path: 'server.assistant.surfaces.0.continuity',
   },
+  {
+    file: 'history-days-on-surface.yaml',
+    code: 'invalid_shape',
+    path: 'server.assistant.surfaces.0',
+  },
   // Expression + flow-fulfilment errors (catalog-independent):
   { file: 'expr-bad-syntax.yaml', code: 'invalid_expression', path: 'tools.0.fulfilment.args.id' },
   { file: 'expr-empty.yaml', code: 'invalid_expression', path: 'tools.0.fulfilment.args.id' },

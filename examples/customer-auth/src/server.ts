@@ -191,6 +191,7 @@ export default server(
           sessionClaims: {
             accountTier: { exposeToModel: true },
           },
+          history: false, // admin chats are never kept
         }),
         publicMessaging({ channel: 'whatsapp', capabilities: [publicHelp] }),
       ],

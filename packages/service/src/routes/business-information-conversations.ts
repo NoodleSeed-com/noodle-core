@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readJsonBody, sendJson } from '@noodle-borg/transport-http';
+import { ConversationReviewRequestSchema } from '@noodle-borg/wire-contracts';
 import type { BusinessPermission } from '../business-information/contracts.js';
 import {
   type ApplicationConversations,
@@ -16,7 +17,10 @@ export interface BusinessConversationRouteDeps extends BusinessInformationRouteD
   readonly conversations?: ApplicationConversations;
 }
 
-/** ADR 0241 decision 10: readers see text; only export and erasure need Owner/Administrator authority. */
+/**
+ * ADR 0241 decision 10: readers see text; reviewing and noting need the record-handling permissions an
+ * Operator holds; only export and erasure need Owner/Administrator authority.
+ */
 const PERMISSIONS: Readonly<
   Record<NonNullable<SolutionInstallationRef['conversationAction']>, BusinessPermission>
 > = {
@@ -25,6 +29,9 @@ const PERMISSIONS: Readonly<
   export: 'records:export',
   forget: 'records:delete',
 };
+const METHODS: Readonly<
+  Record<NonNullable<SolutionInstallationRef['conversationAction']>, readonly string[]>
+> = { list: ['GET'], show: ['GET', 'PATCH'], export: ['GET'], forget: ['POST'] };
 
 export async function handleApplicationConversations(
   req: IncomingMessage,
@@ -33,28 +40,45 @@ export async function handleApplicationConversations(
   ref: SolutionInstallationRef,
   deps: BusinessConversationRouteDeps,
 ): Promise<void> {
-  const action = ref.conversationAction ?? 'list';
-  const method = action === 'forget' ? 'POST' : 'GET';
-  if (req.method !== method) {
-    res.setHeader('allow', method);
+  const route = ref.conversationAction ?? 'list';
+  const methods = METHODS[route];
+  if (!methods.includes(req.method ?? '')) {
+    res.setHeader('allow', methods.join(', '));
     return sendJson(res, 405, { error: 'method not allowed' });
   }
+  const action = req.method === 'PATCH' ? 'review' : route;
   const identity = await requireIdentity(req, res, deps);
   if (identity === false) return;
-  const permission = PERMISSIONS[action];
-  const authorize = () => requireInstallationPermission(res, ref, identity, permission, deps);
+  // A review's permissions follow its fields, so it is read-authorized before its body is parsed.
+  let permissions: readonly BusinessPermission[] = [PERMISSIONS[route]];
+  const authorize = async () => {
+    const [last = PERMISSIONS[route], ...earlier] = [...permissions].reverse();
+    for (const permission of earlier)
+      if (!(await requireInstallationPermission(res, ref, identity, permission, deps)))
+        return false;
+    return requireInstallationPermission(res, ref, identity, last, deps);
+  };
   const authorized = await authorize();
   if (!authorized) return;
   res.setHeader('cache-control', 'private, no-store');
   try {
     if (!deps.conversations) throw new ConversationHistoryError('conversation_unavailable');
     let body: unknown;
-    if (method === 'POST') {
+    if (req.method !== 'GET') {
       const parsed = await readJsonBody(req, deps.maxBody);
       if (!parsed.ok) return sendJson(res, parsed.status, { error: parsed.error });
       body = parsed.value;
+      if (action === 'review') {
+        const review = ConversationReviewRequestSchema.safeParse(body);
+        if (!review.success) throw new ConversationHistoryError('conversation_invalid');
+        permissions = [
+          ...(review.data.reviewStatus === undefined ? [] : ['records:status' as const]),
+          ...(review.data.note === undefined ? [] : ['records:note' as const]),
+        ];
+      }
       if (!(await authorize())) return;
     }
+    const fence = permissions.at(-1) ?? PERMISSIONS[route];
     const result = await deps.conversations.project(
       authorized.scope,
       action,
@@ -62,13 +86,13 @@ export async function handleApplicationConversations(
         parameters: [...url.searchParams.entries()],
         ...(ref.conversationId === undefined ? {} : { conversationId: ref.conversationId }),
         body,
+        actor: identity.subject,
       },
-      (operation) =>
-        deps.store.staff.run(authorized.scope, identity.subject, permission, operation),
+      (operation) => deps.store.staff.run(authorized.scope, identity.subject, fence, operation),
     );
-    if ('audit' in result && result.audit)
+    for (const event of result.audits)
       await deps.audit?.emit({
-        ...result.audit,
+        ...event,
         org: ref.org,
         app: authorized.scope.app,
         env: authorized.scope.env,

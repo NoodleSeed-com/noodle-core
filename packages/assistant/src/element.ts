@@ -167,6 +167,7 @@ export class NoodleAssistantElement extends HTMLElementBase {
     appearance: () => this.#appearance,
     openPanel: () => this.open(),
     sendMessage: (message) => this.#sendGuarded(message),
+    history: () => this.#events.history,
   });
   readonly #modal = new AssistantElementModalController({
     host: this,
@@ -710,7 +711,7 @@ export class NoodleAssistantElement extends HTMLElementBase {
     queryRequired<HTMLElement>(this.shadowRoot, 'header').hidden = !appearance.behavior.showHeader;
     const legal = queryRequired<HTMLElement>(this.shadowRoot, '.legal');
     legal.replaceChildren();
-    appendLegalLinks(legal, this.#appearance);
+    appendLegalLinks(legal, this.#appearance, this.#events.history);
     this.#launcher.sync();
     this.#applyTheme();
     this.#modal.sync();
@@ -752,7 +753,7 @@ export class NoodleAssistantElement extends HTMLElementBase {
     if (!appearance.behavior.showHeader)
       queryRequired<HTMLElement>(this.shadowRoot, 'header').hidden = true;
     const legal = queryRequired<HTMLElement>(this.shadowRoot, '.legal');
-    appendLegalLinks(legal, this.#appearance);
+    appendLegalLinks(legal, this.#appearance, this.#events.history);
     this.#messages = this.shadowRoot.querySelector('.messages') ?? undefined;
     this.#messages?.append(...conversation);
     this.#thinking = this.#messages?.querySelector('.thinking') ?? undefined;

@@ -63,7 +63,13 @@ import {
   assistantSessionResponseSchema,
 } from '@noodle-borg/wire-contracts';
 import type { RuntimeTargetResolver } from '../application-runtime-target.js';
-import type { ConversationCapture } from '../conversation-history/capture.js';
+import {
+  type ConversationCapture,
+  sessionHistoryNotice,
+  sessionSurfaceHistory,
+  websiteSurfaceHistory,
+} from '../conversation-history/capture.js';
+import type { CustomerConversations } from '../conversation-history/customer.js';
 import { sendForbidden, sendUnauthorized } from '../http-util.js';
 import type { ServerRegistry } from '../registry.js';
 import type { AuditSink } from '../store/audit.js';
@@ -79,6 +85,7 @@ import {
   applyBrowserCors,
   assistantSessionEndpoints,
   authenticateSession,
+  basicCredentials,
   handleAssistantPreflight,
   now,
 } from './assistant-route-http.js';
@@ -118,6 +125,8 @@ export interface AssistantRouteDeps {
   readonly logger?: Logger;
   /** Durable people-facing history (ADR 0241); absent means nothing is recorded. */
   readonly conversations?: ConversationCapture;
+  /** An embed client's user-scoped list and forget (ADR 0241 decision 12); absent answers 503. */
+  readonly customerConversations?: CustomerConversations;
 }
 
 export async function handleConsoleApprovalNonce(
@@ -290,6 +299,7 @@ export async function handleAssistantSession(
       caller,
       configuration,
       endpoints: assistantSessionEndpoints(deps.serviceBase(req)),
+      surfaceHistory: websiteSurfaceHistory(assistant, surfaceBinding.kind),
     });
   }
 
@@ -316,6 +326,12 @@ export async function handleAssistantSession(
     expiresAt: session.session.expiresAt,
     endpoints: assistantSessionEndpoints(deps.serviceBase(req)),
     ...(configuration ? { configuration } : {}),
+    ...(await sessionHistoryNotice(
+      deps.conversations,
+      client.tenant,
+      'signed_in_customers',
+      websiteSurfaceHistory(assistant, surfaceBinding.kind),
+    )),
   };
   // Every published @noodleseed/assistant widget consumes this shape; parse (don't just test)
   // so a contract break fails loudly at mint time instead of stranding deployed widgets (ADR 0151).
@@ -522,7 +538,11 @@ export async function handleAssistantTurn(
     ];
     try {
       await deps.store.appendHistory(session.id, rows);
-      await deps.conversations?.recordSessionTurn(session, rows);
+      await deps.conversations?.recordSessionTurn(
+        session,
+        rows,
+        sessionSurfaceHistory(target?.served.artifact.server.assistant, session),
+      );
     } catch {
       emit({ event: 'error', data: { code: 'conversation_state_failed', retryable: false } });
       deps.logger?.warn('assistant.history.failed', {
@@ -706,18 +726,4 @@ export async function handleAssistantAppRequest(
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function basicCredentials(req: IncomingMessage): { id: string; secret: string } | undefined {
-  const match = /^Basic\s+(.+)$/i.exec(req.headers.authorization ?? '');
-  if (!match?.[1]) return undefined;
-  try {
-    const decoded = Buffer.from(match[1], 'base64').toString('utf8');
-    const index = decoded.indexOf(':');
-    return index > 0
-      ? { id: decoded.slice(0, index), secret: decoded.slice(index + 1) }
-      : undefined;
-  } catch {
-    return undefined;
-  }
 }

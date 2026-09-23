@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   authenticatedSurfaceOf,
+  messagingSurfaceOf,
   publicSurfaceOf,
   surfaceBindingForOrigin,
 } from '../src/public-surface.js';
@@ -126,5 +127,29 @@ describe('selecting the surface that owns an origin', () => {
         'https://www.acme.test',
       ),
     ).toEqual({ kind: 'pre-surfaces' });
+  });
+});
+
+describe('reading a surface’s history opt-out (ADR 0241 decision 11)', () => {
+  const assistant = (history: unknown) => ({
+    surfaces: [
+      { mode: 'public', origins: ['https://www.acme.test'], capabilities: [], history },
+      { mode: 'authenticated', origins: ['https://app.acme.test'], history },
+      { kind: 'messaging', channel: 'whatsapp', mode: 'public', capabilities: [], history },
+    ],
+  });
+
+  it('reports history: false on every surface kind', () => {
+    expect(publicSurfaceOf(assistant(false))?.history).toBe(false);
+    expect(authenticatedSurfaceOf(assistant(false))?.history).toBe(false);
+    expect(messagingSurfaceOf(assistant(false))?.history).toBe(false);
+  });
+
+  it('reads anything but the literal false as no opt-out', () => {
+    for (const value of [undefined, true, 0, 'false']) {
+      expect(publicSurfaceOf(assistant(value))).not.toHaveProperty('history');
+      expect(authenticatedSurfaceOf(assistant(value))).not.toHaveProperty('history');
+      expect(messagingSurfaceOf(assistant(value))).not.toHaveProperty('history');
+    }
   });
 });

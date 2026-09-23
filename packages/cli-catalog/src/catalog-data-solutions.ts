@@ -14,6 +14,7 @@ import {
   SERVICE,
   SOLUTION_COMMON_FLAGS,
 } from './catalog-data-solution-flags.js';
+import { SOLUTION_HISTORY } from './catalog-data-solution-history.js';
 import { SOLUTION_PAGE } from './catalog-data-solution-page.js';
 import { COLLECTION_ARGUMENT, SOLUTION_RECORDS } from './catalog-data-solution-records.js';
 import { SOLUTION_WORKSPACE } from './catalog-data-solution-workspace.js';
@@ -196,9 +197,10 @@ export const CATALOG_SOLUTIONS: CommandSpec = {
       ],
     },
     SOLUTION_CONVERSATIONS,
+    SOLUTION_HISTORY,
     {
       name: 'activity',
-      summary: 'Inspect payload-free operation evidence and its retention policy.',
+      summary: 'Inspect payload-free operation evidence and preview plan history impact.',
       arguments: [],
       flags: [],
       subcommands: [
@@ -235,47 +237,6 @@ export const CATALOG_SOLUTIONS: CommandSpec = {
           arguments: [INSTALLATION_ARGUMENT],
           flags: SOLUTION_COMMON_FLAGS,
           jsonOutput: { mode: 'single' },
-        },
-        {
-          name: 'settings',
-          summary: 'Inspect or change Activity retention within plan limits.',
-          arguments: [],
-          flags: [],
-          subcommands: [
-            {
-              name: 'get',
-              summary: 'Read retention, plan maximum, edit permission and current revision.',
-              arguments: [INSTALLATION_ARGUMENT],
-              flags: SOLUTION_COMMON_FLAGS,
-              jsonOutput: { mode: 'single' },
-            },
-            {
-              name: 'set',
-              summary: 'Change retention with an explicit revision check.',
-              arguments: [INSTALLATION_ARGUMENT],
-              flags: [
-                ...SOLUTION_COMMON_FLAGS,
-                {
-                  ...OPTIONAL_FLAG,
-                  required: true,
-                  name: 'retention-days',
-                  type: 'integer',
-                  value: '<days>',
-                  summary: 'Desired retention within the current plan maximum.',
-                  constraints: { minimum: 1, maximum: 365 },
-                },
-                {
-                  ...OPTIONAL_FLAG,
-                  required: true,
-                  name: 'expected-revision',
-                  type: 'string',
-                  value: '<hash>',
-                  summary: 'Revision returned by activity settings get.',
-                },
-              ],
-              jsonOutput: { mode: 'single' },
-            },
-          ],
         },
       ],
     },

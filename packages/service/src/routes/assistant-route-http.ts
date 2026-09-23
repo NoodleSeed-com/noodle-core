@@ -73,3 +73,18 @@ export function assistantSessionEndpoints(base: string) {
     suggestions: `${base}/v1/assistant/suggestions`,
   };
 }
+
+/** HTTP Basic embed-client credentials for the backend-only assistant routes. */
+export function basicCredentials(req: IncomingMessage): { id: string; secret: string } | undefined {
+  const match = /^Basic\s+(.+)$/i.exec(req.headers.authorization ?? '');
+  if (!match?.[1]) return undefined;
+  try {
+    const decoded = Buffer.from(match[1], 'base64').toString('utf8');
+    const index = decoded.indexOf(':');
+    return index > 0
+      ? { id: decoded.slice(0, index), secret: decoded.slice(index + 1) }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}

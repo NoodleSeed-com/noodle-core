@@ -9,6 +9,13 @@ import { describeActivityHistoryPolicy } from './application-activity-history-su
 import { describeOperationEvidence } from './operation-evidence-suite.js';
 
 const databaseUrl = process.env.DATABASE_URL_TEST;
+const legacy = { org: 'legacy', app: 'site', env: 'production', installationId: 'site' };
+const setting = (days: number) => ({
+  days,
+  conversationDays: null,
+  sources: { website_visitors: true, signed_in_customers: true, whatsapp: true },
+});
+let legacySetting: unknown;
 describe.skipIf(databaseUrl === undefined)('PostgreSQL operation evidence', () => {
   const schema = `operation_evidence_${randomUUID().replaceAll('-', '')}`;
   const admin = new pg.Pool({ connectionString: databaseUrl, max: 1 });
@@ -29,7 +36,23 @@ describe.skipIf(databaseUrl === undefined)('PostgreSQL operation evidence', () =
       started_at bigint NOT NULL, execution_deadline bigint NOT NULL, history_expires_at bigint NOT NULL,
       outcome text NOT NULL, completed_at bigint, PRIMARY KEY(scope_key,id)
     )`);
+    // A setting written before conversation history existed never opted in and keeps every switch on.
+    await pool.query(
+      'CREATE TABLE operation_history_settings (scope_key text PRIMARY KEY, days integer NOT NULL CHECK(days BETWEEN 1 AND 365), revision integer NOT NULL)',
+    );
+    await pool.query('INSERT INTO operation_history_settings VALUES ($1, 9, 4)', [
+      operationEvidenceKey(legacy, ''),
+    ]);
     await store.ensureSchema();
+    legacySetting = await store.readRetention(legacy);
+  });
+  it('upgrades an existing setting without opting it into conversation history', () => {
+    expect(legacySetting).toEqual({
+      days: 9,
+      conversationDays: null,
+      sources: { website_visitors: true, signed_in_customers: true, whatsapp: true },
+      revision: 4,
+    });
   });
   afterAll(async () => {
     await pool.end();
@@ -57,9 +80,9 @@ describe.skipIf(databaseUrl === undefined)('PostgreSQL operation evidence', () =
     try {
       await expect(
         withPostgresTransaction(one, async () => {
-          expect(await local.setRetention(scope, 7, undefined)).toBe(true);
-          expect(await local.setRetention(scope, 3, 1)).toBe(true);
-          expect(await local.readRetention(scope)).toEqual({ days: 3, revision: 2 });
+          expect(await local.setRetention(scope, setting(7), undefined)).toBe(true);
+          expect(await local.setRetention(scope, setting(3), 1)).toBe(true);
+          expect(await local.readRetention(scope)).toEqual({ ...setting(3), revision: 2 });
           expect(
             await local.claim({
               scope,

@@ -17,10 +17,6 @@ const flags = [
   '--json',
 ];
 const revision = 'a'.repeat(64);
-const settings = {
-  ok: true,
-  data: { revision, retentionDays: 30, maximumDays: 90, canEdit: true },
-};
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), 'noodle-activity-cli-'));
   log = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -136,86 +132,20 @@ describe('solutions activity CLI', () => {
     expect(log.mock.calls[0]?.[0]).toContain('Hypothetical');
     expect(log.mock.calls[0]?.[0]).toContain('not a scheduled change');
   });
-  it('gets settings and submits an explicit typed compare-and-set update', async () => {
-    const request = vi.fn<typeof fetch>(async () => Response.json(settings));
-    expect(
-      await runSolutions(['activity', 'settings', 'get', 'install', ...flags], {}, home, {
-        fetchImpl: request,
-      }),
-    ).toBe(0);
-    expect(request.mock.calls[0]?.[0]).toContain('/activity/settings');
-    expect(
-      await runSolutions(
-        [
-          'activity',
-          'settings',
-          'set',
-          'install',
-          '--expected-revision',
-          revision,
-          '--retention-days',
-          '30',
-          ...flags,
-        ],
-        {},
-        home,
-        { fetchImpl: request },
-      ),
-    ).toBe(0);
-    expect(request.mock.calls[1]?.[1]).toMatchObject({
-      method: 'PATCH',
-      body: JSON.stringify({ expectedRevision: revision, retentionDays: 30 }),
-    });
-  });
   it.each([
     ['list', 'install', '--limit', '101'],
     ['export', 'install', '--limit', '101'],
     ['preview', 'install', '--limit', '7'],
     ['preview', 'install', '--effective-at', '2027-01-01'],
     ['list', 'install', '--retention-days', '30'],
-    ['settings', 'set', 'install', '--retention-days', '30'],
-    ['settings', 'set', 'install', '--retention-days', '366', '--expected-revision', revision],
-    ['settings', 'get', 'install', '--expected-revision', revision],
+    ['settings', 'get', 'install'],
+    ['settings', 'set', 'install', '--retention-days', '30', '--expected-revision', revision],
   ])('rejects incompatible or unbounded arguments: %j', async (...args) => {
     const request = vi.fn<typeof fetch>();
     expect(
       await runSolutions(['activity', ...args, ...flags], {}, home, { fetchImpl: request }),
     ).toBe(2);
     expect(request).not.toHaveBeenCalled();
-  });
-  it.each([
-    403, 409,
-  ])('propagates typed %i denial without printing payloads or credentials', async (status) => {
-    const request = vi.fn<typeof fetch>(async () =>
-      Response.json(
-        {
-          ok: false,
-          code: status === 403 ? 'forbidden' : 'revision_conflict',
-          error: 'Cannot change Activity retention.',
-        },
-        { status },
-      ),
-    );
-    expect(
-      await runSolutions(
-        [
-          'activity',
-          'settings',
-          'set',
-          'install',
-          '--expected-revision',
-          revision,
-          '--retention-days',
-          '30',
-          ...flags,
-        ],
-        {},
-        home,
-        { fetchImpl: request },
-      ),
-    ).not.toBe(0);
-    expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toMatchObject({ ok: false });
-    expect(JSON.stringify([...error.mock.calls, ...log.mock.calls])).not.toContain('fixture-owner');
   });
   it('explains evidence levels in human output without claiming external completion', async () => {
     const request = vi.fn<typeof fetch>(async () =>

@@ -12,6 +12,7 @@ import type { DeployAuthGate } from '@noodle-borg/control-plane/portable';
 import type { RequestEventInput } from '@noodle-borg/module';
 import type { Logger, TlsPosture } from '@noodle-borg/transport-http';
 import type { RuntimeTargetResolver } from '../application-runtime-target.js';
+import type { CustomerConversations } from '../conversation-history/customer.js';
 import type { ServerRegistry } from '../registry.js';
 import type { AuditSink } from '../store/audit.js';
 import type { ControlPlaneStore, TenantRef } from '../store.js';
@@ -24,6 +25,7 @@ import {
 } from './assistant.js';
 import { handleAssistantAppearance } from './assistant-appearance.js';
 import { handleAssistantClients } from './assistant-clients.js';
+import { handleAssistantConversations } from './assistant-conversations.js';
 import { handleAssistantDoctor } from './assistant-doctor.js';
 import { handleAssistantEmbedScript } from './assistant-embed-script.js';
 import { handleAssistantEmbeds } from './assistant-embeds.js';
@@ -57,6 +59,7 @@ export interface AssistantDispatchDeps {
   readonly captureRequestEvent?: (event: RequestEventInput) => void;
   readonly clock?: () => Date;
   readonly logger?: Logger;
+  readonly customerConversations?: CustomerConversations;
   readonly applySecurityHeaders: (res: ServerResponse, tls: TlsPosture) => void;
   readonly enforceHttps: (req: IncomingMessage, res: ServerResponse, tls: TlsPosture) => boolean;
   readonly sendJson: (res: ServerResponse, status: number, body: unknown) => void;
@@ -118,6 +121,13 @@ export function dispatchAssistantRoutes(
   }
   if (url.pathname === '/v1/assistant/sessions' && req.method === 'POST') {
     return run(req, res, deps, () => handleAssistantSession(req, res, deps));
+  }
+  const conversationsMatch = /^\/v1\/assistant\/conversations\/(list|forget-user)$/.exec(
+    url.pathname,
+  );
+  if (conversationsMatch?.[1] === 'list' || conversationsMatch?.[1] === 'forget-user') {
+    const action = conversationsMatch[1];
+    return run(req, res, deps, () => handleAssistantConversations(req, res, action, deps));
   }
   if (url.pathname === '/v1/assistant/turns' && req.method === 'POST') {
     return run(req, res, deps, () => handleAssistantTurn(req, res, deps));

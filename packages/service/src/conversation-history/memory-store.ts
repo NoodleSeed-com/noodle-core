@@ -7,11 +7,15 @@ import {
   type ConversationHistoryStore,
   type ConversationItem,
   type ConversationListPosition,
+  type ConversationNote,
+  type ConversationReviewStatus,
   type ConversationSubject,
   type ConversationSummary,
+  conversationExpiryBound,
   conversationTenantKey,
   type StoredConversation,
   type StoredConversationItem,
+  type StoredConversationNote,
 } from './contracts.js';
 
 interface Row {
@@ -19,7 +23,9 @@ interface Row {
   startedAt: number;
   lastMessageAt: number;
   expiresAt: number;
+  reviewStatus: ConversationReviewStatus;
   items: StoredConversationItem[];
+  notes: StoredConversationNote[];
 }
 
 /** Process-local development/test profile; hosted history is the PostgreSQL store. */
@@ -39,7 +45,9 @@ export class InMemoryConversationHistoryStore implements ConversationHistoryStor
       startedAt: items[0]?.at ?? 0,
       lastMessageAt: 0,
       expiresAt: 0,
+      reviewStatus: 'new',
       items: [],
+      notes: [],
     };
     if (row.header.subject.kind === 'anonymous' && header.subject.kind === 'customer') {
       row.header = { ...row.header, subject: header.subject };
@@ -49,6 +57,7 @@ export class InMemoryConversationHistoryStore implements ConversationHistoryStor
       row.items.push({ ...item, seq: row.items.length + 1, expiresAt } as StoredConversationItem);
       row.lastMessageAt = Math.max(row.lastMessageAt, item.at);
       row.expiresAt = Math.max(row.expiresAt, expiresAt);
+      if (item.kind === 'outcome' && item.status === 'failed') row.reviewStatus = 'needs_attention';
     }
     this.#rows.set(key, row);
   }
@@ -79,15 +88,22 @@ export class InMemoryConversationHistoryStore implements ConversationHistoryStor
     return true;
   }
 
-  async read(tenant: TenantRef, id: string, now: number): Promise<StoredConversation | undefined> {
+  async read(
+    tenant: TenantRef,
+    id: string,
+    now: number,
+    notBefore = Number.MIN_SAFE_INTEGER,
+  ): Promise<StoredConversation | undefined> {
     const row = this.#rows.get(rowKey(tenant, id));
-    const items = row?.items.filter((item) => item.expiresAt > now) ?? [];
+    const items = row?.items.filter((item) => visible(item, now, notBefore)) ?? [];
     if (!row || items.length === 0) return undefined;
     return {
       ...row.header,
       startedAt: row.startedAt,
       lastMessageAt: row.lastMessageAt,
+      reviewStatus: row.reviewStatus,
       items,
+      notes: [...row.notes],
     };
   }
 
@@ -95,18 +111,26 @@ export class InMemoryConversationHistoryStore implements ConversationHistoryStor
     tenant: TenantRef,
     input: {
       readonly now: number;
+      readonly notBefore?: number;
       readonly limit: number;
       readonly after?: ConversationListPosition;
       readonly channel?: ConversationChannel;
+      readonly subject?: ConversationSubject;
+      readonly reviewStatus?: ConversationReviewStatus;
     },
   ): Promise<readonly ConversationSummary[]> {
     const tenantKey = conversationTenantKey(tenant);
+    const notBefore = input.notBefore ?? Number.MIN_SAFE_INTEGER;
     const { after } = input;
     return [...this.#rows.values()]
       .filter(
         (row) =>
           conversationTenantKey(row.header.tenant) === tenantKey &&
           (input.channel === undefined || row.header.channel === input.channel) &&
+          (input.subject === undefined ||
+            (row.header.subject.kind === input.subject.kind &&
+              row.header.subject.ref === input.subject.ref)) &&
+          (input.reviewStatus === undefined || row.reviewStatus === input.reviewStatus) &&
           (after === undefined ||
             row.lastMessageAt < after.lastMessageAt ||
             (row.lastMessageAt === after.lastMessageAt && row.header.id < after.id)),
@@ -117,7 +141,8 @@ export class InMemoryConversationHistoryStore implements ConversationHistoryStor
         subject: row.header.subject,
         startedAt: row.startedAt,
         lastMessageAt: row.lastMessageAt,
-        itemCount: row.items.filter((item) => item.expiresAt > input.now).length,
+        itemCount: row.items.filter((item) => visible(item, input.now, notBefore)).length,
+        reviewStatus: row.reviewStatus,
       }))
       .filter((row) => row.itemCount > 0)
       .sort((left, right) =>
@@ -128,6 +153,22 @@ export class InMemoryConversationHistoryStore implements ConversationHistoryStor
             : -1,
       )
       .slice(0, input.limit);
+  }
+
+  async setReviewStatus(
+    tenant: TenantRef,
+    id: string,
+    status: ConversationReviewStatus,
+  ): Promise<boolean> {
+    const row = this.#rows.get(rowKey(tenant, id));
+    if (row) row.reviewStatus = status;
+    return row !== undefined;
+  }
+
+  async addNote(tenant: TenantRef, id: string, note: ConversationNote): Promise<boolean> {
+    const row = this.#rows.get(rowKey(tenant, id));
+    row?.notes.push({ ...note, seq: row.notes.length + 1 });
+    return row !== undefined;
   }
 
   async forget(tenant: TenantRef, id: string): Promise<ConversationForgetResult> {
@@ -158,6 +199,44 @@ export class InMemoryConversationHistoryStore implements ConversationHistoryStor
     return removed;
   }
 
+  async countOutsideWindow(
+    tenant: TenantRef,
+    input: { readonly now: number; readonly days: number },
+  ): Promise<ConversationForgetResult> {
+    return this.#window(tenant, input, false);
+  }
+
+  async capExpiry(
+    tenant: TenantRef,
+    input: { readonly now: number; readonly days: number },
+  ): Promise<ConversationForgetResult> {
+    return this.#window(tenant, input, true);
+  }
+
+  #window(
+    tenant: TenantRef,
+    input: { readonly now: number; readonly days: number },
+    apply: boolean,
+  ): ConversationForgetResult {
+    const tenantKey = conversationTenantKey(tenant);
+    const counts = { conversations: 0, items: 0 };
+    for (const row of this.#rows.values()) {
+      if (conversationTenantKey(row.header.tenant) !== tenantKey) continue;
+      const capped = row.items.map((item) => ({
+        ...item,
+        expiresAt: Math.min(item.expiresAt, conversationExpiryBound(item.at, input)),
+      })) as StoredConversationItem[];
+      const visible = row.items.filter((item) => item.expiresAt > input.now).length;
+      const remaining = capped.filter((item) => item.expiresAt > input.now).length;
+      counts.items += visible - remaining;
+      if (visible > 0 && remaining === 0) counts.conversations += 1;
+      if (!apply) continue;
+      row.items = capped;
+      row.expiresAt = Math.min(row.expiresAt, Math.max(0, ...capped.map((item) => item.expiresAt)));
+    }
+    return counts;
+  }
+
   async purgeExpired(input: { readonly limit?: number }): Promise<number> {
     const now = this.now();
     let removed = 0;
@@ -172,6 +251,10 @@ export class InMemoryConversationHistoryStore implements ConversationHistoryStor
     }
     return removed;
   }
+}
+
+function visible(item: StoredConversationItem, now: number, notBefore: number): boolean {
+  return item.expiresAt > now && item.at >= notBefore;
 }
 
 function rowKey(tenant: TenantRef, id: string): string {

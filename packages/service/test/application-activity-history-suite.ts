@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type ActivityHistoryAllowance, ApplicationActivity } from '../src/application-activity.js';
+import { ALL_CONVERSATION_SOURCES } from '../src/conversation-history/contracts.js';
 import type { OperationEvidenceStore } from '../src/operation-evidence.js';
 
 /** The same policy proof runs against memory and real PostgreSQL, not only a mocked page. */
@@ -31,7 +32,10 @@ export function describeActivityHistoryPolicy(create: () => Promise<OperationEvi
     });
     const select = async (retentionDays: number) => {
       const { projection } = await activity.settings(scope, true);
-      return activity.save(scope, { retentionDays, expectedRevision: projection.revision });
+      return activity.save(scope, {
+        activityDays: retentionDays,
+        expectedRevision: projection.revision,
+      });
     };
     const add = async (index: number, age: number) => {
       const id = index.toString(16).padStart(64, '0');
@@ -141,7 +145,13 @@ export function describeActivityHistoryPolicy(create: () => Promise<OperationEvi
       const spy = vi.spyOn(store, 'list').mockImplementationOnce(async (...args) => {
         const records = await read(...args);
         const setting = await store.readRetention(scope);
-        expect(await store.setRetention(scope, 3, setting?.revision)).toBe(true);
+        expect(
+          await store.setRetention(
+            scope,
+            { days: 3, conversationDays: null, sources: ALL_CONVERSATION_SOURCES },
+            setting?.revision,
+          ),
+        ).toBe(true);
         return records;
       });
       try {
@@ -192,7 +202,13 @@ export function describeActivityHistoryPolicy(create: () => Promise<OperationEvi
       const preview = store.preview.bind(store);
       const spy = vi.spyOn(store, 'preview').mockImplementationOnce(async (...args) => {
         const counts = await preview(...args);
-        expect(await store.setRetention(scope, 3, undefined)).toBe(true);
+        expect(
+          await store.setRetention(
+            scope,
+            { days: 3, conversationDays: null, sources: ALL_CONVERSATION_SOURCES },
+            undefined,
+          ),
+        ).toBe(true);
         return counts;
       });
       try {

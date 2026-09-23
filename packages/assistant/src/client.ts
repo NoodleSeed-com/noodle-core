@@ -655,6 +655,7 @@ class DefaultAssistantClient<TPageContext extends AssistantPageContext>
       data: {
         expiresAt: session.expiresAt,
         ...(session.configuration ? { configuration: session.configuration } : {}),
+        ...(session.history ? { history: session.history } : {}),
       },
     });
     return session;

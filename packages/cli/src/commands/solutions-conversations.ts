@@ -4,6 +4,9 @@ import {
   type ConversationForgetRequest,
   ConversationIdSchema,
   ConversationListClientResponseSchema,
+  type ConversationReviewRequest,
+  ConversationReviewRequestSchema,
+  type ConversationReviewStatus,
   ConversationShowClientResponseSchema,
 } from '@noodle-borg/wire-contracts';
 import type { ConfigLocation } from '../config.js';
@@ -18,9 +21,20 @@ import {
 } from './shared.js';
 
 const USAGE =
-  'noodle solutions conversations <list|show|export|forget> <installation> --org <org> [--conversation <id> | --customer <ref> | --participant <ref>] [--confirm]';
-const ACTIONS = ['list', 'show', 'export', 'forget'] as const;
+  'noodle solutions conversations <list|show|review|note|export|forget> <installation> --org <org> [--conversation <id> | --customer <ref> | --participant <ref>] [--status <new|needs-attention|reviewed>] [--text <note>] [--confirm]';
+const ACTIONS = ['list', 'show', 'review', 'note', 'export', 'forget'] as const;
 type Action = (typeof ACTIONS)[number];
+/** CLI spellings of the wire review statuses. */
+const STATUSES: Readonly<Record<string, ConversationReviewStatus>> = {
+  new: 'new',
+  'needs-attention': 'needs_attention',
+  reviewed: 'reviewed',
+};
+const STATUS_LABELS: Readonly<Record<string, string>> = {
+  new: 'new',
+  needs_attention: 'needs attention',
+  reviewed: 'reviewed',
+};
 
 interface Summary {
   readonly id: string;
@@ -28,6 +42,7 @@ interface Summary {
   readonly subject: { readonly kind: string; readonly ref?: string };
   readonly lastMessageAt: string;
   readonly itemCount: number;
+  readonly reviewStatus?: string;
 }
 interface Item {
   readonly kind: 'message' | 'outcome';
@@ -53,6 +68,8 @@ export async function runSolutionConversations(
       '--limit': 'limit',
       '--cursor': 'cursor',
       '--channel': 'channel',
+      '--status': 'status',
+      '--text': 'text',
       '--conversation': 'conversation',
       '--customer': 'customer',
       '--participant': 'participant',
@@ -68,17 +85,38 @@ export async function runSolutionConversations(
   if (!args.org) return fail('--org is required.');
   const action = family as Action;
   const paging = action === 'list' || action === 'export';
+  const reviewing = action === 'review' || action === 'note';
   const selectors = [args.conversation, args.customer, args.participant].filter(
     (value) => value !== undefined,
   );
   if (
     (!paging && (args.limit ?? args.cursor ?? args.channel) !== undefined) ||
+    (!paging && action !== 'review' && args.status !== undefined) ||
+    (action !== 'note' && args.text !== undefined) ||
     (action !== 'forget' && (args.confirm || args.customer || args.participant)) ||
     (paging && args.conversation !== undefined)
   )
     return fail(
-      'Paging flags apply to list and export; --conversation to show and forget; --customer, --participant and --confirm to forget.',
+      'Paging flags apply to list and export; --status to list, export and review; --text to note; --conversation to show, review, note and forget; --customer, --participant and --confirm to forget.',
     );
+  const status = args.status === undefined ? undefined : STATUSES[args.status];
+  if (args.status !== undefined && status === undefined)
+    return fail('--status must be new, needs-attention or reviewed.');
+  let review: ConversationReviewRequest | undefined;
+  if (reviewing) {
+    if (!ConversationIdSchema.safeParse(args.conversation).success)
+      return fail(`${action} requires --conversation with an id from conversations list.`);
+    const parsed = ConversationReviewRequestSchema.safeParse(
+      action === 'review' ? { reviewStatus: status } : { note: args.text },
+    );
+    if (!parsed.success)
+      return fail(
+        action === 'review'
+          ? 'review requires --status new, needs-attention or reviewed.'
+          : 'note requires --text of 1 to 2000 characters.',
+      );
+    review = parsed.data;
+  }
   const maximum = action === 'export' ? 25 : 100;
   const limit = args.limit === undefined ? undefined : Number(args.limit);
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > maximum))
@@ -125,6 +163,7 @@ export async function runSolutionConversations(
       if (limit !== undefined) query.set('limit', String(limit));
       if (args.cursor !== undefined) query.set('cursor', args.cursor);
       if (args.channel !== undefined) query.set('channel', args.channel);
+      if (status !== undefined) query.set('status', status);
       const response = await serviceJson<unknown>(
         `${base}${action === 'export' ? '/export' : ''}${query.size ? `?${query}` : ''}`,
         resolved.token,
@@ -156,7 +195,34 @@ export async function runSolutionConversations(
       );
       const { conversation } = ConversationShowClientResponseSchema.parse(response).data;
       if (args.json) printJsonOk({ conversation });
-      else console.log([line(conversation), ...conversation.items.map(itemLine)].join('\n'));
+      else
+        console.log(
+          [
+            line(conversation),
+            ...conversation.items.map(itemLine),
+            ...conversation.notes.map((note) => `  ${note.at}  note ${note.author}: ${note.text}`),
+            `Removed automatically on ${conversation.expiresAt}.`,
+          ].join('\n'),
+        );
+    } else if (review) {
+      const response = await serviceJson<unknown>(
+        `${base}/${encodeURIComponent(String(args.conversation))}`,
+        resolved.token,
+        {
+          method: 'PATCH',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(review),
+        },
+        request,
+      );
+      const { conversation } = ConversationShowClientResponseSchema.parse(response).data;
+      if (args.json) printJsonOk({ conversation });
+      else
+        console.log(
+          action === 'review'
+            ? `Conversation ${conversation.id} marked ${label(conversation.reviewStatus)}.`
+            : `Conversation ${conversation.id} now has ${conversation.notes.length} private note(s); customers never see notes.`,
+        );
     } else {
       const response = await serviceJson<unknown>(
         `${base}/forget`,
@@ -188,7 +254,11 @@ export async function runSolutionConversations(
 function line(row: Summary): string {
   const subject =
     row.subject.ref === undefined ? row.subject.kind : `${row.subject.kind} ${row.subject.ref}`;
-  return `${row.lastMessageAt}  ${row.channel}  ${subject}  ${row.itemCount} item(s)  ${row.id}`;
+  return `${row.lastMessageAt}  ${row.channel}  ${subject}  ${label(row.reviewStatus)}  ${row.itemCount} item(s)  ${row.id}`;
+}
+
+function label(status: string | undefined): string {
+  return STATUS_LABELS[status ?? 'new'] ?? String(status);
 }
 
 function itemLine(item: Item): string {

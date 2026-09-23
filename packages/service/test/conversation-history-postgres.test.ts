@@ -26,7 +26,9 @@ describe.skipIf(databaseUrl === undefined)('PostgreSQL conversation history', ()
   });
 
   describeConversationHistoryStore('postgres', async (clock) => {
-    await pool.query('TRUNCATE assistant_conversation_items, assistant_conversations');
+    await pool.query(
+      'TRUNCATE assistant_conversation_notes, assistant_conversation_items, assistant_conversations',
+    );
     return new PostgresConversationHistoryStore(pool, box, () => clock.now);
   });
 
@@ -79,5 +81,29 @@ describe.skipIf(databaseUrl === undefined)('PostgreSQL conversation history', ()
        WHERE conversation_id = 'cv_target'`,
     );
     await expect(store.read(TENANT, 'cv_target', T0)).rejects.toThrow('context mismatch');
+  });
+
+  it('seals private notes and refuses a note copied into another conversation', async () => {
+    const store = new PostgresConversationHistoryStore(pool, box);
+    const header = {
+      tenant: TENANT,
+      channel: 'website',
+      subject: { kind: 'anonymous', ref: 'a' },
+    } as const;
+    for (const id of ['cv_note_source', 'cv_note_target']) {
+      await store.append(
+        { ...header, id },
+        [{ kind: 'message', role: 'user', text: 'x', at: T0 }],
+        7,
+      );
+      await store.addNote(TENANT, id, { author: 'owner', text: `staff-only ${id}`, at: T0 });
+    }
+    const raw = await pool.query('SELECT sealed::text AS sealed FROM assistant_conversation_notes');
+    expect(raw.rows.map((row) => row.sealed).join()).not.toMatch(/staff-only|owner/);
+    await pool.query(
+      `UPDATE assistant_conversation_notes SET sealed = (SELECT sealed FROM assistant_conversation_notes WHERE conversation_id = 'cv_note_source')
+       WHERE conversation_id = 'cv_note_target'`,
+    );
+    await expect(store.read(TENANT, 'cv_note_target', T0)).rejects.toThrow('note context mismatch');
   });
 });

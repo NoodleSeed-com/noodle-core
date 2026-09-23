@@ -125,7 +125,25 @@ describe.skipIf(!databaseUrl)('WhatsApp channel through real HTTP and encrypted 
             if (endpoint.pathname === '/health_status')
               return Response.json({
                 id: 'owned',
-                health_status: { can_send_message: providerHealth },
+                health_status:
+                  providerHealth === 'PAYMENT'
+                    ? {
+                        can_send_message: 'BLOCKED',
+                        entities: [
+                          {
+                            entity_type: 'PHONE_NUMBER',
+                            id: 'owned',
+                            can_send_message: 'AVAILABLE',
+                          },
+                          {
+                            entity_type: 'WABA',
+                            id: 'waba',
+                            can_send_message: 'BLOCKED',
+                            errors: [{ error_code: 141006 }],
+                          },
+                        ],
+                      }
+                    : { can_send_message: providerHealth },
               });
             if (endpoint.pathname === '/v1/configs/webhook') {
               if (init?.method === 'POST') webhook = JSON.parse(init.body as string);
@@ -252,6 +270,14 @@ describe.skipIf(!databaseUrl)('WhatsApp channel through real HTTP and encrypted 
       name: 'provider_asset',
       status: 'unavailable',
       code: 'provider_response_invalid',
+    });
+    providerHealth = 'PAYMENT';
+    const unpaid = await (await call('/readiness', 'POST', {})).json();
+    expect(unpaid.data).toMatchObject({ ready: false });
+    expect(unpaid.data.checks).toContainEqual({
+      name: 'provider_asset',
+      status: 'unavailable',
+      code: 'provider_payment_method_required',
     });
     providerHealth = 'LIMITED';
     const readiness = await (await call('/readiness', 'POST', {})).json();

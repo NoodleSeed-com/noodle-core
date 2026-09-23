@@ -25,7 +25,10 @@ const summary = {
   startedAt: '2026-09-06T00:00:00.000Z',
   lastMessageAt: '2026-09-06T00:01:00.000Z',
   itemCount: 2,
+  reviewStatus: 'needs_attention',
 };
+const expiresAt = '2026-09-13T00:01:00.000Z';
+const notes = [{ author: 'staff_1', text: 'Call back after 5pm', at: '2026-09-06T00:02:00.000Z' }];
 const items = [
   { kind: 'message', role: 'user', text: 'Is the shop open?', at: '2026-09-06T00:00:00.000Z' },
   { kind: 'message', role: 'assistant', text: 'Until 6pm.', at: '2026-09-06T00:01:00.000Z' },
@@ -56,11 +59,25 @@ describe('solutions conversations CLI', () => {
     );
     expect(
       await run(
-        ['list', 'install', '--limit', '10', '--cursor', 'a/b', '--channel', 'whatsapp', ...flags],
+        [
+          'list',
+          'install',
+          '--limit',
+          '10',
+          '--cursor',
+          'a/b',
+          '--channel',
+          'whatsapp',
+          '--status',
+          'needs-attention',
+          ...flags,
+        ],
         request,
       ),
     ).toBe(0);
-    expect(request.mock.calls[0]?.[0]).toBe(`${base}?limit=10&cursor=a%2Fb&channel=whatsapp`);
+    expect(request.mock.calls[0]?.[0]).toBe(
+      `${base}?limit=10&cursor=a%2Fb&channel=whatsapp&status=needs_attention`,
+    );
     expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toEqual({
       ok: true,
       data: { conversations: [summary], nextCursor: 'next' },
@@ -70,12 +87,13 @@ describe('solutions conversations CLI', () => {
     const text = String(log.mock.calls[0]?.[0]);
     expect(text).toContain('cv_0123456789abcdef');
     expect(text).toContain('participant wa_4821');
+    expect(text).toContain('needs attention');
     expect(text).toContain('Next cursor: next');
   });
 
-  it('shows one conversation with its messages', async () => {
+  it('shows one conversation with its messages and private notes', async () => {
     const request = vi.fn<typeof fetch>(async () =>
-      Response.json({ ok: true, data: { conversation: { ...summary, items } } }),
+      Response.json({ ok: true, data: { conversation: { ...summary, expiresAt, items, notes } } }),
     );
     expect(await run(['show', 'install', '--conversation', summary.id, ...flags], request)).toBe(0);
     expect(request.mock.calls[0]?.[0]).toBe(`${base}/${summary.id}`);
@@ -83,11 +101,49 @@ describe('solutions conversations CLI', () => {
     log.mockClear();
     expect(await run(['show', 'install', '--conversation', summary.id, ...human], request)).toBe(0);
     expect(String(log.mock.calls[0]?.[0])).toContain('user: Is the shop open?');
+    expect(String(log.mock.calls[0]?.[0])).toContain('note staff_1: Call back after 5pm');
+    expect(String(log.mock.calls[0]?.[0])).toContain(`Removed automatically on ${expiresAt}`);
+  });
+
+  it.each([
+    [['review', '--status', 'reviewed'], { reviewStatus: 'reviewed' }, 'marked reviewed'],
+    [
+      ['review', '--status', 'needs-attention'],
+      { reviewStatus: 'needs_attention' },
+      'marked needs attention',
+    ],
+    [['note', '--text', 'Call back after 5pm'], { note: 'Call back after 5pm' }, '1 private note'],
+  ])('changes review state with PATCH (%j)', async ([action, ...rest], body, text) => {
+    const request = vi.fn<typeof fetch>(async () =>
+      Response.json({
+        ok: true,
+        data: {
+          conversation: {
+            ...summary,
+            reviewStatus: body.reviewStatus ?? 'needs_attention',
+            expiresAt,
+            items,
+            notes: 'note' in body ? notes : [],
+          },
+        },
+      }),
+    );
+    const args = [String(action), 'install', '--conversation', summary.id, ...rest];
+    expect(await run([...args, ...flags], request)).toBe(0);
+    expect(request.mock.calls[0]?.[0]).toBe(`${base}/${summary.id}`);
+    expect(request.mock.calls[0]?.[1]).toMatchObject({
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+    expect(JSON.parse(String(log.mock.calls[0]?.[0])).data.conversation.id).toBe(summary.id);
+    log.mockClear();
+    expect(await run([...args, ...human], request)).toBe(0);
+    expect(String(log.mock.calls[0]?.[0])).toContain(text);
   });
 
   it('exports one page and preserves the export cursor', async () => {
     const request = vi.fn<typeof fetch>(async () =>
-      Response.json({ ok: true, data: { conversations: [{ ...summary, items }] } }),
+      Response.json({ ok: true, data: { conversations: [{ ...summary, expiresAt, items }] } }),
     );
     expect(
       await run(['export', 'install', '--limit', '25', '--cursor', 'page', ...flags], request),
@@ -129,6 +185,17 @@ describe('solutions conversations CLI', () => {
     ['forget', 'install', '--customer', 'a', '--participant', 'b', '--confirm'],
     ['forget', 'install', '--conversation', summary.id, '--customer', 'a', '--confirm'],
     ['list', 'install', '--confirm'],
+    ['list', 'install', '--status', 'needs_attention'],
+    ['show', 'install', '--conversation', summary.id, '--status', 'reviewed'],
+    ['review', 'install', '--conversation', summary.id],
+    ['review', 'install', '--status', 'reviewed'],
+    ['review', 'install', '--conversation', summary.id, '--status', 'done'],
+    ['review', 'install', '--conversation', summary.id, '--status', 'reviewed', '--text', 'x'],
+    ['note', 'install', '--conversation', summary.id],
+    ['note', 'install', '--conversation', summary.id, '--text', '   '],
+    ['note', 'install', '--conversation', summary.id, '--text', 'x'.repeat(2001)],
+    ['note', 'install', '--text', 'x'],
+    ['list', 'install', '--text', 'x'],
     ['delete', 'install'],
     ['list'],
   ])('rejects %j before any request', async (...args) => {

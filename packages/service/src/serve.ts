@@ -87,6 +87,7 @@ import { hostedWebCapabilities } from './serve-web-capabilities.js';
 import { createServiceHandler } from './service.js';
 import { resolveServiceConfigSource } from './service-config.js';
 import {
+  cleanupAfterStartupFailure,
   closeHttpServer,
   closeServiceResources,
   listenHttpServer,
@@ -781,11 +782,13 @@ export async function serveService(options: ServeServiceOptions = {}): Promise<R
       };
     } catch (error) {
       if (http?.listening) await closeHttpServer(http).catch(() => undefined);
-      await closeResources();
+      await cleanupAfterStartupFailure(options.logger ?? noopLogger, 'resources', closeResources);
       throw error;
     }
   } catch (error) {
-    await moduleHost.dispose();
+    await cleanupAfterStartupFailure(options.logger ?? noopLogger, 'modules', () =>
+      moduleHost.dispose(),
+    );
     throw error;
   }
 }

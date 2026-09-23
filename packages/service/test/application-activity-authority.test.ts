@@ -77,7 +77,7 @@ describe('application activity local-effect authority', () => {
       'save-settings',
       {
         ...input,
-        body: { expectedRevision: settings.projection.revision, retentionDays: 3 },
+        body: { expectedRevision: settings.projection.revision, activityDays: 3 },
       },
       run,
     );
@@ -103,7 +103,7 @@ describe('application activity local-effect authority', () => {
         action,
         {
           ...input,
-          body: { expectedRevision: 'a'.repeat(64), retentionDays: 3 },
+          body: { expectedRevision: 'a'.repeat(64), activityDays: 3 },
         },
         async () => {
           throw forbidden;
@@ -124,7 +124,7 @@ describe('application activity local-effect authority', () => {
         'save-settings',
         {
           ...input,
-          body: { expectedRevision: settings.projection.revision, retentionDays: 3 },
+          body: { expectedRevision: settings.projection.revision, activityDays: 3 },
         },
         (operation) => {
           if (++count === 2) throw new BusinessWorkspaceError('forbidden');

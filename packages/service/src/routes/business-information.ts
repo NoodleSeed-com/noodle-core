@@ -12,6 +12,7 @@ import {
   SolutionInstallationCreateRequestSchema,
   SolutionInstallationIntakeRequestSchema,
 } from '@noodle-borg/wire-contracts';
+import type { ApplicationActivity } from '../application-activity.js';
 import { admitBusinessTarget } from '../business-api-admission.js';
 import { resolveInstallDefinition } from '../business-information/definition-resolver.js';
 import {
@@ -73,6 +74,8 @@ export interface BusinessInformationRouteDeps {
   ) => Promise<SolutionDefinitionSnapshot | undefined>;
   readonly sourceStore?: SourceIngestionStore;
   readonly runSourceIngestion?: () => Promise<void>;
+  /** Installation Activity and history settings; creation seeds conversation recording from day one. */
+  readonly activity?: ApplicationActivity;
 }
 
 export function handleSolutionCatalog(req: IncomingMessage, res: ServerResponse): void {
@@ -145,6 +148,10 @@ export async function handleSolutionInstallations(
         code: 'installation_conflict',
       });
     }
+    // Only a created installation opts in (ADR 0241 decision 8), before activation can read the setting.
+    // Without a verified allowance it stays not enabled: recording nothing is the safe failure.
+    if (result.disposition === 'created')
+      await deps.activity?.initializeHistory(result.installation.scope).catch(() => false);
     const grant = await resolveBusinessStaffGrant(
       deps,
       result.installation.scope,

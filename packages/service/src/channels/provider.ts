@@ -15,6 +15,8 @@ export interface WhatsAppHealth {
   readonly phoneNumberId: string;
   readonly canSend: boolean;
   readonly status: 'AVAILABLE' | 'LIMITED' | 'BLOCKED';
+  /** Set when the only thing blocking the account is its missing or failing payment method. */
+  readonly reason?: 'payment_method_required';
 }
 export interface WhatsAppBlockResult {
   state: 'confirmed' | 'error' | 'unknown';
@@ -65,16 +67,16 @@ export async function boundedJson(response: Response): Promise<unknown> {
 }
 const sendState = z.enum(['AVAILABLE', 'LIMITED', 'BLOCKED']);
 /**
- * Health errors that block only business-initiated conversations. 141006 reads "There is an error
- * with the payment method. This will block business initiated conversations." (observed on a WABA
- * with no payment method, 2026-09-22). Channels only reply inside the customer service window,
- * where non-template messages are free (https://developers.facebook.com/docs/whatsapp/pricing/).
+ * 141006 reads "There is an error with the payment method" (observed on a WABA with no payment
+ * method, 2026-09-22). Meta requires a business to "first attach a payment method ... before they
+ * can begin messaging" (Embedded Signup overview and business customer support, read 2026-09-22),
+ * so the block stands; it is only named so readiness can say what to fix.
  */
-const REPLY_SAFE_BLOCKS = new Set([141006]);
+const PAYMENT_BLOCKS = new Set([141006]);
 /**
- * Parse a Cloud API health read. The aggregate `can_send_message` is BLOCKED when any entity is;
- * it is downgraded to LIMITED only when the phone number itself can send and every blocked entity
- * names nothing but reply-safe errors.
+ * Parse a Cloud API health read. The aggregate `can_send_message` is authoritative. When the phone
+ * number itself can send and every blocked entity names only payment errors, the block carries
+ * `payment_method_required`.
  */
 export async function cloudApiHealth(response: Response): Promise<WhatsAppHealth> {
   if (!response.ok) throw new ChannelError('provider_unavailable');
@@ -102,23 +104,21 @@ export async function cloudApiHealth(response: Response): Promise<WhatsAppHealth
   if (!parsed.success) throw new ChannelError('provider_response_invalid');
   const { can_send_message: aggregate, entities = [] } = parsed.data.health_status;
   const phone = entities.find((entity) => entity.entity_type === 'PHONE_NUMBER');
-  const replySafe =
+  const paymentOnly =
     aggregate === 'BLOCKED' &&
     phone !== undefined &&
     phone.can_send_message !== 'BLOCKED' &&
     entities
       .filter((entity) => entity.can_send_message === 'BLOCKED')
       .every(({ errors = [] }) => {
-        return (
-          errors.length > 0 && errors.every((error) => REPLY_SAFE_BLOCKS.has(error.error_code))
-        );
+        return errors.length > 0 && errors.every((error) => PAYMENT_BLOCKS.has(error.error_code));
       });
-  const status = replySafe ? 'LIMITED' : aggregate;
   return {
     phoneNumberId: parsed.data.id,
     // LIMITED meets provider messaging requirements; provider limits still govern each send.
-    canSend: status !== 'BLOCKED',
-    status,
+    canSend: aggregate !== 'BLOCKED',
+    status: aggregate,
+    ...(paymentOnly ? { reason: 'payment_method_required' as const } : {}),
   };
 }
 export async function cloudApiSetBlocked(

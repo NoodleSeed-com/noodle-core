@@ -25,5 +25,8 @@
   },
   "resume": {
     "tool": "my_orders"
+  },
+  "history": {
+    "retentionDays": 30
   }
 }

@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { InMemoryControlPlaneStore } from '@noodle-borg/control-plane/portable';
+import { MODULE_API_VERSION, type ServiceModule } from '@noodle-borg/module';
 import { afterEach, describe, expect, it } from 'vitest';
 import { InMemoryBusinessInformationStore } from '../src/business-information/in-memory-store.js';
 import { InMemoryConversationHistoryStore } from '../src/conversation-history/memory-store.js';
@@ -11,6 +12,18 @@ import {
   createLocalOperationStores,
 } from '../src/serve-operation-stores.js';
 
+const historyPlan: ServiceModule = {
+  name: 'history-plan',
+  version: '1.0.0',
+  apiVersion: MODULE_API_VERSION,
+  init: () => ({
+    resolveActivityHistoryAllowance: async () => ({
+      maximumDays: 30,
+      defaultDays: 30,
+      revision: 'plan-v1',
+    }),
+  }),
+};
 const cleanup: (() => Promise<void>)[] = [];
 afterEach(async () => {
   for (const close of cleanup.splice(0)) await close();
@@ -30,6 +43,7 @@ async function serve(options: Parameters<typeof serveService>[0] = {}) {
     controlPlaneStore: controlPlane,
     businessInformationStore: new InMemoryBusinessInformationStore(),
     businessInformationEnabled: true,
+    modules: [historyPlan],
     deployGate: {
       authorize: async () => ({
         ok: true,
@@ -58,7 +72,14 @@ async function serve(options: Parameters<typeof serveService>[0] = {}) {
 }
 
 describe('composed conversation history', () => {
-  it('serves the operator API from the composed service while capture stays off', async () => {
+  it('fails closed without a verified plan allowance', async () => {
+    const conversations = await serve({ modules: [] });
+    const response = await fetch(conversations);
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ code: 'conversation_unavailable' });
+  });
+
+  it('serves the operator API from the composed service', async () => {
     const conversations = await serve();
     const response = await fetch(conversations);
     expect(response.status, await response.clone().text()).toBe(200);
@@ -79,7 +100,7 @@ describe('composed conversation history', () => {
       7,
     );
     const conversations = await serve({
-      conversationHistory: { store, policy: async () => undefined },
+      conversationHistory: { store, policy: async () => ({ maximumDays: 7, conversationDays: 7 }) },
     });
     const listed = await (await fetch(conversations)).json();
     expect(listed.data.conversations.map((row: { id: string }) => row.id)).toEqual([
@@ -91,7 +112,7 @@ describe('composed conversation history', () => {
 });
 
 describe('hosted conversation history options', () => {
-  it('records nothing, derives a stable cursor key, and honours an injected composition', async () => {
+  it('leaves capture to the installation setting, derives a stable cursor key, and honours an injected composition', async () => {
     const stores = createLocalOperationStores();
     const composed = createConversationHistoryOptions(
       { secretMasterKey: 'k'.repeat(44) },
@@ -99,7 +120,7 @@ describe('hosted conversation history options', () => {
       true,
     );
     expect(composed?.store).toBe(stores.history);
-    expect(await composed?.policy({ org: 'acme', app: 'travel', env: 'prod' })).toBeUndefined();
+    expect(composed?.policy).toBeUndefined();
     expect(composed?.identityKey).toMatch(/^[a-f0-9]{64}$/);
     expect(
       createConversationHistoryOptions({ secretMasterKey: 'k'.repeat(44) }, stores, true)

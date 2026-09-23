@@ -16,10 +16,7 @@ import {
   handleSolutionCatalog,
   handleSolutionInstallations,
 } from './business-information.js';
-import {
-  type BusinessActivityRouteDeps,
-  handleApplicationActivity,
-} from './business-information-activity.js';
+import { handleApplicationActivity } from './business-information-activity.js';
 import {
   type BusinessChannelRouteDeps,
   handleBusinessChannels,
@@ -57,8 +54,7 @@ import {
 import { handleNativeRecordLifecycle } from './business-native-lifecycle.js';
 
 export interface BusinessInformationDispatchDeps
-  extends BusinessActivityRouteDeps,
-    BusinessConversationRouteDeps,
+  extends BusinessConversationRouteDeps,
     BusinessConnectionRouteDeps,
     Partial<Omit<BusinessChannelRouteDeps, keyof BusinessInformationRouteDeps>> {
   readonly logger: Logger;
@@ -137,7 +133,9 @@ export function dispatchBusinessInformationRoutes(
   if (installationRef.action === 'notice')
     return run(req, res, deps, () => handleBusinessNotice(req, res, installationRef, deps));
   if (
-    (installationRef.action === 'activity' || installationRef.action === 'coordination') &&
+    (installationRef.action === 'activity' ||
+      installationRef.action === 'history' ||
+      installationRef.action === 'coordination') &&
     installationRef.collection === undefined
   )
     return run(req, res, deps, () =>

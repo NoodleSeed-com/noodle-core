@@ -147,7 +147,12 @@ export function createServiceHandler(
   const { publicTenantRouting } = mcp.mcpRoutingOptions(options, controlPlane);
   const resolveEndpointOptions = (org: string) =>
     mcp.endpointUrlOptionsForOrg(options, controlPlane, org);
-  const { activity, conversations } = createHistoryProjections(options, moduleHost);
+  const { activity, conversations, conversationPolicy } = createHistoryProjections(
+    options,
+    moduleHost,
+    businessInformationStore,
+    registry,
+  );
   const withIntentMode = createIntentTargetResolver(intentSettings, intentPreviewOrgs);
   const {
     activateInstallation,
@@ -270,6 +275,7 @@ export function createServiceHandler(
     maxBody,
     serviceBase: (request) => options.publicBaseUrl ?? baseFromRequest(request, tls),
     logger,
+    conversationPolicy,
   });
   const whatsapp = createWhatsAppRuntime(options.whatsapp, assistantDeps, {
     allowance: moduleHost.resolveActivityHistoryAllowance,

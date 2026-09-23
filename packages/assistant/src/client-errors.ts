@@ -85,7 +85,17 @@ export function parseSession(value: unknown): AssistantSessionResponse {
     ...(value.continuedAfterAuthentication === true
       ? { continuedAfterAuthentication: true as const }
       : {}),
+    ...parseHistory(value.history),
   };
+}
+
+/** Tolerant: a malformed notice states nothing rather than failing the session. */
+function parseHistory(value: unknown): Pick<AssistantSessionResponse, 'history'> {
+  if (!isRecord(value)) return {};
+  const days = value.retentionDays;
+  return typeof days === 'number' && Number.isInteger(days) && days >= 1 && days <= 365
+    ? { history: { retentionDays: days } }
+    : {};
 }
 
 export function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

@@ -15,6 +15,9 @@ const databaseUrl = process.env.DATABASE_URL_TEST;
 const document =
   'Noodle Seed helps businesses serve customers through AI assistants. Public visitors do not need an account.';
 const documentSha = createHash('sha256').update(document).digest('hex');
+// Real wamids base64-encode the recipient phone number (observed 2026-09-22), so logs must not carry them.
+const wamid = (n: number) =>
+  `wamid.${Buffer.from(`\x1c\x18\x0b15551234567\x15\x02\x00\x11\x18\x12MSG${n}`).toString('base64')}`;
 const manifest = `manifestVersion: "2"
 server:
   name: channel_test
@@ -150,7 +153,7 @@ describe.skipIf(!databaseUrl)(
               if (endpoint.pathname === `/v25.0/${phoneNumberId}/messages`) {
                 if (typeof init?.body !== 'string') throw new Error('message body missing');
                 sent.push(JSON.parse(init.body));
-                return Response.json({ messages: [{ id: `wamid.${sent.length}` }] });
+                return Response.json({ messages: [{ id: wamid(sent.length) }] });
               }
               throw new Error('unexpected provider operation');
             },
@@ -322,7 +325,7 @@ describe.skipIf(!databaseUrl)(
                   metadata: { phone_number_id: phoneNumberId },
                   statuses: [
                     {
-                      id: 'wamid.1',
+                      id: wamid(1),
                       status: 'delivered',
                       timestamp: String(Math.floor(Date.now() / 1000)),
                     },
@@ -341,11 +344,18 @@ describe.skipIf(!databaseUrl)(
       expect(JSON.parse(reply ?? '{}')).toMatchObject({
         provider: 'meta',
         bindingId: binding.id,
-        providerMessageId: 'wamid.1',
+        providerMessageRef: createHash('sha256').update(wamid(1)).digest('hex').slice(0, 16),
         state: 'accepted',
       });
       const all = logs.join('\n');
-      for (const secret of [businessToken, meta.appSecret, '15551234567', 'What is Noodle Seed?'])
+      for (const secret of [
+        businessToken,
+        meta.appSecret,
+        '15551234567',
+        wamid(1),
+        Buffer.from('15551234567').toString('base64').slice(0, 12),
+        'What is Noodle Seed?',
+      ])
         expect(all).not.toContain(secret);
     });
   },

@@ -312,6 +312,12 @@ const sessionClaimsSchema = z.record(
   z.object({ exposeToModel: z.boolean().optional() }).strict(),
 );
 
+/**
+ * `false` means this surface's chats are never kept as history (ADR 0241 decision 11). Only the literal
+ * is accepted: a number of days is operator state (ADR 0212), so a count is refused, never read.
+ */
+const surfaceHistorySchema = z.literal(false).optional();
+
 const embeddedAssistantSchema = z
   .object({
     model: z.union([
@@ -341,6 +347,7 @@ const embeddedAssistantSchema = z
               mode: z.literal('public'),
               capabilities: z.array(assistantCapabilitySchema),
               instructions: z.string().trim().min(1).max(MAX_SERVER_INSTRUCTIONS).optional(),
+              history: surfaceHistorySchema,
             })
             .strict(),
           z
@@ -368,6 +375,7 @@ const embeddedAssistantSchema = z
                 windowSeconds: z.number().int().min(0).max(600).optional(),
                 maxRestores: z.number().int().min(0).max(10).optional(),
               }),
+              history: surfaceHistorySchema,
             })
             .strict(),
         ]),

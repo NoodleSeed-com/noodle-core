@@ -5,6 +5,7 @@ import type {
   AssistantToolCompletedDetail,
   AssistantViewAvailableDetail,
 } from './client.js';
+import { showHistoryNotice } from './element-helpers.js';
 import { createInputRequestCard } from './input-request-card.js';
 import { createInteractionCard, createResultCard } from './interaction-card.js';
 import { renderMarkdown } from './markdown.js';
@@ -34,9 +35,15 @@ export class AssistantElementEventController {
   #completedTool: AssistantToolCompletedDetail | undefined;
   #streamKind: 'message' | 'interaction' | undefined;
   readonly #proposalCards = new Map<string, HTMLElement>();
+  #history: { readonly retentionDays: number } | undefined;
 
   constructor(host: AssistantElementEventHost) {
     this.#host = host;
+  }
+
+  /** The current session's retention notice; absent when its conversation is not recorded. */
+  get history(): { readonly retentionDays: number } | undefined {
+    return this.#history;
   }
 
   handle(event: AssistantClientEvent): void {
@@ -52,9 +59,13 @@ export class AssistantElementEventController {
     if (event.event === 'unrecognized') return;
     const { event: name, data } = event;
     if (name === 'session_started') {
+      // Set before configuration re-renders the footer, which reads it back.
+      this.#history = event.event === 'session_started' ? event.data.history : undefined;
       if (isRecord(data.configuration)) {
         this.#host.applyConfiguration(data.configuration as AssistantConfiguration);
       }
+      const legal = this.#host.element.shadowRoot?.querySelector<HTMLElement>('.legal');
+      if (legal) showHistoryNotice(legal, this.#history);
       this.#host.element.dispatchEvent(
         new CustomEvent('assistant-session-started', {
           detail: { expiresAt: String(data.expiresAt ?? '') },

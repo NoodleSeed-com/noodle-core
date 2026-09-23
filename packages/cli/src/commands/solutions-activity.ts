@@ -1,8 +1,6 @@
 import {
   ApplicationActivityListClientResponseSchema,
   ApplicationActivityPreviewClientResponseSchema,
-  ApplicationActivitySettingsClientResponseSchema,
-  ApplicationActivitySettingsSaveRequestSchema,
 } from '@noodle-borg/wire-contracts';
 import type { ConfigLocation } from '../config.js';
 import { resolveControlPlaneToken, serviceJson } from '../control-plane.js';
@@ -37,8 +35,6 @@ export async function runSolutionActivity(
       '--auth-token': 'authToken',
       '--limit': 'limit',
       '--cursor': 'cursor',
-      '--expected-revision': 'expectedRevision',
-      '--retention-days': 'retentionDays',
     },
     booleans: { '--json': 'json' },
   });
@@ -47,43 +43,27 @@ export async function runSolutionActivity(
       'solutions activity',
       usageError(
         message,
-        'noodle solutions activity <list|export|preview> <installation> --org <org> | settings <get|set> <installation> --org <org>',
+        'noodle solutions activity <list|export|preview> <installation> --org <org>',
       ),
       args.json,
     );
   if (args.parseError) return fail(args.parseError);
-  const [family, second, third] = args.positional;
+  const [family, installation] = args.positional;
   const isPage = family === 'list' || family === 'export';
-  const direct = isPage || family === 'preview';
-  const action = direct ? family : second;
-  const installation = direct ? second : third;
   if (
     !installation ||
     !args.org ||
-    (!direct && (family !== 'settings' || !['get', 'set'].includes(action ?? ''))) ||
-    args.positional.length !== (direct ? 2 : 3)
+    (!isPage && family !== 'preview') ||
+    args.positional.length !== 2
   )
     return fail('A supported action, installation and --org are required.');
-  if (
-    (!isPage && (args.limit !== undefined || args.cursor !== undefined)) ||
-    (action !== 'set' && (args.expectedRevision !== undefined || args.retentionDays !== undefined))
-  )
-    return fail(
-      'Paging flags apply only to list and export; retention and revision apply only to settings set.',
-    );
+  if (!isPage && (args.limit !== undefined || args.cursor !== undefined))
+    return fail('Paging flags apply only to list and export.');
   const limit = args.limit === undefined ? undefined : Number(args.limit);
   if (limit !== undefined && (!Number.isInteger(limit) || limit < 1 || limit > 100))
     return fail('--limit must be an integer from 1 to 100.');
   if (args.cursor !== undefined && (args.cursor.length === 0 || args.cursor.length > 2048))
     return fail('--cursor must be a bounded opaque cursor.');
-  const save = ApplicationActivitySettingsSaveRequestSchema.safeParse({
-    expectedRevision: args.expectedRevision,
-    retentionDays: Number(args.retentionDays),
-  });
-  if (action === 'set' && !save.success)
-    return fail(
-      'settings set requires --expected-revision from settings get and --retention-days from 1 to 365, within your plan maximum.',
-    );
   const resolved = await resolveControlPlaneToken({
     serviceFlag: args.service,
     authFlag: args.authToken,
@@ -117,7 +97,7 @@ export async function runSolutionActivity(
             ...(data.nextCursor === undefined ? [] : [`Next cursor: ${data.nextCursor}`]),
           ].join('\n'),
         );
-    } else if (family === 'preview') {
+    } else {
       const response = await serviceJson<unknown>(
         `${base}/preview`,
         resolved.token,
@@ -140,25 +120,6 @@ export async function runSolutionActivity(
                 'Counts cover current visible terminal evidence only; future operations are not forecast.',
               ].join('\n'),
         );
-    } else {
-      const response = await serviceJson<unknown>(
-        `${base}/settings`,
-        resolved.token,
-        action === 'set' && save.success
-          ? {
-              method: 'PATCH',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify(save.data),
-            }
-          : {},
-        options.fetchImpl ?? fetch,
-      );
-      const data = ApplicationActivitySettingsClientResponseSchema.parse(response).data;
-      if (args.json) printJsonOk(data);
-      else
-        console.log(
-          `Activity retention: ${data.retentionDays} day(s); plan maximum: ${data.maximumDays}.\nRevision: ${data.revision}\n${data.canEdit ? 'Administrators can change retention.' : 'Read-only for your role.'}`,
-        );
     }
     return EXIT.OK;
   } catch (error) {
@@ -167,7 +128,7 @@ export async function runSolutionActivity(
       serviceFailure(
         'solutions activity',
         error,
-        `noodle solutions activity ${direct ? family : 'settings get'} <installation> --org <org>`,
+        `noodle solutions activity ${family} <installation> --org <org>`,
       ),
       args.json,
     );

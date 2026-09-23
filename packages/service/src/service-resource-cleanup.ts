@@ -1,4 +1,5 @@
 import type { Server } from 'node:http';
+import type { Logger } from '@noodle-borg/transport-http';
 
 interface AsyncCloseable {
   close(): Promise<void>;
@@ -39,6 +40,39 @@ export async function closeServiceResources(input: ServiceResourceCleanupInput):
     await captureCleanupError(errors, () => postgresPool.close());
   }
   if (errors.length > 0) throw new AggregateError(errors, 'service resource cleanup failed');
+}
+
+/**
+ * Clean up after a failed boot without letting a cleanup failure replace the error that aborted startup:
+ * operators must see the bind or boot cause, while the cleanup failure is still logged.
+ */
+export async function cleanupAfterStartupFailure(
+  logger: Logger,
+  phase: 'resources' | 'modules',
+  cleanup: () => Promise<void>,
+): Promise<void> {
+  try {
+    await cleanup();
+  } catch (error) {
+    const code = firstErrorCode(error);
+    logger.error('service.startup_cleanup_failed', {
+      phase,
+      name: error instanceof Error ? error.name : 'unknown',
+      ...(code === undefined ? {} : { code }),
+    });
+  }
+}
+
+/** The first scalar driver/system code, searching nested cleanup aggregates depth-first. */
+function firstErrorCode(error: unknown, depth = 0): string | undefined {
+  if (typeof error !== 'object' || error === null || depth > 4) return undefined;
+  if ('code' in error && typeof error.code === 'string') return error.code;
+  if (!(error instanceof AggregateError)) return undefined;
+  for (const nested of error.errors) {
+    const code = firstErrorCode(nested, depth + 1);
+    if (code !== undefined) return code;
+  }
+  return undefined;
 }
 
 export function listenHttpServer(http: Server, port: number, host: string): Promise<void> {

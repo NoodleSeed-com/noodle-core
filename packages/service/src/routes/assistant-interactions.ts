@@ -32,6 +32,7 @@ import {
   type ToolPreparationContinuation,
 } from '@noodle-borg/runtime';
 import { readJsonBody, sendJson } from '@noodle-borg/transport-http';
+import { sessionSurfaceHistory } from '../conversation-history/capture.js';
 import {
   type AssistantRouteDeps,
   applyBrowserCors,
@@ -502,11 +503,11 @@ async function finishExecution(
       status: 'failed',
       reasonCode: code,
     });
-    await deps.conversations?.recordSessionOutcome(session, {
-      interactionId: interaction.id,
-      tool: toolName,
-      status: 'failed',
-    });
+    await deps.conversations?.recordSessionOutcome(
+      session,
+      { interactionId: interaction.id, tool: toolName, status: 'failed' },
+      sessionSurfaceHistory(target.served.artifact.server.assistant, session),
+    );
     writeInteractionSseHeaders(res, session.origin);
     writeInteractionResolved(res, interaction.id, 'accept');
     writeInteractionError(res, code, false);
@@ -545,11 +546,11 @@ async function finishExecution(
       kind: 'narration',
     },
   ]);
-  await deps.conversations?.recordSessionOutcome(session, {
-    interactionId: interaction.id,
-    tool: toolName,
-    status: 'succeeded',
-  });
+  await deps.conversations?.recordSessionOutcome(
+    session,
+    { interactionId: interaction.id, tool: toolName, status: 'succeeded' },
+    sessionSurfaceHistory(target.served.artifact.server.assistant, session),
+  );
   writeInteractionSseHeaders(res, session.origin);
   writeInteractionResolved(res, interaction.id, 'accept');
   writeToolCompleted(res, interaction.id, toolName, safeOutput);
@@ -654,11 +655,16 @@ async function resolveStop(
       kind: 'narration',
     },
   ]);
-  await deps.conversations?.recordSessionOutcome(session, {
-    interactionId: interaction.id,
-    tool: toolName,
-    status: action === 'decline' ? 'declined' : 'cancelled',
-  });
+  await deps.conversations?.recordSessionOutcome(
+    session,
+    {
+      interactionId: interaction.id,
+      tool: toolName,
+      status: action === 'decline' ? 'declined' : 'cancelled',
+    },
+    // A vanished target leaves the surface unreadable, which records nothing (fail closed).
+    sessionSurfaceHistory(target?.served.artifact.server.assistant, session),
+  );
   writeInteractionSseHeaders(res, session.origin);
   writeInteractionResolved(res, interaction.id, action);
   if (target && context) {

@@ -278,6 +278,7 @@ export * from './application-activity.js';
 export * from './application-connections.js';
 export * from './application-draft-validation.js';
 export * from './application-drafts.js';
+export * from './application-history-settings.js';
 export * from './application-onboarding.js';
 export * from './billing-catalog.js';
 export * from './business-workspaces.js';

@@ -12,7 +12,11 @@ import { type ArtifactTool, anonymousBehavior } from '@noodle-borg/compiler';
 import { claimableStateHandleNames } from '@noodle-borg/runtime';
 import { sendJson } from '@noodle-borg/transport-http';
 import { assistantSessionResponseSchema } from '@noodle-borg/wire-contracts';
-import type { ConversationCapture } from '../conversation-history/capture.js';
+import {
+  type ConversationCapture,
+  type SurfaceHistory,
+  sessionHistoryNotice,
+} from '../conversation-history/capture.js';
 import type { AuditSink } from '../store/audit.js';
 import type { TenantRef } from '../store.js';
 
@@ -164,6 +168,8 @@ export async function elevateAssistantSession(
     readonly endpoints: Readonly<Record<string, string>>;
     /** Route-computed policy (default ON, exchange override wins): arms the one-shot resume. */
     readonly resume: boolean;
+    /** Whether the landing surface declared `history: false`, so the notice states no window. */
+    readonly surfaceHistory: SurfaceHistory;
   },
 ): Promise<void> {
   if (typeof input.signInTicket !== 'string' || input.signInTicket.length === 0) {
@@ -240,6 +246,13 @@ export async function elevateAssistantSession(
     // The armed hint: the widget answers with one { resume: true } turn on the turns endpoint.
     ...(elevated.resumeArmed ? { resume: { tool: elevated.tool } } : {}),
     continuedAfterAuthentication: true as const,
+    // The caller is now verified, so the notice states the signed-in customers' window.
+    ...(await sessionHistoryNotice(
+      deps.conversations,
+      input.client.tenant,
+      'signed_in_customers',
+      input.surfaceHistory,
+    )),
   };
   assistantSessionResponseSchema.parse(body);
   return sendJson(res, 200, body);

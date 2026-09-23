@@ -5,6 +5,7 @@ import {
   ConversationForgetResponseSchema,
   ConversationListClientResponseSchema,
   ConversationListResponseSchema,
+  ConversationReviewRequestSchema,
   ConversationShowClientResponseSchema,
   ConversationShowResponseSchema,
 } from '../src/conversation-history.js';
@@ -16,7 +17,10 @@ const summary = {
   startedAt: '2026-09-07T00:00:00.000Z',
   lastMessageAt: '2026-09-07T00:01:00.000Z',
   itemCount: 2,
+  reviewStatus: 'needs_attention',
 };
+const expiresAt = '2026-09-14T00:01:00.000Z';
+const notes = [{ author: 'staff_1', text: 'Call back', at: '2026-09-07T00:02:00.000Z' }];
 const items = [
   { kind: 'message', role: 'user', text: 'Gluten-free cakes?', at: '2026-09-07T00:00:00.000Z' },
   {
@@ -44,14 +48,21 @@ describe('conversation history operator wire', () => {
         data: { conversations: [{ ...summary, future: 1 }], future: 2 },
       }).data.conversations[0],
     ).toEqual(summary);
-    const show = { ok: true, data: { conversation: { ...summary, items } } };
+    const show = { ok: true, data: { conversation: { ...summary, expiresAt, items, notes } } };
     expect(ConversationShowResponseSchema.parse(show)).toEqual(show);
     expect(
       ConversationShowClientResponseSchema.parse({
         ok: true,
-        data: { conversation: { ...summary, items: [{ ...items[0], extra: true }] } },
-      }).data.conversation.items[0],
-    ).toEqual(items[0]);
+        data: {
+          conversation: {
+            ...summary,
+            expiresAt,
+            items: [{ ...items[0], extra: true }],
+            notes: [{ ...notes[0], extra: true }],
+          },
+        },
+      }).data.conversation,
+    ).toMatchObject({ items: [items[0]], notes });
   });
 
   it('never carries an anonymous handle and rejects malformed ids', () => {
@@ -75,8 +86,14 @@ describe('conversation history operator wire', () => {
     ).toThrow();
   });
 
-  it('bounds export pages to 25 conversations', () => {
-    const conversation = { ...summary, items };
+  it('bounds export pages to 25 conversations and never carries private notes', () => {
+    const conversation = { ...summary, expiresAt, items };
+    expect(
+      ConversationExportResponseSchema.safeParse({
+        ok: true,
+        data: { conversations: [{ ...conversation, notes }] },
+      }).success,
+    ).toBe(false);
     expect(
       ConversationExportResponseSchema.safeParse({
         ok: true,
@@ -105,5 +122,22 @@ describe('conversation history operator wire', () => {
       ).toBe(false);
     const forgotten = { ok: true, data: { forgotten: { conversations: 2, items: 5 } } };
     expect(ConversationForgetResponseSchema.parse(forgotten)).toEqual(forgotten);
+  });
+
+  it('accepts a review status, a bounded trimmed note or both, and nothing else', () => {
+    expect(
+      ConversationReviewRequestSchema.parse({ reviewStatus: 'reviewed', note: ' Done ' }),
+    ).toEqual({ reviewStatus: 'reviewed', note: 'Done' });
+    for (const invalid of [
+      {},
+      { reviewStatus: 'needs-attention' },
+      { note: '  ' },
+      { note: 'x'.repeat(2001) },
+      { note: 'x', author: 'staff_2' },
+    ])
+      expect(
+        ConversationReviewRequestSchema.safeParse(invalid).success,
+        JSON.stringify(invalid),
+      ).toBe(false);
   });
 });

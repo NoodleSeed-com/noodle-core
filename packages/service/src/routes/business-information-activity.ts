@@ -1,10 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { readJsonBody, sendJson } from '@noodle-borg/transport-http';
-import {
-  ActivityPolicyError,
-  type ActivityProjectionAction,
-  type ApplicationActivity,
-} from '../application-activity.js';
+import { ActivityPolicyError, type ActivityProjectionAction } from '../application-activity.js';
 import { businessGrantAllows } from '../business-information/model.js';
 import {
   type BusinessInformationRouteDeps,
@@ -13,24 +9,22 @@ import {
 } from './business-information.js';
 import type { SolutionInstallationRef } from './business-information-paths.js';
 
-export interface BusinessActivityRouteDeps extends BusinessInformationRouteDeps {
-  readonly activity?: ApplicationActivity;
-}
 export async function handleApplicationActivity(
   req: IncomingMessage,
   res: ServerResponse,
   url: URL,
   ref: SolutionInstallationRef,
-  deps: BusinessActivityRouteDeps,
+  deps: BusinessInformationRouteDeps,
 ): Promise<void> {
   const coordination = ref.action === 'coordination';
+  const history = ref.action === 'history';
   const suffix = url.pathname.split('/').at(-1);
   const action: ActivityProjectionAction = coordination
     ? suffix === 'resolve'
       ? 'coordination-resolve'
       : 'coordination-list'
-    : suffix === 'settings'
-      ? req.method === 'PATCH'
+    : history
+      ? req.method === 'PUT'
         ? 'save-settings'
         : 'settings'
       : suffix === 'preview' || suffix === 'export'
@@ -40,8 +34,8 @@ export async function handleApplicationActivity(
     ? suffix === 'resolve'
       ? ['POST']
       : ['GET']
-    : suffix === 'settings'
-      ? ['GET', 'PATCH']
+    : history
+      ? ['GET', 'PUT']
       : ['GET'];
   if (!allowed.includes(req.method ?? '')) {
     res.setHeader('allow', allowed.join(', '));

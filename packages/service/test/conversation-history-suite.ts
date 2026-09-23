@@ -173,6 +173,7 @@ export function describeConversationHistoryStore(
         startedAt: T0 + 500,
         lastMessageAt: T0 + 600,
         itemCount: 2,
+        reviewStatus: 'new',
       });
       const first = await store.list(TENANT, { now, limit: 2 });
       expect(first.map((row) => row.id)).toEqual(['cv_other', 'cv_list_c']);
@@ -203,6 +204,167 @@ export function describeConversationHistoryStore(
       expect(await store.list(TENANT, { now: boundary + CONVERSATION_DAY_MS, limit: 10 })).toEqual(
         [],
       );
+    });
+
+    it('counts unexpired history outside a shorter window, and everything for Off', async () => {
+      const day = CONVERSATION_DAY_MS;
+      const now = T0 + 20 * day;
+      const message = (text: string, at: number) =>
+        ({ kind: 'message', role: 'user', text, at }) as const;
+      // Entirely older than ten days: the whole conversation leaves the window.
+      await store.append(
+        { ...anonymous, id: 'cv_window_old' },
+        [message('a', T0 + 2 * day), message('b', T0 + 3 * day)],
+        30,
+      );
+      // Straddles the cutoff: one item leaves, the conversation stays.
+      await store.append(
+        { ...anonymous, id: 'cv_window_mixed' },
+        [message('c', T0 + 5 * day), message('d', T0 + 15 * day)],
+        30,
+      );
+      // Already expired at `now`: no longer visible, so never counted.
+      await store.append({ ...anonymous, id: 'cv_window_gone' }, [message('e', T0)], 7);
+      await store.append(
+        { ...anonymous, id: 'cv_window_other', tenant: OTHER },
+        [message('f', T0 + 2 * day)],
+        30,
+      );
+      expect(await store.countOutsideWindow(TENANT, { now, days: 10 })).toEqual({
+        conversations: 1,
+        items: 3,
+      });
+      expect(await store.countOutsideWindow(TENANT, { now, days: 0 })).toEqual({
+        conversations: 2,
+        items: 4,
+      });
+      expect(await store.countOutsideWindow(TENANT, { now, days: 30 })).toEqual({
+        conversations: 0,
+        items: 0,
+      });
+      expect(await store.countOutsideWindow(OTHER, { now, days: 0 })).toEqual({
+        conversations: 1,
+        items: 1,
+      });
+    });
+
+    it('hides items older than a read bound without touching stored expiry', async () => {
+      const day = CONVERSATION_DAY_MS;
+      const now = T0 + 20 * day;
+      const message = (text: string, at: number) =>
+        ({ kind: 'message', role: 'user', text, at }) as const;
+      await store.append(
+        { ...anonymous, id: 'cv_bound_old' },
+        [message('a', T0 + 2 * day), message('b', T0 + 3 * day)],
+        30,
+      );
+      await store.append(
+        { ...anonymous, id: 'cv_bound_mixed' },
+        [message('c', T0 + 5 * day), message('d', T0 + 15 * day)],
+        30,
+      );
+      await store.append(
+        { ...anonymous, id: 'cv_bound_other', tenant: OTHER },
+        [message('e', T0 + 2 * day)],
+        30,
+      );
+      const notBefore = now - 7 * day;
+      const listed = await store.list(TENANT, { now, limit: 10, notBefore });
+      expect(listed.map((row) => [row.id, row.itemCount])).toEqual([['cv_bound_mixed', 1]]);
+      expect(await store.read(TENANT, 'cv_bound_old', now, notBefore)).toBeUndefined();
+      const mixed = await store.read(TENANT, 'cv_bound_mixed', now, notBefore);
+      expect(mixed?.items.map((item) => item.kind === 'message' && item.text)).toEqual(['d']);
+      // The item exactly at the bound stays visible; the bound never rewrites stored expiry.
+      expect((await store.read(TENANT, 'cv_bound_mixed', now, T0 + 5 * day))?.items).toHaveLength(
+        2,
+      );
+      expect((await store.read(TENANT, 'cv_bound_old', now))?.items[0]?.expiresAt).toBe(
+        T0 + 32 * day,
+      );
+      expect(await store.list(TENANT, { now, limit: 10 })).toHaveLength(2);
+      expect(await store.list(OTHER, { now, limit: 10, notBefore })).toEqual([]);
+    });
+
+    it('caps stored expiry to a shorter window, never lengthens it, and matches the count', async () => {
+      const day = CONVERSATION_DAY_MS;
+      const now = T0 + 20 * day;
+      const message = (text: string, at: number) =>
+        ({ kind: 'message', role: 'user', text, at }) as const;
+      await store.append(
+        { ...anonymous, id: 'cv_cap_old' },
+        [message('a', T0 + 2 * day), message('b', T0 + 3 * day)],
+        30,
+      );
+      await store.append(
+        { ...anonymous, id: 'cv_cap_mixed' },
+        [message('c', T0 + 5 * day), message('d', T0 + 15 * day)],
+        30,
+      );
+      await store.append({ ...anonymous, id: 'cv_cap_short' }, [message('e', T0 + 19.5 * day)], 1);
+      await store.append(
+        { ...anonymous, id: 'cv_cap_other', tenant: OTHER },
+        [message('f', T0 + 2 * day)],
+        30,
+      );
+      const preview = await store.countOutsideWindow(TENANT, { now, days: 10 });
+      expect(await store.capExpiry(TENANT, { now, days: 10 })).toEqual(preview);
+      expect(preview).toEqual({ conversations: 1, items: 3 });
+      expect(await store.read(TENANT, 'cv_cap_old', now)).toBeUndefined();
+      const mixed = await store.read(TENANT, 'cv_cap_mixed', now);
+      expect(
+        mixed?.items.map((item) => [item.kind === 'message' && item.text, item.expiresAt]),
+      ).toEqual([['d', T0 + 25 * day]]);
+      // Already shorter than the window: untouched.
+      expect((await store.read(TENANT, 'cv_cap_short', now))?.items[0]?.expiresAt).toBe(
+        T0 + 20.5 * day,
+      );
+      expect((await store.list(TENANT, { now, limit: 10 })).map((row) => row.id).sort()).toEqual([
+        'cv_cap_mixed',
+        'cv_cap_short',
+      ]);
+      // A longer window never raises an expiry or resurfaces capped history.
+      expect(await store.capExpiry(TENANT, { now, days: 60 })).toEqual({
+        conversations: 0,
+        items: 0,
+      });
+      expect(await store.read(TENANT, 'cv_cap_old', now)).toBeUndefined();
+      expect((await store.read(TENANT, 'cv_cap_mixed', now))?.items).toHaveLength(1);
+      // The conversation expiry follows its items, so the capped conversation purges.
+      clock.now = now;
+      expect(await store.purgeExpired({ limit: 100 })).toBe(4);
+      expect(await store.read(TENANT, 'cv_cap_old', 0)).toBeUndefined();
+      expect((await store.read(OTHER, 'cv_cap_other', now))?.items[0]?.expiresAt).toBe(
+        T0 + 32 * day,
+      );
+    });
+
+    it('Off hides every item immediately and purge removes the conversations', async () => {
+      const now = T0 + CONVERSATION_DAY_MS;
+      await store.append(
+        { ...anonymous, id: 'cv_off_a' },
+        [
+          { kind: 'message', role: 'user', text: 'a', at: T0 },
+          { kind: 'message', role: 'assistant', text: 'b', at: now },
+        ],
+        30,
+      );
+      await store.append(
+        { ...anonymous, id: 'cv_off_other', tenant: OTHER },
+        [{ kind: 'message', role: 'user', text: 'c', at: T0 }],
+        30,
+      );
+      expect(await store.countOutsideWindow(TENANT, { now, days: 0 })).toEqual({
+        conversations: 1,
+        items: 2,
+      });
+      expect(await store.capExpiry(TENANT, { now, days: 0 })).toEqual({
+        conversations: 1,
+        items: 2,
+      });
+      expect(await store.list(TENANT, { now, limit: 10 })).toEqual([]);
+      clock.now = now;
+      expect(await store.purgeExpired({ limit: 100 })).toBe(3);
+      expect(await store.list(OTHER, { now, limit: 10 })).toHaveLength(1);
     });
 
     it('forgets one conversation with all its items, only in its own tenant', async () => {
@@ -261,6 +423,135 @@ export function describeConversationHistoryStore(
       ).toEqual(['cv_omar', 'cv_sara_wa']);
       expect(await store.read(OTHER, 'cv_sara_elsewhere', T0)).toBeDefined();
       expect(await store.forgetSubject(TENANT, customer)).toEqual({ conversations: 0, items: 0 });
+    });
+
+    it('lists only one exact subject on one channel when asked, keeping the keyset', async () => {
+      const customer = { kind: 'customer', ref: 'sara_91' } as const;
+      const message = (at: number) => [{ kind: 'message', role: 'user', text: 'hi', at }] as const;
+      await store.append({ ...anonymous, id: 'cv_sara_1', subject: customer }, message(T0), 7);
+      await store.append({ ...anonymous, id: 'cv_sara_2', subject: customer }, message(T0 + 2), 7);
+      await store.append(
+        { ...anonymous, id: 'cv_sara_prefix', subject: { kind: 'customer', ref: 'sara_9' } },
+        message(T0 + 3),
+        7,
+      );
+      await store.append(
+        { ...anonymous, id: 'cv_sara_wa', channel: 'whatsapp', subject: { ...customer } },
+        message(T0 + 4),
+        7,
+      );
+      await store.append(
+        { ...anonymous, id: 'cv_sara_part', subject: { kind: 'participant', ref: 'sara_91' } },
+        message(T0 + 5),
+        7,
+      );
+      await store.append(
+        { ...anonymous, id: 'cv_sara_other', tenant: OTHER, subject: customer },
+        message(T0 + 6),
+        7,
+      );
+      const page = (after?: { lastMessageAt: number; id: string }) =>
+        store.list(TENANT, {
+          now: T0 + 10,
+          limit: 1,
+          channel: 'website',
+          subject: customer,
+          ...(after ? { after } : {}),
+        });
+      const first = await page();
+      expect(first.map((row) => row.id)).toEqual(['cv_sara_2']);
+      const second = await page(first[0]);
+      expect(second.map((row) => [row.id, row.subject])).toEqual([['cv_sara_1', customer]]);
+      expect(await page(second[0])).toEqual([]);
+    });
+
+    it('keeps a review status that filters the list and never re-dates the conversation', async () => {
+      const message = [{ kind: 'message', role: 'user', text: 'Order status?', at: T0 }] as const;
+      await store.append(anonymous, message, 7);
+      await store.append({ ...anonymous, id: 'cv_web_2' }, message, 7);
+      expect((await store.read(TENANT, anonymous.id, T0))?.reviewStatus).toBe('new');
+      expect(await store.setReviewStatus(TENANT, anonymous.id, 'reviewed')).toBe(true);
+      expect(await store.setReviewStatus(OTHER, anonymous.id, 'reviewed')).toBe(false);
+      expect(await store.setReviewStatus(TENANT, 'cv_missing', 'reviewed')).toBe(false);
+      const reviewed = await store.list(TENANT, { now: T0, limit: 10, reviewStatus: 'reviewed' });
+      expect(reviewed.map((row) => [row.id, row.reviewStatus, row.lastMessageAt])).toEqual([
+        [anonymous.id, 'reviewed', T0],
+      ]);
+      expect(
+        (await store.list(TENANT, { now: T0, limit: 10, reviewStatus: 'new' })).map(
+          (row) => row.id,
+        ),
+      ).toEqual(['cv_web_2']);
+    });
+
+    it('marks a conversation Needs attention when a failed outcome is appended, even after review', async () => {
+      const outcome = (status: 'succeeded' | 'failed', at: number) =>
+        [
+          { kind: 'outcome', interactionId: `int_${at}`, tool: 'create_order', status, at },
+        ] as const;
+      await store.append(anonymous, outcome('succeeded', T0), 7);
+      expect((await store.read(TENANT, anonymous.id, T0))?.reviewStatus).toBe('new');
+      await store.append(anonymous, outcome('failed', T0 + 1), 7);
+      expect((await store.read(TENANT, anonymous.id, T0))?.reviewStatus).toBe('needs_attention');
+      await store.setReviewStatus(TENANT, anonymous.id, 'reviewed');
+      await store.append(anonymous, outcome('succeeded', T0 + 2), 7);
+      expect((await store.read(TENANT, anonymous.id, T0))?.reviewStatus).toBe('reviewed');
+      await store.append(anonymous, outcome('failed', T0 + 3), 7);
+      expect((await store.read(TENANT, anonymous.id, T0))?.reviewStatus).toBe('needs_attention');
+    });
+
+    it('keeps private notes in order without extending retention or counting them as items', async () => {
+      await store.append(
+        anonymous,
+        [{ kind: 'message', role: 'user', text: 'Refund please', at: T0 }],
+        7,
+      );
+      const later = T0 + 6 * CONVERSATION_DAY_MS;
+      expect(
+        await store.addNote(TENANT, anonymous.id, {
+          author: 'operator',
+          text: 'Call back',
+          at: later,
+        }),
+      ).toBe(true);
+      expect(
+        await store.addNote(TENANT, anonymous.id, { author: 'owner', text: 'Done', at: later + 1 }),
+      ).toBe(true);
+      expect(
+        await store.addNote(OTHER, anonymous.id, { author: 'owner', text: 'x', at: later }),
+      ).toBe(false);
+      expect(
+        await store.addNote(TENANT, 'cv_missing', { author: 'owner', text: 'x', at: later }),
+      ).toBe(false);
+      const read = await store.read(TENANT, anonymous.id, later + 2);
+      expect(read?.notes).toEqual([
+        { seq: 1, author: 'operator', text: 'Call back', at: later },
+        { seq: 2, author: 'owner', text: 'Done', at: later + 1 },
+      ]);
+      expect(read?.lastMessageAt).toBe(T0);
+      expect(read?.items).toHaveLength(1);
+      expect((await store.list(TENANT, { now: later + 2, limit: 10 }))[0]?.itemCount).toBe(1);
+      expect(await store.read(OTHER, anonymous.id, later + 2)).toBeUndefined();
+      const expiry = T0 + 7 * CONVERSATION_DAY_MS;
+      expect(await store.read(TENANT, anonymous.id, expiry)).toBeUndefined();
+      expect(await store.list(TENANT, { now: expiry, limit: 10 })).toEqual([]);
+      clock.now = expiry;
+      expect(await store.purgeExpired({ limit: 100 })).toBe(2);
+      expect(
+        await store.addNote(TENANT, anonymous.id, { author: 'owner', text: 'x', at: expiry }),
+      ).toBe(false);
+    });
+
+    it('erases notes with their conversation and never counts them as items', async () => {
+      await store.append(anonymous, [{ kind: 'message', role: 'user', text: 'a', at: T0 }], 7);
+      await store.addNote(TENANT, anonymous.id, { author: 'owner', text: 'note', at: T0 + 1 });
+      expect(await store.countOutsideWindow(TENANT, { now: T0 + 1, days: 0 })).toEqual({
+        conversations: 1,
+        items: 1,
+      });
+      expect(await store.forget(TENANT, anonymous.id)).toEqual({ conversations: 1, items: 1 });
+      await store.append(anonymous, [{ kind: 'message', role: 'user', text: 'b', at: T0 + 2 }], 7);
+      expect((await store.read(TENANT, anonymous.id, T0 + 2))?.notes).toEqual([]);
     });
   });
 }

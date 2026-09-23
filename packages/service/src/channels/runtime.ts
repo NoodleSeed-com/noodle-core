@@ -21,6 +21,7 @@ import {
 import { guardedFetch } from '@noodle-borg/connector-http';
 import { executePreparedTool, prepareToolForConfirmation } from '@noodle-borg/runtime';
 import type { ServedTarget } from '@noodle-borg/transport-http';
+import { messagingSurfaceHistory } from '../conversation-history/capture.js';
 import type { AssistantRouteDeps } from '../routes/assistant.js';
 import { runAgentTurn } from '../routes/assistant-agent.js';
 import { resolveAssistantKnowledge } from '../routes/assistant-knowledge.js';
@@ -186,7 +187,12 @@ export class WhatsAppRuntime {
     await check('provider_asset', async () => {
       const health = await (await this.provider(binding)).adapter.health();
       if (health.phoneNumberId !== binding.phoneNumberId) throw new ChannelError('asset_mismatch');
-      if (!health.canSend) throw new ChannelError('provider_messaging_blocked');
+      if (!health.canSend)
+        throw new ChannelError(
+          health.reason === 'payment_method_required'
+            ? 'provider_payment_method_required'
+            : 'provider_messaging_blocked',
+        );
       return health.status === 'LIMITED' ? 'provider_messaging_limited' : undefined;
     });
     await check('webhook', async () => {
@@ -368,11 +374,15 @@ export class WhatsAppRuntime {
           ...(send.event.buttons === undefined ? {} : { buttons: send.event.buttons }),
         });
         await this.channels.sent(id, send.event.id, send.event.lease!, result);
-        // Content-free delivery evidence: no address, text or credential.
+        // Content-free delivery evidence: no address, text or credential. A wamid base64-encodes
+        // the recipient's phone number, so only a short digest of it is logged.
         this.deps.logger?.info('assistant.channel.reply', {
           provider: send.binding.provider,
           bindingId: id,
-          providerMessageId: result.providerMessageId,
+          providerMessageRef:
+            result.providerMessageId === undefined
+              ? undefined
+              : channelDigest(result.providerMessageId).slice(0, 16),
           state: result.state,
           code: result.code,
         });
@@ -547,9 +557,19 @@ export class WhatsAppRuntime {
           },
         );
         if (failure || !text.trim()) throw new ChannelError(failure ?? 'answer_unavailable');
+        // WhatsApp has no footer, so a recorded channel states its window here (ADR 0241 decision 17).
+        const days =
+          participant.history.length === 0
+            ? ((await this.deps.conversations?.retentionDays(
+                binding.tenant,
+                'whatsapp',
+                messagingSurfaceHistory(artifact.server.assistant),
+              )) ?? 0)
+            : 0;
+        const kept = days > 0 ? ` Chats are kept for ${days} ${days === 1 ? 'day' : 'days'}.` : '';
         const disclosure =
           participant.history.length === 0
-            ? `I’m ${artifact.server.branding?.name ?? artifact.server.title}’s AI assistant.\n\n`
+            ? `I’m ${artifact.server.branding?.name ?? artifact.server.title}’s AI assistant.${kept}\n\n`
             : '';
         answer = disclosure + text.trim();
       }
@@ -571,13 +591,16 @@ export class WhatsAppRuntime {
         { user: scrub(heard), assistant: scrub(bounded) },
         outcome.kind === 'reply' ? outcome.buttons : undefined,
       );
-      await this.deps.conversations?.recordChannelTurn({
-        tenant: binding.tenant,
-        participantId: participant.id,
-        user: scrub(heard),
-        assistant: scrub(bounded),
-        receivedAt: event.receivedAt,
-      });
+      await this.deps.conversations?.recordChannelTurn(
+        {
+          tenant: binding.tenant,
+          participantId: participant.id,
+          user: scrub(heard),
+          assistant: scrub(bounded),
+          receivedAt: event.receivedAt,
+        },
+        messagingSurfaceHistory(artifact.server.assistant),
+      );
     } catch (error) {
       const code = error instanceof ChannelError ? error.code : 'answer_failed';
       try {

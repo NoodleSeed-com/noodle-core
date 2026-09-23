@@ -11,6 +11,9 @@ import {
   type OperationEvidenceStore,
 } from '../src/operation-evidence.js';
 
+const ALL_SOURCES = { website_visitors: true, signed_in_customers: true, whatsapp: true };
+const setting = (days: number) => ({ days, conversationDays: null, sources: ALL_SOURCES });
+
 export function describeOperationEvidence(create: () => Promise<OperationEvidenceStore>): void {
   const scope = { org: 'a', app: 'site', env: 'production', installationId: 'site' };
   const start = 1_800_000_000_000;
@@ -368,12 +371,35 @@ export function describeOperationEvidence(create: () => Promise<OperationEvidenc
     });
     it('uses scoped atomic setting revisions and does not let stale callers overwrite them', async () => {
       const store = await create();
-      expect(await store.setRetention(scope, 7, undefined)).toBe(true);
-      expect(await store.setRetention(scope, 30, undefined)).toBe(false);
+      expect(await store.setRetention(scope, setting(7), undefined)).toBe(true);
+      expect(await store.setRetention(scope, setting(30), undefined)).toBe(false);
       expect(await store.readRetention({ ...scope, org: 'elsewhere' })).toBeUndefined();
-      expect(await store.setRetention(scope, 3, 1)).toBe(true);
-      expect(await store.setRetention(scope, 4, 1)).toBe(false);
-      expect(await store.readRetention(scope)).toEqual({ days: 3, revision: 2 });
+      expect(await store.setRetention(scope, setting(3), 1)).toBe(true);
+      expect(await store.setRetention(scope, setting(4), 1)).toBe(false);
+      expect(await store.readRetention(scope)).toEqual({ ...setting(3), revision: 2 });
+    });
+    it('keeps a never-opted-in conversation duration apart from Off under one revision', async () => {
+      const store = await create();
+      expect(await store.setRetention(scope, setting(7), undefined)).toBe(true);
+      expect((await store.readRetention(scope))?.conversationDays).toBeNull();
+      const sources = { website_visitors: true, signed_in_customers: false, whatsapp: true };
+      expect(await store.setRetention(scope, { days: 7, conversationDays: 0, sources }, 1)).toBe(
+        true,
+      );
+      expect(await store.readRetention(scope)).toEqual({
+        days: 7,
+        conversationDays: 0,
+        sources,
+        revision: 2,
+      });
+      expect(await store.setRetention(scope, { days: 5, conversationDays: 14, sources }, 2)).toBe(
+        true,
+      );
+      expect(await store.readRetention(scope)).toMatchObject({
+        days: 5,
+        conversationDays: 14,
+        revision: 3,
+      });
     });
     it('fails before a claim for missing authority or unbounded execution', async () => {
       const store = await create();

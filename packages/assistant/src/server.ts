@@ -1,6 +1,17 @@
 import type { AssistantConfiguration } from './appearance.js';
 
 export {
+  type AssistantConversationPage,
+  type AssistantConversationSummary,
+  AssistantConversationsError,
+  type AssistantConversationsErrorDetail,
+  type AssistantForgetUserResult,
+  type ForgetUserInput,
+  forgetUser,
+  type ListConversationsInput,
+  listConversations,
+} from './server-conversations.js';
+export {
   type AssistantSessionHandlerOptions,
   type AssistantSessionIdentity,
   createAssistantSessionHandler,
@@ -100,6 +111,11 @@ export interface AssistantSession {
   readonly resume?: { readonly tool: string };
   /** Present only after a sign-in ticket successfully continued an anonymous session. */
   readonly continuedAfterAuthentication?: true;
+  /**
+   * Present only when the business records this caller's conversation: the widget states the
+   * window in its footer, and custom renderers read it from `session_started`.
+   */
+  readonly history?: { readonly retentionDays: number };
   readonly configuration?: AssistantConfiguration;
 }
 

@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { parseAssistantConfiguration } from '../src/assistant-configuration-schema.js';
+import { parseSession } from '../src/client-errors.js';
 import {
   ASSISTANT_ELEVATION_REFUSAL_CODES,
   type AssistantSession,
@@ -321,6 +323,7 @@ describe('Embedded Assistant v1 wire contract fixture (ADR 0151)', () => {
       'configuration',
       'endpoints',
       'expiresAt',
+      'history',
       'resume',
       'token',
     ]);
@@ -340,6 +343,19 @@ describe('Embedded Assistant v1 wire contract fixture (ADR 0151)', () => {
     expect(goldenFixture.endpoints.suggestions).toMatch(/^https:\/\//);
     // The one optional top-level addition: the armed post-sign-in resume hint (issue #1177).
     expect(goldenFixture.resume).toEqual({ tool: 'my_orders' });
+    // The retention notice, present only when the caller's conversation is recorded (ADR 0241).
+    expect(goldenFixture.history).toEqual({ retentionDays: 30 });
+  });
+
+  it('keeps a published widget reading the whole session when the retention notice is present', () => {
+    // Published widgets parse `configuration` strictly and drop all of it on one unknown key, so the
+    // notice rides at top level, where the published session parser ignores what it does not know.
+    const session = parseSession(goldenFixture);
+    expect(session.token).toBe(goldenFixture.token);
+    expect(session.configuration).toEqual(goldenFixture.configuration);
+    expect(parseAssistantConfiguration(goldenFixture.configuration)).toEqual(
+      goldenFixture.configuration,
+    );
   });
 
   it('drives createAssistantSession end to end', async () => {

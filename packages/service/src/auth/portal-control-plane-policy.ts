@@ -77,11 +77,14 @@ function portalOperationAllowed(method: string, path: string): boolean {
   if (match[1] === undefined) return ['GET', 'POST'].includes(method);
   const operation = match[2];
   if (operation === undefined) return ['GET', 'PATCH'].includes(method);
-  if (/^(settings|channels|activity\/settings)$/.test(operation))
-    return ['GET', 'PATCH'].includes(method);
+  if (/^(settings|channels)$/.test(operation)) return ['GET', 'PATCH'].includes(method);
   if (operation === 'activate') return method === 'POST';
-  if (operation === 'notice') return ['GET', 'PUT'].includes(method);
+  if (/^(notice|history\/settings)$/.test(operation)) return ['GET', 'PUT'].includes(method);
   if (operation === 'record-lifecycle') return ['GET', 'POST'].includes(method);
+  if (/^conversations(?:\/export)?$/.test(operation)) return method === 'GET';
+  if (operation === 'conversations/forget') return method === 'POST';
+  if (/^conversations\/cv_[A-Za-z0-9_-]{8,64}$/.test(operation))
+    return ['GET', 'PATCH'].includes(method);
   if (/^(activity(?:\/(?:export|preview))?|assignees|connections)$/.test(operation))
     return method === 'GET';
   if (/^connections\/[^/]+\/(connect|disconnect)$/.test(operation)) return method === 'POST';

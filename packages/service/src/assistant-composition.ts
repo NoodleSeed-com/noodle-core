@@ -1,4 +1,7 @@
+import { randomBytes } from 'node:crypto';
 import { ConversationCapture } from './conversation-history/capture.js';
+import type { ConversationPolicySource } from './conversation-history/contracts.js';
+import { CustomerConversations } from './conversation-history/customer.js';
 import type { ServiceOptions } from './options.js';
 import type { AssistantRouteDeps } from './routes/assistant.js';
 
@@ -17,10 +20,11 @@ export function assistantRouteDependencies(
     | 'maxBody'
     | 'serviceBase'
     | 'logger'
-  >,
+  > & { readonly conversationPolicy: ConversationPolicySource },
 ): AssistantRouteDeps {
+  const { conversationPolicy, ...route } = core;
   return {
-    ...core,
+    ...route,
     ...(options.publicEmbeds ? { publicEmbeds: options.publicEmbeds } : {}),
     ...(options.elevations ? { elevations: options.elevations } : {}),
     ...(options.elevationCoordinator ? { elevationCoordinator: options.elevationCoordinator } : {}),
@@ -36,12 +40,18 @@ export function assistantRouteDependencies(
       ? {
           conversations: new ConversationCapture(
             options.conversationHistory.store,
-            options.conversationHistory.policy,
+            conversationPolicy,
             {
               now: () => (options.clock?.() ?? new Date()).getTime(),
               ...(core.logger ? { logger: core.logger } : {}),
             },
           ),
+          customerConversations: new CustomerConversations({
+            store: options.conversationHistory.store,
+            policy: conversationPolicy,
+            identityKey: options.conversationHistory.identityKey ?? randomBytes(32).toString('hex'),
+            now: () => (options.clock?.() ?? new Date()).getTime(),
+          }),
         }
       : {}),
   };

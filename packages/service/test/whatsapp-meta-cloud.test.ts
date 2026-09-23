@@ -70,14 +70,16 @@ describe('Meta Cloud API adapter', () => {
       ],
     },
   });
-  it('treats a payment block on business-initiated messages as limited for a reply-only channel', async () => {
+  // Meta: a business "must first attach a payment method ... before they can begin messaging".
+  it('names a missing payment method as the reason a WhatsApp account is blocked', async () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json(paymentBlocked('AVAILABLE')));
     expect(await adapter(fetcher).health()).toEqual({
       phoneNumberId: asset.phoneNumberId,
-      canSend: true,
-      status: 'LIMITED',
+      canSend: false,
+      status: 'BLOCKED',
+      reason: 'payment_method_required',
     });
   });
   it.each([

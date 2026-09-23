@@ -626,6 +626,25 @@ replay across sessions. React applications may observe recovery and structured f
 `createAssistantSession` returns the opaque token, expiry, resolved non-secret configuration, and explicit
 turn/interaction endpoint URLs. Forward that response unchanged to the component or headless client.
 
+#### Your users' conversation history
+
+When the business records conversations, the same backend credential lists or erases one signed-in user's
+chats. Pass the exact `user.id` your session exchange sends; the client's application environment is the
+only scope, so one customer's backend never reaches another's history.
+
+```ts
+import { forgetUser, listConversations } from "@noodleseed/assistant/server";
+
+const credentials = { serviceUrl, clientId, clientSecret };
+// A "your chats" view: newest first, each with a short preview of the first question.
+const page = await listConversations({ ...credentials, user: { id: account.id }, limit: 20 });
+// In your own account deletion. Idempotent, so a retry after a 5xx is safe.
+await forgetUser({ ...credentials, user: { id: account.id } });
+```
+
+`forgetUser` erases stored conversation history only; a live session's short-lived working memory is not
+touched and expires within two hours. Failures throw `AssistantConversationsError` with a typed `detail` (`status`, `retryable`, `serviceCode`).
+
 The MCP server's top-level `branding` block is the portable deployment source for identity and colors shared
 by widgets and the assistant. The embedding application may use the typed `appearance` object when it needs
 exact control over assistant-specific roles:

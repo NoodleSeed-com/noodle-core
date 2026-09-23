@@ -8,19 +8,33 @@ import type { ServedTarget } from '@noodle-borg/transport-http';
 import {
   ApplicationActivityListResponseSchema,
   ApplicationActivityPreviewResponseSchema,
-  ApplicationActivitySettingsResponseSchema,
-  ApplicationActivitySettingsSaveRequestSchema,
+  ApplicationHistorySettingsResponseSchema,
+  ApplicationHistorySettingsSaveRequestSchema,
+  ApplicationHistorySettingsSaveResponseSchema,
   OperationCoordinationListRequestSchema,
   OperationCoordinationListResponseSchema,
   OperationCoordinationResolveRequestSchema,
   OperationCoordinationResolveResponseSchema,
 } from '@noodle-borg/wire-contracts';
+import {
+  conversationPolicyFromSetting,
+  type HistoryDisabledSurface,
+  type HistorySettingsChange,
+  historySettingsProjection,
+  lazyHistorySetting,
+  newInstallationHistorySetting,
+  planHistorySettingsChange,
+} from './application-history-settings.js';
 import { resolveApplicationRuntimeTarget } from './application-runtime-target.js';
 import type {
   BusinessInformationStore,
   InstallationScope,
 } from './business-information/contracts.js';
 import type { ApplicationConnections } from './connections/types.js';
+import type {
+  ConversationHistoryStore,
+  ConversationPolicy,
+} from './conversation-history/contracts.js';
 import {
   createOperationCoordinationPort,
   type OperationCoordinationStore,
@@ -45,6 +59,12 @@ export interface ApplicationActivityOptions {
   readonly allowance: ResolveActivityHistoryAllowance;
   readonly now?: () => number;
   readonly coordination?: OperationCoordinationStore;
+  /** Counts the effect of a shorter conversation duration; absent counts nothing. */
+  readonly conversationHistory?: ConversationHistoryStore;
+  /** Surfaces the installation's served application declared `history: false` on. */
+  readonly historyDisabledSurfaces?: (
+    scope: InstallationScope,
+  ) => Promise<readonly HistoryDisabledSurface[]>;
 }
 export type ActivityProjectionAction =
   | 'list'
@@ -179,14 +199,12 @@ export class ApplicationActivity {
       });
     }
     if (action === 'save-settings') {
-      const parsed = ApplicationActivitySettingsSaveRequestSchema.safeParse(input.body);
+      const parsed = ApplicationHistorySettingsSaveRequestSchema.safeParse(input.body);
       if (!parsed.success) throw invalid();
-      const data = await this.save(scope, parsed.data, local);
-      return mutation(
-        ApplicationActivitySettingsResponseSchema.parse({ ok: true, data }),
-        'config.activity.retention_changed',
-        { retentionDays: data.retentionDays },
-      );
+      const { audit, ...saved } = await this.save(scope, parsed.data, local);
+      const data = { ...saved, settings: await this.withApplicationView(scope, saved.settings) };
+      const response = ApplicationHistorySettingsSaveResponseSchema.parse({ ok: true, data });
+      return audit ? mutation(response, 'config.history.settings_changed', audit) : { response };
     }
     if (action === 'preview')
       return {
@@ -197,9 +215,12 @@ export class ApplicationActivity {
       };
     if (action === 'settings')
       return {
-        response: ApplicationActivitySettingsResponseSchema.parse({
+        response: ApplicationHistorySettingsResponseSchema.parse({
           ok: true,
-          data: (await this.settings(scope, input.canEdit, local)).projection,
+          data: await this.withApplicationView(
+            scope,
+            (await this.settings(scope, input.canEdit, local)).projection,
+          ),
         }),
       };
     const limit = parameters.has('limit') ? Number(parameters.get('limit')) : 50;
@@ -226,11 +247,19 @@ export class ApplicationActivity {
       }),
     };
   }
-  async settings(
-    scope: InstallationScope,
-    canEdit: boolean,
-    local: ActivityLocalOperation = runLocal,
-  ) {
+  /** Adds what the application itself declared; the stored setting and its revision are unchanged. */
+  private async withApplicationView<
+    Projection extends ReturnType<typeof historySettingsProjection>,
+  >(scope: InstallationScope, projection: Projection) {
+    const disabled = (await this.options.historyDisabledSurfaces?.(scope)) ?? [];
+    if (disabled.length === 0) return projection;
+    return {
+      ...projection,
+      conversations: { ...projection.conversations, disabledByApplication: [...disabled] },
+    };
+  }
+  /** The verified plan allowance, or unavailable; never a default invented locally. */
+  async allowance(scope: InstallationScope): Promise<ActivityHistoryAllowance> {
     const allowance = await this.options.allowance(scope.org);
     if (
       !allowance ||
@@ -240,43 +269,105 @@ export class ApplicationActivity {
       !allowance.revision
     )
       throw new ActivityPolicyError('activity_unavailable');
+    return allowance;
+  }
+  async settings(
+    scope: InstallationScope,
+    canEdit: boolean,
+    local: ActivityLocalOperation = runLocal,
+  ) {
+    const allowance = await this.allowance(scope);
     const setting = await local(async () => {
       let value = await this.options.store.readRetention(scope);
       if (!value) {
-        await this.options.store.setRetention(scope, allowance.defaultDays, undefined);
+        await this.options.store.setRetention(scope, lazyHistorySetting(allowance), undefined);
         value = await this.options.store.readRetention(scope);
       }
       return value;
     });
-    if (!setting || !validDays(setting.days)) throw new ActivityPolicyError('activity_unavailable');
+    if (
+      !setting ||
+      !validDays(setting.days) ||
+      (setting.conversationDays !== null &&
+        setting.conversationDays !== 0 &&
+        !validDays(setting.conversationDays))
+    )
+      throw new ActivityPolicyError('activity_unavailable');
     return {
       setting,
       allowance,
-      projection: {
-        revision: this.revision(scope, setting, allowance),
-        retentionDays: Math.min(setting.days, allowance.maximumDays),
-        maximumDays: allowance.maximumDays,
+      projection: historySettingsProjection(
+        setting,
+        allowance,
+        this.revision(scope, setting, allowance),
         canEdit,
-      },
+      ),
     };
   }
+  /**
+   * One change under one revision. Shortening or turning off conversations caps stored expiry right
+   * after the setting is written, so no longer transcript survives behind the shorter window; a dry
+   * run counts exactly what that cap would hide, saves nothing and is not audited.
+   */
   async save(
     scope: InstallationScope,
-    input: { expectedRevision: string; retentionDays: number },
+    input: HistorySettingsChange,
     local: ActivityLocalOperation = runLocal,
   ) {
     const current = await this.settings(scope, true, local);
     if (current.projection.revision !== input.expectedRevision)
       throw new ActivityPolicyError('activity_conflict');
-    if (!validDays(input.retentionDays) || input.retentionDays > current.allowance.maximumDays)
-      throw new ActivityPolicyError('activity_invalid');
+    const plan = planHistorySettingsChange(current.setting, input, current.allowance.maximumDays);
+    if (!plan) throw new ActivityPolicyError('activity_invalid');
+    const store = this.options.conversationHistory;
+    const window = (method: 'countOutsideWindow' | 'capExpiry') =>
+      plan.shortened === undefined || !store
+        ? { conversations: 0, items: 0 }
+        : local(() =>
+            store[method](
+              { org: scope.org, app: scope.app, env: scope.env },
+              { now: this.options.now?.() ?? Date.now(), days: plan.shortened ?? 0 },
+            ),
+          );
+    const shortensConversations = plan.shortened !== undefined;
+    if (input.dryRun)
+      return {
+        shortensConversations,
+        impact: await window('countOutsideWindow'),
+        dryRun: true,
+        settings: current.projection,
+        audit: undefined,
+      };
     if (
       !(await local(() =>
-        this.options.store.setRetention(scope, input.retentionDays, current.setting.revision),
+        this.options.store.setRetention(scope, plan.next, current.setting.revision),
       ))
     )
       throw new ActivityPolicyError('activity_conflict');
-    return (await this.settings(scope, true, local)).projection;
+    const impact = await window('capExpiry');
+    return {
+      shortensConversations,
+      impact,
+      dryRun: false,
+      settings: (await this.settings(scope, true, local)).projection,
+      audit: plan.audit,
+    };
+  }
+  /**
+   * Writes a new installation's first setting so it records conversations from day one. Runs only for a
+   * created installation, before anything reads (and lazily creates) a not-enabled setting.
+   */
+  async initializeHistory(scope: InstallationScope): Promise<boolean> {
+    return this.options.store.setRetention(
+      scope,
+      newInstallationHistorySetting(await this.allowance(scope)),
+      undefined,
+    );
+  }
+  /** The capture policy: side-effect free, so the capture path never creates a setting. */
+  async conversationPolicy(scope: InstallationScope): Promise<ConversationPolicy> {
+    const allowance = await this.allowance(scope);
+    return conversationPolicyFromSetting(await this.options.store.readRetention(scope), allowance);
   }
   async page(
     scope: InstallationScope,
@@ -300,7 +391,7 @@ export class ApplicationActivity {
       this.options.store.list(
         scope,
         this.options.now?.() ?? Date.now(),
-        policy.retentionDays,
+        policy.activity.retentionDays,
         input.limit + 1,
         decodeActivityCursor(input.cursor, binding),
       ),
@@ -335,7 +426,7 @@ export class ApplicationActivity {
           ...(reference === undefined ? {} : { reference }),
         }),
       ),
-      historyDays: policy.retentionDays,
+      historyDays: policy.activity.retentionDays,
       ...(records.length > page.length && last
         ? {
             nextCursor: Buffer.from(
@@ -486,7 +577,8 @@ export class ApplicationActivity {
       ...this.options,
       scope,
       deploymentId: target.deploymentId,
-      historyDays: async () => (await this.settings(scope, false)).projection.retentionDays,
+      historyDays: async () =>
+        (await this.settings(scope, false)).projection.activity.retentionDays,
       executionBoundMs: (intent) => intent.executionBoundMs,
       connectionGeneration: (id) =>
         target.served.deps.executionBinding?.connections[id] ?? revision,

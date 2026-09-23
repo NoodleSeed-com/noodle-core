@@ -67,7 +67,7 @@ describe('commands --json public wire contract', () => {
 
     expect(envelope.data.commands).toHaveLength(65);
     const paths = leafPaths(envelope.data.commands);
-    expect(paths).toHaveLength(309);
+    expect(paths).toHaveLength(311);
     expect(paths.filter((path) => path.startsWith('solutions records lifecycle '))).toEqual([
       'solutions records lifecycle preview',
       'solutions records lifecycle migrate',
@@ -156,10 +156,12 @@ describe('commands --json public wire contract', () => {
         'solutions operations coordination list',
         'solutions operations coordination resolve',
         'solutions activity list',
-        'solutions activity settings get',
-        'solutions activity settings set',
+        'solutions history settings get',
+        'solutions history settings set',
         'solutions conversations list',
         'solutions conversations show',
+        'solutions conversations review',
+        'solutions conversations note',
         'solutions conversations export',
         'solutions conversations forget',
         'solutions connections list',

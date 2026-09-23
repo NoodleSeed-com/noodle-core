@@ -19,20 +19,6 @@ export const ApplicationActivityListResponseSchema = z.strictObject({
     historyDays: z.number().int().min(1).max(365),
   }),
 });
-export const ApplicationActivitySettingsSchema = z.strictObject({
-  revision: z.string().regex(/^[a-f0-9]{64}$/),
-  retentionDays: z.number().int().min(1).max(365),
-  maximumDays: z.number().int().min(1).max(365),
-  canEdit: z.boolean(),
-});
-export const ApplicationActivitySettingsResponseSchema = z.strictObject({
-  ok: z.literal(true),
-  data: ApplicationActivitySettingsSchema,
-});
-export const ApplicationActivitySettingsSaveRequestSchema = z.strictObject({
-  expectedRevision: z.string().regex(/^[a-f0-9]{64}$/),
-  retentionDays: z.number().int().min(1).max(365),
-});
 
 /** Clients tolerate additive response fields; writes and server output remain strict. */
 export const ApplicationActivityListClientResponseSchema = z.object({
@@ -48,10 +34,6 @@ export const ApplicationActivityListClientResponseSchema = z.object({
       )
       .max(100),
   }),
-});
-export const ApplicationActivitySettingsClientResponseSchema = z.object({
-  ok: z.literal(true),
-  data: z.object(ApplicationActivitySettingsSchema.shape),
 });
 
 const ActivityPreviewScenarioSchema = z.strictObject({

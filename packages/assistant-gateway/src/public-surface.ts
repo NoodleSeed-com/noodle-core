@@ -18,6 +18,8 @@ export interface PublicSurface {
   readonly origins: readonly string[];
   readonly capabilities: readonly SurfaceCapabilityRef[];
   readonly instructions?: string;
+  /** Present only as `false`: this surface's chats are never kept as history (ADR 0241). */
+  readonly history?: false;
 }
 
 export interface AuthenticatedSurface {
@@ -25,6 +27,8 @@ export interface AuthenticatedSurface {
   /** Absent means the authored intent is the whole server; a declared list narrows it. */
   readonly capabilities?: readonly SurfaceCapabilityRef[];
   readonly instructions?: string;
+  /** @see PublicSurface.history */
+  readonly history?: false;
 }
 
 /** The deployment's one authenticated surface, read with the same shape discipline as the public one. */
@@ -33,11 +37,12 @@ export function authenticatedSurfaceOf(assistant: unknown): AuthenticatedSurface
   if (!Array.isArray(surfaces)) return undefined;
   for (const entry of surfaces) {
     if (entry?.kind === 'messaging') continue;
-    const { mode, origins, capabilities, instructions } = entry as {
+    const { mode, origins, capabilities, instructions, history } = entry as {
       mode?: unknown;
       origins?: unknown;
       capabilities?: unknown;
       instructions?: unknown;
+      history?: unknown;
     };
     if (mode !== 'authenticated') continue;
     return {
@@ -48,6 +53,7 @@ export function authenticatedSurfaceOf(assistant: unknown): AuthenticatedSurface
         ? { capabilities: capabilities as readonly SurfaceCapabilityRef[] }
         : {}),
       ...(typeof instructions === 'string' ? { instructions } : {}),
+      ...(history === false ? { history } : {}),
     };
   }
   return undefined;
@@ -81,11 +87,12 @@ export function publicSurfaceOf(assistant: unknown): PublicSurface | undefined {
   if (!Array.isArray(surfaces)) return undefined;
   for (const entry of surfaces) {
     if (entry?.kind === 'messaging') continue;
-    const { mode, origins, capabilities, instructions } = entry as {
+    const { mode, origins, capabilities, instructions, history } = entry as {
       mode?: unknown;
       origins?: unknown;
       capabilities?: unknown;
       instructions?: unknown;
+      history?: unknown;
     };
     // A mixed surface admits strangers exactly as a public one does — sign-in only widens what a visitor
     // reaches after elevation, so both provision an embed id and both project.
@@ -100,6 +107,7 @@ export function publicSurfaceOf(assistant: unknown): PublicSurface | undefined {
         ? (capabilities as readonly SurfaceCapabilityRef[])
         : [],
       ...(typeof instructions === 'string' ? { instructions } : {}),
+      ...(history === false ? { history } : {}),
     };
   }
   return undefined;
@@ -111,6 +119,8 @@ export interface MessagingSurface {
   readonly mode: 'public';
   readonly capabilities: readonly SurfaceCapabilityRef[];
   readonly instructions?: string;
+  /** @see PublicSurface.history */
+  readonly history?: false;
 }
 export function messagingSurfaceOf(assistant: unknown): MessagingSurface | undefined {
   const surfaces = (assistant as { surfaces?: unknown } | undefined)?.surfaces;
@@ -125,6 +135,7 @@ export function messagingSurfaceOf(assistant: unknown): MessagingSurface | undef
       mode: 'public',
       capabilities: entry.capabilities,
       ...(typeof entry.instructions === 'string' ? { instructions: entry.instructions } : {}),
+      ...(entry.history === false ? { history: false as const } : {}),
     };
   }
   return undefined;

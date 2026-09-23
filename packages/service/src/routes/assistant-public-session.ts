@@ -17,6 +17,11 @@ import {
 } from '@noodle-borg/observability';
 import { readJsonBody, sendJson } from '@noodle-borg/transport-http';
 import { assistantSessionResponseSchema } from '@noodle-borg/wire-contracts';
+import {
+  type SurfaceHistory,
+  sessionHistoryNotice,
+  websiteSurfaceHistory,
+} from '../conversation-history/capture.js';
 import type { AssistantRouteDeps } from './assistant.js';
 import { applyBrowserCors, assistantSessionEndpoints, now } from './assistant-route-http.js';
 import { activeAssistantTarget } from './assistant-session-target.js';
@@ -55,6 +60,7 @@ export async function handlePublicAssistantSession(
   let configuration: AssistantAppearanceOverride | undefined;
   let sponsoredBudget: SurfaceBudgetBounds | undefined;
   let usageSession: AssistantSessionRecord | undefined;
+  let surfaceHistory: SurfaceHistory = { historyDisabled: true };
   const result = await mintPublicSession(
     { embedId, visitorId, origin, ...(addressBucket ? { addressBucket } : {}) },
     deps.admissionEnvelope ?? ADMISSION_DEFAULTS,
@@ -85,6 +91,7 @@ export async function handlePublicAssistantSession(
         )
           throw new Error('assistant surface changed mid-mint');
         const current = now(deps);
+        surfaceHistory = websiteSurfaceHistory(target.served.artifact.server.assistant, 'public');
         configuration = (
           await effectiveAssistantBrowserConfiguration(
             target.served.artifact.server,
@@ -138,6 +145,14 @@ export async function handlePublicAssistantSession(
     expiresAt: result.expiresAt,
     endpoints: assistantSessionEndpoints(deps.serviceBase(req)),
     ...(configuration ? { configuration } : {}),
+    ...(usageSession
+      ? await sessionHistoryNotice(
+          deps.conversations,
+          usageSession.tenant,
+          'website_visitors',
+          surfaceHistory,
+        )
+      : {}),
   };
   // Parse rather than trust: every published @noodleseed/assistant widget consumes this shape, and the
   // public mint must not be the path that quietly diverges from it (ADR 0151).

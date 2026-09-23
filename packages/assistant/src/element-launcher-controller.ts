@@ -8,6 +8,8 @@ interface AssistantElementLauncherOptions {
   readonly appearance: () => ResolvedAssistantAppearance;
   readonly openPanel: () => void;
   readonly sendMessage: (message: string) => void;
+  /** The session's retention notice, which must be seen before the first submission. */
+  readonly history: () => unknown;
 }
 
 /** Owns the accessible Halo pill/bubble morph without owning session or panel state. */
@@ -16,6 +18,7 @@ export class AssistantElementLauncherController {
   readonly #appearance: () => ResolvedAssistantAppearance;
   readonly #openPanel: () => void;
   readonly #sendMessage: (message: string) => void;
+  readonly #history: () => unknown;
   #root: ShadowRoot | undefined;
   #measurementFrame: number | undefined;
 
@@ -24,6 +27,7 @@ export class AssistantElementLauncherController {
     this.#appearance = options.appearance;
     this.#openPanel = options.openPanel;
     this.#sendMessage = options.sendMessage;
+    this.#history = options.history;
   }
 
   connect(root: ShadowRoot): void {
@@ -158,12 +162,13 @@ export class AssistantElementLauncherController {
 
   #requiresPanel(): boolean {
     const appearance = this.#appearance();
-    // Introductory content and legal destinations must be visible before the first submission.
+    // Intro content, legal links and the retention notice must be seen before the first submission.
     return (
       !this.#host.hasAttribute('data-presentation-ready') ||
       appearance.presentation.launcher.style === 'bubble' ||
       Boolean(appearance.labels.welcomeHeading || appearance.labels.welcomeMessage) ||
-      Boolean(appearance.privacyUrl || appearance.termsUrl)
+      Boolean(appearance.privacyUrl || appearance.termsUrl) ||
+      this.#history() !== undefined
     );
   }
 

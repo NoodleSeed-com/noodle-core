@@ -1,7 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto';
-import type {
-  AssistantHistoryMessage,
-  AssistantSessionRecord,
+import {
+  type AssistantHistoryMessage,
+  type AssistantSessionRecord,
+  authenticatedSurfaceOf,
+  messagingSurfaceOf,
+  publicSurfaceOf,
+  surfaceBindingForOrigin,
 } from '@noodle-borg/assistant-gateway/portable';
 import type { Logger } from '@noodle-borg/transport-http';
 import { maskPaymentCards } from '../payment-card.js';
@@ -17,10 +21,54 @@ import {
   effectiveConversationDays,
 } from './contracts.js';
 
+/** The session wire contract's bound on a stated window; the stored setting never exceeds it. */
+const MAX_NOTICE_DAYS = 365;
+
 export interface ConversationOutcome {
   readonly interactionId: string;
   readonly tool: string;
   readonly status: ConversationOutcomeStatus;
+}
+
+/**
+ * Whether the surface a caller reached declared `history: false` in server.ts (ADR 0241 decision 11).
+ * Call sites resolve it from the artifact they already serve, so capture never re-resolves a target.
+ */
+export interface SurfaceHistory {
+  readonly historyDisabled: boolean;
+}
+
+/**
+ * The surface a web session is bound to, read from the served assistant. A record minted before
+ * `boundSurface` existed derives it as the session target does; an unreadable assistant never records,
+ * because nothing proves this caller may be kept.
+ */
+export function sessionSurfaceHistory(
+  assistant: unknown,
+  session: Pick<AssistantSessionRecord, 'boundSurface' | 'publicEmbedId' | 'origin'>,
+): SurfaceHistory {
+  if (assistant === undefined) return { historyDisabled: true };
+  const binding =
+    session.boundSurface ??
+    (session.publicEmbedId !== undefined
+      ? 'public'
+      : surfaceBindingForOrigin(assistant, session.origin).kind);
+  return websiteSurfaceHistory(assistant, binding);
+}
+
+/** The website surface a mint binds to; a pre-surfaces or unowned binding declares nothing. */
+export function websiteSurfaceHistory(assistant: unknown, binding: string): SurfaceHistory {
+  const surface =
+    binding === 'public'
+      ? publicSurfaceOf(assistant)
+      : binding === 'authenticated'
+        ? authenticatedSurfaceOf(assistant)
+        : undefined;
+  return { historyDisabled: surface?.history === false };
+}
+
+export function messagingSurfaceHistory(assistant: unknown): SurfaceHistory {
+  return { historyDisabled: messagingSurfaceOf(assistant)?.history === false };
 }
 
 export interface ChannelConversationTurn {
@@ -53,6 +101,7 @@ export class ConversationCapture {
   recordSessionTurn(
     session: AssistantSessionRecord,
     rows: readonly AssistantHistoryMessage[],
+    surface: SurfaceHistory,
   ): Promise<void> {
     const at = this.#now();
     const items = rows
@@ -65,14 +114,19 @@ export class ConversationCapture {
           at,
         }),
       );
-    return this.#recordSession(session, items);
+    return this.#recordSession(session, items, surface);
   }
 
   recordSessionOutcome(
     session: AssistantSessionRecord,
     outcome: ConversationOutcome,
+    surface: SurfaceHistory,
   ): Promise<void> {
-    return this.#recordSession(session, [{ kind: 'outcome', ...outcome, at: this.#now() }]);
+    return this.#recordSession(
+      session,
+      [{ kind: 'outcome', ...outcome, at: this.#now() }],
+      surface,
+    );
   }
 
   /** Sign-in moves the conversation in progress to the verified customer (ADR 0241 decision 4). */
@@ -84,7 +138,31 @@ export class ConversationCapture {
     });
   }
 
-  recordChannelTurn(turn: ChannelConversationTurn): Promise<void> {
+  /**
+   * The window every channel states to the person it records (ADR 0241 decision 17); 0 means this
+   * source or surface is not recorded. Never throws: a notice must not fail a session or a reply.
+   */
+  async retentionDays(
+    tenant: TenantRef,
+    source: ConversationSource,
+    surface: SurfaceHistory,
+  ): Promise<number> {
+    if (surface.historyDisabled) return 0;
+    try {
+      const days = effectiveConversationDays(await this.policy(tenant), source);
+      return Number.isInteger(days) && days <= MAX_NOTICE_DAYS ? days : 0;
+    } catch {
+      this.#logger?.warn('assistant.history.policy_failed', {
+        org: tenant.org,
+        app: tenant.app,
+        env: tenant.env,
+      });
+      return 0;
+    }
+  }
+
+  recordChannelTurn(turn: ChannelConversationTurn, surface: SurfaceHistory): Promise<void> {
+    if (surface.historyDisabled) return Promise.resolve();
     return this.#guard(turn.tenant, async () => {
       const days = effectiveConversationDays(await this.policy(turn.tenant), 'whatsapp');
       if (days === 0) return;
@@ -111,9 +189,10 @@ export class ConversationCapture {
   #recordSession(
     session: AssistantSessionRecord,
     items: readonly ConversationItem[],
+    surface: SurfaceHistory,
   ): Promise<void> {
     const subject = sessionSubject(session);
-    if (!subject || items.length === 0) return Promise.resolve();
+    if (surface.historyDisabled || !subject || items.length === 0) return Promise.resolve();
     return this.#guard(session.tenant, async () => {
       const source: ConversationSource =
         subject.kind === 'anonymous' ? 'website_visitors' : 'signed_in_customers';
@@ -155,4 +234,15 @@ function sessionSubject(session: AssistantSessionRecord): ConversationSubject | 
 /** One conversation per session; the opaque id never exposes the session id itself. */
 function sessionConversationId(sessionId: string): string {
   return `cv_${createHash('sha256').update(sessionId).digest('base64url').slice(0, 22)}`;
+}
+
+/** The additive session-response notice (ADR 0241 decision 17); empty for an unrecorded caller. */
+export async function sessionHistoryNotice(
+  conversations: ConversationCapture | undefined,
+  tenant: TenantRef,
+  source: Exclude<ConversationSource, 'whatsapp'>,
+  surface: SurfaceHistory,
+): Promise<{ readonly history?: { readonly retentionDays: number } }> {
+  const retentionDays = (await conversations?.retentionDays(tenant, source, surface)) ?? 0;
+  return retentionDays > 0 ? { history: { retentionDays } } : {};
 }

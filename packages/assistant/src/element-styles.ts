@@ -145,7 +145,7 @@ export const ASSISTANT_ELEMENT_STYLES = `<style>
   .send:disabled, textarea:disabled { opacity: .55; cursor: not-allowed; }
   .legal { display: flex; gap: 12px; justify-content: center; padding: 0 12px 8px; font-size: .75em; }
   .legal:empty { display: none; }
-  .legal a { color: var(--ns-assistant-muted-text, var(--ns-assistant-default-muted-text)); text-underline-offset: 2px; }
+  .legal a, .legal .history-notice { color: var(--ns-assistant-muted-text, var(--ns-assistant-default-muted-text)); text-underline-offset: 2px; }
   .powered-by-row { display: flex; flex: 0 0 auto; justify-content: center; padding-bottom: 12px; }
   .powered-by-row[hidden] { display: none; }
   .powered-by { display: inline-flex; align-items: center; gap: 6px; margin: 0 auto 12px; padding: 0 16px; color: var(--ns-assistant-muted-text, var(--ns-assistant-default-muted-text)); font-size: 11px; line-height: 1; text-decoration: none; opacity: .7; transition: opacity .12s ease, color .12s ease; }

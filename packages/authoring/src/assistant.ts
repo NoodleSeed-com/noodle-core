@@ -185,6 +185,8 @@ export interface AuthenticatedWebsiteAccess {
   readonly capabilities?: readonly CapabilityRef[];
   /** @see AuthenticatedWebsiteInput.webmcp */
   readonly webmcp?: { readonly enabled?: boolean };
+  /** @see AuthenticatedWebsiteInput.history */
+  readonly history?: false;
 }
 
 /**
@@ -223,12 +225,16 @@ export interface PublicWebsiteAccess {
   readonly webmcp?: { readonly enabled?: boolean };
   /** @see PublicWebsiteInput.continuity */
   readonly continuity?: AssistantContinuityDeclaration;
+  /** @see AuthenticatedWebsiteInput.history */
+  readonly history?: false;
 }
 
 export interface PublicMessagingInput {
   readonly channel: 'whatsapp';
   readonly capabilities: readonly CapabilityRef[];
   readonly instructions?: string;
+  /** @see AuthenticatedWebsiteInput.history */
+  readonly history?: false;
 }
 
 export interface PublicMessagingAccess extends Omit<PublicMessagingInput, 'capabilities'> {
@@ -243,7 +249,7 @@ export function publicMessaging(input: PublicMessagingInput): PublicMessagingAcc
     throw new Error('publicMessaging requires an explicit capability allowlist');
   }
   for (const key of Object.keys(input)) {
-    if (!['channel', 'capabilities', 'instructions'].includes(key)) {
+    if (!['channel', 'capabilities', 'instructions', 'history'].includes(key)) {
       throw new Error(`publicMessaging does not accept ${key}`);
     }
   }
@@ -254,6 +260,7 @@ export function publicMessaging(input: PublicMessagingInput): PublicMessagingAcc
     channel: input.channel,
     capabilities: normalizeCapabilities(input.capabilities),
     ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
+    ...historyOptOut(input.history),
   };
 }
 
@@ -280,6 +287,14 @@ export interface AuthenticatedWebsiteInput {
    * answers, which one switch cannot express.
    */
   readonly webmcp?: { readonly enabled?: boolean };
+  /**
+   * `false` means conversations on this surface are never kept as history, whatever the business
+   * chose (ADR 0241 decision 11) — for a surface whose chats must never be retained, such as triage or
+   * health intake. Omitted, the business's own setting decides. Only `false` is accepted: how many
+   * days a recorded surface keeps is the business's setting (`noodle solutions history settings`),
+   * never code.
+   */
+  readonly history?: false;
 }
 
 export interface PublicWebsiteInput {
@@ -309,6 +324,8 @@ export interface PublicWebsiteInput {
    * backend-verified sign-in instead, so a declaration there would configure nothing.
    */
   readonly continuity?: AssistantContinuityDeclaration;
+  /** @see AuthenticatedWebsiteInput.history */
+  readonly history?: false;
 }
 
 export function authenticatedWebsite(input: AuthenticatedWebsiteInput): AuthenticatedWebsiteAccess {
@@ -319,6 +336,7 @@ export function authenticatedWebsite(input: AuthenticatedWebsiteInput): Authenti
     ...(input.sessionClaims ? { sessionClaims: structuredClone(input.sessionClaims) } : {}),
     ...(input.capabilities ? { capabilities: [...input.capabilities] } : {}),
     ...(input.webmcp === undefined ? {} : { webmcp: { ...input.webmcp } }),
+    ...historyOptOut(input.history),
   };
 }
 
@@ -330,7 +348,19 @@ export function publicWebsite(input: PublicWebsiteInput): PublicWebsiteAccess {
     ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
     ...(input.webmcp === undefined ? {} : { webmcp: { ...input.webmcp } }),
     ...(input.continuity === undefined ? {} : { continuity: { ...input.continuity } }),
+    ...historyOptOut(input.history),
   };
+}
+
+/** Refuses anything but the literal `false`, because days are operator state (ADR 0212). */
+function historyOptOut(history: unknown): { readonly history?: false } {
+  if (history === undefined) return {};
+  if (history !== false) {
+    throw new Error(
+      'history accepts only false (this surface never keeps chats); how many days a recorded surface keeps is the business setting in noodle solutions history settings',
+    );
+  }
+  return { history: false };
 }
 
 function serializeOrigins(origins: readonly (string | ConfigRef)[], path: string): string[] {
@@ -369,6 +399,8 @@ export interface AssistantSurfaceConfig {
    * @see PublicWebsiteInput.continuity
    */
   readonly continuity?: AssistantContinuityDeclaration;
+  /** @see AuthenticatedWebsiteInput.history */
+  readonly history?: false;
 }
 
 export interface EmbeddedAssistantConfig extends AssistantUiOptions {
@@ -440,6 +472,7 @@ export function embeddedAssistant(input: EmbeddedAssistantOptions): EmbeddedAssi
             ...(surface.mode !== 'authenticated' && surface.continuity !== undefined
               ? { continuity: { ...surface.continuity } }
               : {}),
+            ...(surface.history === false ? { history: false as const } : {}),
           },
     ),
     allowedOrigins: surfaces.flatMap((surface) =>

@@ -133,7 +133,12 @@ type AssistantContextValue = string | number | boolean | null;
 export type AssistantClientLifecycleEvent =
   | NamedEvent<
       'session_started',
-      { readonly expiresAt: string; readonly configuration?: AssistantConfiguration }
+      {
+        readonly expiresAt: string;
+        readonly configuration?: AssistantConfiguration;
+        /** Present only when this conversation is recorded; custom renderers must state it. */
+        readonly history?: { readonly retentionDays: number };
+      }
     >
   | NamedEvent<'session_expired', Readonly<Record<string, never>>>
   | NamedEvent<'session_reset', Readonly<Record<string, never>>>

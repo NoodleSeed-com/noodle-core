@@ -6,6 +6,7 @@ import type {
   OperationEvidencePort,
 } from '@noodle-borg/runtime';
 import type { InstallationScope } from './business-information/contracts.js';
+import type { ConversationSource } from './conversation-history/contracts.js';
 import type {
   OperationHistoryPreviewCounts,
   OperationHistoryPreviewInput,
@@ -40,8 +41,17 @@ export interface OperationEvidenceCursor {
   readonly startedAt: number;
   readonly id: string;
 }
-export interface OperationHistorySetting {
+/**
+ * One installation history setting (ADR 0241 decision 6): the Activity duration, the conversation
+ * duration and the per-channel recording switches share one revision.
+ */
+export interface OperationHistorySettingValue {
   readonly days: number;
+  /** Null until an Owner/Admin opts in, so existing installations never start recording; 0 is Off. */
+  readonly conversationDays: number | null;
+  readonly sources: Readonly<Record<ConversationSource, boolean>>;
+}
+export interface OperationHistorySetting extends OperationHistorySettingValue {
   readonly revision: number;
 }
 export interface OperationEvidenceStore {
@@ -50,9 +60,10 @@ export interface OperationEvidenceStore {
     input: OperationHistoryPreviewInput,
   ): Promise<OperationHistoryPreviewCounts>;
   readRetention(scope: InstallationScope): Promise<OperationHistorySetting | undefined>;
+  /** Inserts only when absent without an expected revision; otherwise an exact-revision update. */
   setRetention(
     scope: InstallationScope,
-    days: number,
+    setting: OperationHistorySettingValue,
     expectedRevision: number | undefined,
   ): Promise<boolean>;
   claim(record: OperationEvidenceRecord): Promise<boolean>;

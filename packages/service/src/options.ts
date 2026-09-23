@@ -115,7 +115,8 @@ export interface ServiceOptions {
   /** Durable people-facing conversation history and the business policy governing it (ADR 0241). */
   readonly conversationHistory?: {
     readonly store: ConversationHistoryStore;
-    readonly policy: ConversationPolicySource;
+    /** Capture and staff-read window; absent: each installation setting under its live plan allowance. */
+    readonly policy?: ConversationPolicySource;
     /** Binds operator paging cursors across instances; a per-process random key when absent. */
     readonly identityKey?: string;
   };

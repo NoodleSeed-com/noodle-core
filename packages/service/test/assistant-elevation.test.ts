@@ -6,6 +6,8 @@ import {
   InMemoryPublicEmbedStore,
 } from '@noodle-borg/assistant-gateway';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ConversationPolicy } from '../src/conversation-history/contracts.js';
+import { InMemoryConversationHistoryStore } from '../src/conversation-history/memory-store.js';
 import { createServiceHandler, InMemoryAuditStore, ServerRegistry } from '../src/index.js';
 import { interceptForElevation } from '../src/routes/assistant-elevation.js';
 
@@ -194,6 +196,8 @@ async function start(
     readonly delegated?: true;
     /** Deploy the two-surface manifest: mixed on www, authenticated on app. */
     readonly twoSurfaces?: true;
+    /** The business's conversation-history policy (ADR 0241); absent records nothing. */
+    readonly history?: ConversationPolicy;
   } = {},
 ) {
   const modelCalls = options.modelCalls ?? 'my_orders';
@@ -267,6 +271,14 @@ async function start(
       admissionCounters: counters,
       assistantModelFetch: modelFetch,
       audit,
+      ...(options.history
+        ? {
+            conversationHistory: {
+              store: new InMemoryConversationHistoryStore(),
+              policy: async () => options.history,
+            },
+          }
+        : {}),
     } as never),
   );
   servers.push(server);
@@ -1119,5 +1131,47 @@ describe('post-sign-in resume (issue #1177)', () => {
     expect(malformed.status).toBe(400);
     // Still armed afterwards.
     expect((await resumeTurn(base, session.token)).status).toBe(200);
+  });
+});
+
+describe('retention notice on every session response (ADR 0241 decision 17)', () => {
+  const signedInOnly = {
+    maximumDays: 30,
+    conversationDays: 14,
+    sources: { website_visitors: false },
+  };
+
+  it('states the window for the source the current caller is recorded under', async () => {
+    const { base, embed } = await start({ history: signedInOnly });
+    const anonymous = (await mintAnonymous(base, embed.embedId)) as { history?: unknown };
+    // Visitors are not recorded here, so the anonymous widget states nothing.
+    expect(anonymous.history).toBeUndefined();
+    const { data } = await askForOrders(base, (anonymous as { token: string }).token);
+    const client = await createClient(base);
+    const elevated = await elevate(
+      base,
+      { authorization: basic(client) },
+      { signInTicket: data?.signInTicket, user: { id: 'user_42' } },
+    );
+    expect(elevated.status).toBe(200);
+    expect((await elevated.json()).history).toEqual({ retentionDays: 14 });
+    const fresh = await elevate(base, { authorization: basic(client) }, { user: { id: 'u_7' } });
+    expect(fresh.status).toBe(201);
+    expect((await fresh.json()).history).toEqual({ retentionDays: 14 });
+  });
+
+  it('states the visitor window on an anonymous mint and nothing without an opt-in', async () => {
+    const recorded = await start({ history: { maximumDays: 7, conversationDays: 30 } });
+    const visitor = await mintAnonymous(recorded.base, recorded.embed.embedId);
+    expect((visitor as { history?: unknown }).history).toEqual({ retentionDays: 7 });
+
+    const notOptedIn = await start({ history: { maximumDays: 30 } });
+    const client = await createClient(notOptedIn.base);
+    const minted = await elevate(
+      notOptedIn.base,
+      { authorization: basic(client) },
+      { user: { id: 'u_7' } },
+    );
+    expect(Object.keys(await minted.json())).not.toContain('history');
   });
 });

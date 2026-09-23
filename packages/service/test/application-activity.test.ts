@@ -29,13 +29,13 @@ describe('verified application history settings', () => {
   it('pins the initial default and does not extend operator retention on upgrade', async () => {
     const { activity, setAllowance } = fixture();
     const free = await activity.settings(scope, true);
-    expect(free.projection).toMatchObject({ retentionDays: 7, maximumDays: 7 });
+    expect(free.projection.activity).toMatchObject({ retentionDays: 7, maximumDays: 7 });
     setAllowance({ maximumDays: 30, defaultDays: 30, revision: 'pro-v2' });
     const paid = await activity.settings(scope, true);
-    expect(paid.projection).toMatchObject({ retentionDays: 7, maximumDays: 30 });
+    expect(paid.projection.activity).toMatchObject({ retentionDays: 7, maximumDays: 30 });
     expect(paid.projection.revision).not.toBe(free.projection.revision);
     await expect(
-      activity.save(scope, { expectedRevision: free.projection.revision, retentionDays: 7 }),
+      activity.save(scope, { expectedRevision: free.projection.revision, activityDays: 7 }),
     ).rejects.toMatchObject({ code: 'activity_conflict' });
   });
   it('enforces verified ceilings and CAS independently of display permissions', async () => {
@@ -43,11 +43,11 @@ describe('verified application history settings', () => {
     const current = (await activity.settings(scope, false)).projection;
     expect(current.canEdit).toBe(false);
     await expect(
-      activity.save(scope, { expectedRevision: current.revision, retentionDays: 30 }),
+      activity.save(scope, { expectedRevision: current.revision, activityDays: 30 }),
     ).rejects.toMatchObject({ code: 'activity_invalid' });
     const responses = await Promise.allSettled(
-      [3, 4].map((retentionDays) =>
-        activity.save(scope, { expectedRevision: current.revision, retentionDays }),
+      [3, 4].map((activityDays) =>
+        activity.save(scope, { expectedRevision: current.revision, activityDays }),
       ),
     );
     expect(responses.filter((entry) => entry.status === 'fulfilled')).toHaveLength(1);
@@ -57,7 +57,7 @@ describe('verified application history settings', () => {
     setAllowance({ maximumDays: 30, defaultDays: 30, revision: 'pro-v2' });
     await activity.settings(scope, true);
     setAllowance({ maximumDays: 7, defaultDays: 7, revision: 'free-v2' });
-    expect((await activity.settings(scope, true)).projection.retentionDays).toBe(7);
+    expect((await activity.settings(scope, true)).projection.activity.retentionDays).toBe(7);
     setAllowance(undefined);
     await expect(activity.settings(scope, true)).rejects.toMatchObject({
       code: 'activity_unavailable',

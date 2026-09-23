@@ -71,6 +71,7 @@ export function assistantElementMarkup(
 export function appendLegalLinks(
   legal: HTMLElement,
   appearance: Pick<ResolvedAssistantAppearance, 'privacyUrl' | 'termsUrl'>,
+  history?: { readonly retentionDays: number },
 ): void {
   for (const [label, href] of [
     ['Privacy', appearance.privacyUrl],
@@ -84,6 +85,21 @@ export function appendLegalLinks(
     link.textContent = label;
     legal.append(link);
   }
+  showHistoryNotice(legal, history);
+}
+
+/** The recorded conversation's retention window, first in the legal footer (ADR 0241). */
+export function showHistoryNotice(
+  legal: HTMLElement,
+  history: { readonly retentionDays: number } | undefined,
+): void {
+  legal.querySelector('.history-notice')?.remove();
+  if (!history) return;
+  const notice = document.createElement('span');
+  notice.className = 'history-notice';
+  const days = history.retentionDays;
+  notice.textContent = `Chats are kept for ${days} ${days === 1 ? 'day' : 'days'}`;
+  legal.prepend(notice);
 }
 
 export function appendConversationStatus(messages: HTMLElement | undefined, text: string): void {

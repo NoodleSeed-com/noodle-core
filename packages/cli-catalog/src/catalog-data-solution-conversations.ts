@@ -6,6 +6,15 @@ import {
 } from './catalog-data-solution-flags.js';
 import type { FlagSpec, SubcommandSpec } from './catalog-types.js';
 
+const STATUS_CHOICES = ['new', 'needs-attention', 'reviewed'];
+const CONVERSATION_FLAG: FlagSpec = {
+  ...OPTIONAL_FLAG,
+  required: true,
+  name: 'conversation',
+  type: 'string',
+  value: '<id>',
+  summary: 'Conversation id from conversations list.',
+};
 const paging = (maximum: number): readonly FlagSpec[] => [
   {
     ...OPTIONAL_FLAG,
@@ -30,6 +39,14 @@ const paging = (maximum: number): readonly FlagSpec[] => [
     summary: 'Only conversations from this channel.',
     constraints: { choices: ['website', 'whatsapp'] },
   },
+  {
+    ...OPTIONAL_FLAG,
+    name: 'status',
+    type: 'string',
+    value: '<status>',
+    summary: 'Only conversations with this review status.',
+    constraints: { choices: STATUS_CHOICES },
+  },
 ];
 const SELECTORS = ['conversation', 'customer', 'participant'] as const;
 const SELECTOR_SUMMARIES = {
@@ -40,7 +57,7 @@ const SELECTOR_SUMMARIES = {
 
 export const SOLUTION_CONVERSATIONS: SubcommandSpec = {
   name: 'conversations',
-  summary: 'Read, export and forget customer conversation history.',
+  summary: 'Read, review, note, export and forget customer conversation history.',
   arguments: [],
   flags: [],
   subcommands: [
@@ -53,17 +70,45 @@ export const SOLUTION_CONVERSATIONS: SubcommandSpec = {
     },
     {
       name: 'show',
-      summary: 'Show one conversation with its messages; the read is audited.',
+      summary: 'Show one conversation with its messages and private notes; the read is audited.',
+      arguments: [INSTALLATION_ARGUMENT],
+      flags: [...SOLUTION_COMMON_FLAGS, CONVERSATION_FLAG],
+      jsonOutput: { mode: 'single' },
+    },
+    {
+      name: 'review',
+      summary: 'Set the review status of one conversation (Operator or above); audited.',
       arguments: [INSTALLATION_ARGUMENT],
       flags: [
         ...SOLUTION_COMMON_FLAGS,
+        CONVERSATION_FLAG,
         {
           ...OPTIONAL_FLAG,
           required: true,
-          name: 'conversation',
+          name: 'status',
           type: 'string',
-          value: '<id>',
-          summary: 'Conversation id from conversations list.',
+          value: '<status>',
+          summary: 'New review status.',
+          constraints: { choices: STATUS_CHOICES },
+        },
+      ],
+      jsonOutput: { mode: 'single' },
+    },
+    {
+      name: 'note',
+      summary: 'Add a private staff note the customer never sees (Operator or above); audited.',
+      arguments: [INSTALLATION_ARGUMENT],
+      flags: [
+        ...SOLUTION_COMMON_FLAGS,
+        CONVERSATION_FLAG,
+        {
+          ...OPTIONAL_FLAG,
+          required: true,
+          name: 'text',
+          type: 'string',
+          value: '<text>',
+          summary: 'Note text, up to 2000 characters.',
+          constraints: { maxLength: 2000 },
         },
       ],
       jsonOutput: { mode: 'single' },

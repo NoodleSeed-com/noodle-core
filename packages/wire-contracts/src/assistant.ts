@@ -66,6 +66,12 @@ export const assistantSessionResponseSchema = z.object({
   resume: z.object({ tool: z.string().min(1) }).optional(),
   /** Additive elevation marker; the client renders one bounded continuation status. */
   continuedAfterAuthentication: z.literal(true).optional(),
+  /**
+   * Additive retention notice (ADR 0241 decision 17): present only when this caller's conversation
+   * is recorded. Top level, never inside `configuration`, whose strict browser schema would make an
+   * older widget drop its whole appearance; older widgets ignore unknown top-level keys.
+   */
+  history: z.object({ retentionDays: z.number().int().min(1).max(365) }).optional(),
 });
 
 export type AssistantSessionResponse = z.infer<typeof assistantSessionResponseSchema>;

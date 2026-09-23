@@ -47,6 +47,7 @@ async function start() {
   });
   const conversations = new ApplicationConversations({
     store: history,
+    policy: async () => ({ maximumDays: 365, conversationDays: 365 }),
     identityKey: 'conversation-http-fixture-key-over-thirty-two-characters',
     now: () => now,
   });
@@ -123,6 +124,13 @@ afterEach(async () => {
 function get(path: string, subject = 'owner') {
   return fetch(`${base}/${path}`, { headers: { authorization: `Bearer ${subject}` } });
 }
+function review(conversation: string, body: unknown, subject = 'owner') {
+  return fetch(`${base}/travel-prod/conversations/${conversation}`, {
+    method: 'PATCH',
+    headers: { authorization: `Bearer ${subject}`, 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
 function forget(body: unknown, subject = 'owner', installation = 'travel-prod') {
   return fetch(`${base}/${installation}/conversations/forget`, {
     method: 'POST',
@@ -182,6 +190,14 @@ describe('workspace roles for conversation history (ADR 0241 decision 10)', () =
       await seed(id(role));
       const read = role !== 'builder';
       const manage = role === 'owner' || role === 'administrator';
+      const handle = read && role !== 'viewer';
+      expect(
+        (await review(id(role), { reviewStatus: 'reviewed' }, role)).status,
+        `${role} review`,
+      ).toBe(handle ? 200 : 403);
+      expect((await review(id(role), { note: 'Call back' }, role)).status, `${role} note`).toBe(
+        handle ? 200 : 403,
+      );
       expect((await get('travel-prod/conversations', role)).status, `${role} list`).toBe(
         read ? 200 : 403,
       );
@@ -216,6 +232,7 @@ describe('conversation history HTTP projection', () => {
         startedAt: new Date(now - 1_000).toISOString(),
         lastMessageAt: new Date(now - 999).toISOString(),
         itemCount: 2,
+        reviewStatus: 'new',
       },
     ]);
     expect(JSON.stringify(body)).not.toContain('private');
@@ -292,6 +309,8 @@ describe('conversation history HTTP projection', () => {
       'travel-prod/conversations?limit=0',
       'travel-prod/conversations?limit=1&limit=2',
       'travel-prod/conversations?channel=sms',
+      `travel-prod/conversations?limit=2&status=reviewed&cursor=${cursor}`,
+      'travel-prod/conversations?status=needs-attention',
       'travel-prod/conversations?cursor=forged',
       'travel-prod/conversations?format=raw',
       'travel-prod/conversations/export?limit=26',
@@ -348,6 +367,93 @@ describe('conversation history HTTP projection', () => {
       { conversations: 1, items: 2, kind: 'customer' },
     ]);
     expect(JSON.stringify(events)).not.toMatch(/sara_91|private/);
+  });
+
+  it('reviews and notes a conversation by identifier-only audit, and filters the list by status', async () => {
+    await seed(id('review'));
+    await seed(id('untouched'), { at: now - 5_000 });
+    const response = await review(
+      id('review'),
+      { reviewStatus: 'reviewed', note: 'Refund card 4242 4242 4242 4242 approved' },
+      'operator',
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+    const { conversation } = ConversationShowResponseSchema.parse(await response.json()).data;
+    expect(conversation.reviewStatus).toBe('reviewed');
+    expect(conversation.notes).toEqual([
+      {
+        author: 'operator',
+        text: 'Refund card •••• 4242 approved',
+        at: new Date(now).toISOString(),
+      },
+    ]);
+    expect(conversation.expiresAt).toBe(
+      new Date(now - 999 + 7 * CONVERSATION_DAY_MS).toISOString(),
+    );
+    expect((await review(id('review'), { note: 'Second' }, 'owner')).status).toBe(200);
+    const shown = ConversationShowResponseSchema.parse(
+      await (await get(`travel-prod/conversations/${id('review')}`, 'viewer')).json(),
+    ).data.conversation;
+    expect(shown.notes.map((note) => [note.author, note.text])).toEqual([
+      ['operator', 'Refund card •••• 4242 approved'],
+      ['owner', 'Second'],
+    ]);
+    const reviewed = ConversationListResponseSchema.parse(
+      await (await get('travel-prod/conversations?status=reviewed')).json(),
+    ).data.conversations;
+    expect(reviewed.map((row) => [row.id, row.reviewStatus])).toEqual([[id('review'), 'reviewed']]);
+    expect(
+      ConversationListResponseSchema.parse(
+        await (await get('travel-prod/conversations?status=new')).json(),
+      ).data.conversations.map((row) => row.id),
+    ).toEqual([id('untouched')]);
+    const exported = await (await get('travel-prod/conversations/export')).text();
+    expect(exported).not.toMatch(/Refund card|Second/);
+    const events = await audit.list({ org: 'acme' });
+    expect(
+      events
+        .filter(
+          (event) =>
+            event.eventType !== 'conversation.read' && event.eventType !== 'conversation.exported',
+        )
+        .map((event) => [event.eventType, event.actorSubject, event.details])
+        .reverse(),
+    ).toEqual([
+      [
+        'conversation.reviewed',
+        'operator',
+        { conversationId: id('review'), reviewStatus: 'reviewed' },
+      ],
+      ['conversation.noted', 'operator', { conversationId: id('review') }],
+      ['conversation.noted', 'owner', { conversationId: id('review') }],
+    ]);
+    expect(JSON.stringify(events)).not.toMatch(/Refund|Second|••••|private/);
+  });
+
+  it('rejects malformed reviews and unknown or expired conversations', async () => {
+    await seed(id('valid'));
+    await seed(id('expired'), { at: now - 8 * CONVERSATION_DAY_MS });
+    for (const body of [
+      {},
+      { reviewStatus: 'needs-attention' },
+      { note: '' },
+      { note: '   ' },
+      { note: 'x'.repeat(2001) },
+      { note: 'ok', author: 'someone-else' },
+    ])
+      expect((await review(id('valid'), body)).status, JSON.stringify(body)).toBe(400);
+    expect((await review(id('valid'), { note: 'x'.repeat(2000) })).status).toBe(200);
+    expect((await review(id('expired'), { note: 'late' })).status).toBe(404);
+    expect((await review('cv_conversation_missing', { reviewStatus: 'reviewed' })).status).toBe(
+      404,
+    );
+    expect((await review(id('valid'), { note: 'x' }, 'viewer')).status).toBe(403);
+    expect(
+      (await audit.list({ org: 'acme' })).filter(
+        (event) => event.eventType === 'conversation.noted',
+      ),
+    ).toHaveLength(1);
   });
 
   it('accepts only the documented methods and reports an uncomposed history as unavailable', async () => {

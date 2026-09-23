@@ -366,11 +366,11 @@ describe('embedded assistant service', () => {
         'utf8',
       ),
     ) as Record<string, unknown>;
-    // `resume` rides only an elevation that armed the post-sign-in resume; a fresh mint never
-    // carries it (pinned in assistant-elevation.test.ts), so it is the one fixture key excused here.
+    // `resume` rides only an armed elevation and `history` only an opted-in business (both pinned in
+    // assistant-elevation.test.ts); this mint carries neither, so they are the excused fixture keys.
     expect(Object.keys(body).sort()).toEqual(
       Object.keys(goldenFixture)
-        .filter((key) => key !== 'resume')
+        .filter((key) => key !== 'resume' && key !== 'history')
         .sort(),
     );
     expect(Object.keys(body.endpoints as object).sort()).toEqual(

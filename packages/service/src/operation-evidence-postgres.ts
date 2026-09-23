@@ -8,6 +8,7 @@ import {
   type OperationEvidenceRecord,
   type OperationEvidenceStore,
   type OperationHistorySetting,
+  type OperationHistorySettingValue,
   operationEvidenceKey,
 } from './operation-evidence.js';
 import type {
@@ -84,6 +85,14 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
     await this.pool.query(
       'CREATE TABLE IF NOT EXISTS operation_history_settings (scope_key text PRIMARY KEY, days integer NOT NULL CHECK(days BETWEEN 1 AND 365), revision integer NOT NULL)',
     );
+    // NULL is never opted in (ADR 0241 decision 8): upgraded rows keep today's no-capture behaviour.
+    await this.pool.query(
+      'ALTER TABLE operation_history_settings ADD COLUMN IF NOT EXISTS conversation_days integer CHECK (conversation_days BETWEEN 0 AND 365)',
+    );
+    for (const source of ['website_visitors', 'signed_in_customers', 'whatsapp'])
+      await this.pool.query(
+        `ALTER TABLE operation_history_settings ADD COLUMN IF NOT EXISTS record_${source} boolean NOT NULL DEFAULT true`,
+      );
     await this.pool.query(
       'CREATE INDEX IF NOT EXISTS operation_evidence_expiry ON operation_evidence(history_expires_at)',
     );
@@ -93,27 +102,55 @@ export class PostgresOperationEvidenceStore implements OperationEvidenceStore {
   }
 
   async readRetention(scope: InstallationScope): Promise<OperationHistorySetting | undefined> {
-    const { rows } = await postgresQueryExecutor(this.pool).query<OperationHistorySetting>(
-      'SELECT days,revision FROM operation_history_settings WHERE scope_key=$1',
+    const { rows } = await postgresQueryExecutor(this.pool).query<{
+      days: number;
+      conversation_days: number | null;
+      record_website_visitors: boolean;
+      record_signed_in_customers: boolean;
+      record_whatsapp: boolean;
+      revision: number;
+    }>(
+      'SELECT days,conversation_days,record_website_visitors,record_signed_in_customers,record_whatsapp,revision FROM operation_history_settings WHERE scope_key=$1',
       [operationEvidenceKey(scope, '')],
     );
-    return rows[0];
+    const row = rows[0];
+    return (
+      row && {
+        days: row.days,
+        conversationDays: row.conversation_days,
+        sources: {
+          website_visitors: row.record_website_visitors,
+          signed_in_customers: row.record_signed_in_customers,
+          whatsapp: row.record_whatsapp,
+        },
+        revision: row.revision,
+      }
+    );
   }
   async setRetention(
     scope: InstallationScope,
-    days: number,
+    setting: OperationHistorySettingValue,
     expectedRevision: number | undefined,
   ): Promise<boolean> {
-    const key = operationEvidenceKey(scope, '');
+    const values = [
+      operationEvidenceKey(scope, ''),
+      setting.days,
+      setting.conversationDays,
+      setting.sources.website_visitors,
+      setting.sources.signed_in_customers,
+      setting.sources.whatsapp,
+    ];
     const { rowCount } =
       expectedRevision === undefined
         ? await postgresQueryExecutor(this.pool).query(
-            'INSERT INTO operation_history_settings(scope_key,days,revision) VALUES($1,$2,1) ON CONFLICT DO NOTHING',
-            [key, days],
+            `INSERT INTO operation_history_settings(scope_key,days,conversation_days,record_website_visitors,
+              record_signed_in_customers,record_whatsapp,revision) VALUES($1,$2,$3,$4,$5,$6,1) ON CONFLICT DO NOTHING`,
+            values,
           )
         : await postgresQueryExecutor(this.pool).query(
-            'UPDATE operation_history_settings SET days=$2,revision=revision+1 WHERE scope_key=$1 AND revision=$3',
-            [key, days, expectedRevision],
+            `UPDATE operation_history_settings SET days=$2,conversation_days=$3,record_website_visitors=$4,
+              record_signed_in_customers=$5,record_whatsapp=$6,revision=revision+1 WHERE scope_key=$1 AND revision=$7`,
+            [...values, expectedRevision],
           );
     return rowCount === 1;
   }

@@ -106,9 +106,14 @@ describe('self-host native actions without commercial modules', () => {
           }),
         });
       const readiness = await fetch(
-        `${service.url}/v1/orgs/acme/solution-installations/${data.installation.id}/activity/settings`,
+        `${service.url}/v1/orgs/acme/solution-installations/${data.installation.id}/history/settings`,
       );
       expect(readiness.status, await readiness.clone().text()).toBe(200);
+      // A newly created installation records conversations from day one at the verified default.
+      expect((await readiness.json()).data.conversations).toMatchObject({
+        state: 'on',
+        retentionDays: 30,
+      });
       const target = await service.registry.getActiveByTenant({
         org: 'acme',
         app: 'travel',
@@ -160,7 +165,7 @@ describe('self-host native actions without commercial modules', () => {
       expect(allowance).toHaveBeenCalledWith('acme', { includePreview: true });
       configured = false;
       const unavailable = await fetch(
-        `${service.url}/v1/orgs/acme/solution-installations/${data.installation.id}/activity/settings`,
+        `${service.url}/v1/orgs/acme/solution-installations/${data.installation.id}/history/settings`,
       );
       expect(unavailable.status).toBe(503);
       expect(await unavailable.json()).toMatchObject({ code: 'activity_unavailable' });

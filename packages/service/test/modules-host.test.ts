@@ -1,3 +1,5 @@
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { InMemoryControlPlaneStore } from '@noodle-borg/control-plane/portable';
 import {
   type AdmissionContext,
@@ -442,6 +444,66 @@ describe('ModuleHost', () => {
       }),
     ).rejects.toThrow('signup store failed');
     expect(dispose).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a post-boot startup failure primary when module cleanup also fails', async () => {
+    const controlPlane = new InMemoryControlPlaneStore();
+    vi.spyOn(controlPlane, 'allowSignup').mockRejectedValue(new Error('signup store failed'));
+
+    await expect(
+      serveService({
+        port: 0,
+        controlPlaneStore: controlPlane,
+        signupAllowedDomains: ['example.test'],
+        modules: [
+          {
+            name: 'worker',
+            version: '0.0.0',
+            apiVersion: MODULE_API_VERSION,
+            init: () => ({
+              dispose: async () => {
+                throw new Error('writer close timed out');
+              },
+            }),
+          },
+        ],
+      }),
+    ).rejects.toThrow('signup store failed');
+  });
+
+  it('keeps the bind failure primary when module cleanup also fails', async () => {
+    const blocker = createServer();
+    await new Promise<void>((resolve) => blocker.listen(0, '127.0.0.1', resolve));
+    const port = (blocker.address() as AddressInfo).port;
+    const dispose = vi.fn(async () => {
+      throw Object.assign(new Error('canceling statement due to lock timeout'), { code: '55P03' });
+    });
+    const errors: { readonly event: string; readonly fields: unknown }[] = [];
+
+    try {
+      await expect(
+        serveService({
+          host: '127.0.0.1',
+          port,
+          logger: { ...noopLogger, error: (event, fields) => errors.push({ event, fields }) },
+          modules: [
+            {
+              name: 'worker',
+              version: '0.0.0',
+              apiVersion: MODULE_API_VERSION,
+              init: () => ({ dispose }),
+            },
+          ],
+        }),
+      ).rejects.toMatchObject({ code: 'EADDRINUSE' });
+    } finally {
+      await new Promise<void>((resolve) => blocker.close(() => resolve()));
+    }
+    expect(dispose).toHaveBeenCalledOnce();
+    expect(errors).toContainEqual({
+      event: 'service.startup_cleanup_failed',
+      fields: { phase: 'modules', name: 'AggregateError', code: '55P03' },
+    });
   });
 
   it('keeps supplied public defaults when no module provides a v2 capability', async () => {
