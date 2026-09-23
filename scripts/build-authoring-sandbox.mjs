@@ -3,8 +3,14 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'vite';
 
 // Build trusted platform code only. Customer source/config/plugins never enter this process.
+// The authoring package's Nx build is cached (a reviewed recipe in workspace-verification.mjs,
+// pinned by this file's digest), so the recipe reads no ambient file: no `.env` files and no searched
+// PostCSS configuration. The bundler environment it still reads (`VITE_*`, a custom native rolldown
+// binding) is hashed by `workspace-runtime.mjs --authoring-build-tools`.
 await build({
   configFile: false,
+  envDir: false,
+  css: { postcss: {} },
   root: fileURLToPath(new URL('../packages/authoring/', import.meta.url)),
   logLevel: 'warn',
   build: {
