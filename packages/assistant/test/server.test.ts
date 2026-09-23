@@ -344,7 +344,10 @@ describe('Embedded Assistant v1 wire contract fixture (ADR 0151)', () => {
     // The one optional top-level addition: the armed post-sign-in resume hint (issue #1177).
     expect(goldenFixture.resume).toEqual({ tool: 'my_orders' });
     // The retention notice, present only when the caller's conversation is recorded (ADR 0241).
-    expect(goldenFixture.history).toEqual({ retentionDays: 30 });
+    expect(goldenFixture.history).toEqual({
+      retentionDays: 30,
+      notice: 'Los chats se guardan 30 días',
+    });
   });
 
   it('keeps a published widget reading the whole session when the retention notice is present', () => {

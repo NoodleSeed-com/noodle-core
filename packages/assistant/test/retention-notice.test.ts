@@ -31,6 +31,13 @@ afterEach(() => {
 describe('conversation retention notice', () => {
   it.each([
     [{ history: { retentionDays: 30 } }, { retentionDays: 30 }],
+    [
+      { history: { retentionDays: 30, notice: 'Los chats se guardan 30 días' } },
+      { retentionDays: 30, notice: 'Los chats se guardan 30 días' },
+    ],
+    [{ history: { retentionDays: 30, notice: '' } }, { retentionDays: 30 }],
+    [{ history: { retentionDays: 30, notice: 30 } }, { retentionDays: 30 }],
+    [{ history: { retentionDays: 30, notice: 'x'.repeat(161) } }, { retentionDays: 30 }],
     [{ history: { retentionDays: 0 } }, undefined],
     [{ history: { retentionDays: '30' } }, undefined],
     [{}, undefined],
@@ -63,6 +70,13 @@ describe('conversation retention notice', () => {
   it('uses the singular for a one-day window, even without any configuration', async () => {
     const element = await mounted({ history: { retentionDays: 1 } });
     await vi.waitFor(() => expect(footer(element)).toBe('Chats are kept for 1 day'));
+  });
+
+  it('states the localized notice the business authored instead of the English default', async () => {
+    const element = await mounted({
+      history: { retentionDays: 30, notice: 'Los chats se guardan 30 días' },
+    });
+    await vi.waitFor(() => expect(footer(element)).toBe('Los chats se guardan 30 días'));
   });
 
   it('states nothing when the conversation is not recorded', async () => {

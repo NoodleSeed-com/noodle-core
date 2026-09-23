@@ -449,6 +449,20 @@ describe('embedded assistant authoring', () => {
     ).toThrow(/https:\/\/acme\.test/);
   });
 
+  it('carries a localized retention notice that names its {days} placeholder', () => {
+    const access = authenticatedWebsite({ origins: ['https://app.acme.test'] });
+    expect(
+      embeddedAssistant({
+        model: model(),
+        access,
+        historyNotice: 'Los chats se guardan {days} días',
+      }).historyNotice,
+    ).toBe('Los chats se guardan {days} días');
+    expect(() =>
+      embeddedAssistant({ model: model(), access, historyNotice: 'Los chats se guardan' }),
+    ).toThrow(/historyNotice.*\{days\}/);
+  });
+
   it('rejects an empty surface list', () => {
     expect(() => embeddedAssistant({ model: model(), access: [] })).toThrow(/at least one/i);
 

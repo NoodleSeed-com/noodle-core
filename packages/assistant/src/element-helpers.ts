@@ -1,4 +1,5 @@
 import type { AssistantThemeTokens, ResolvedAssistantAppearance } from './appearance.js';
+import type { AssistantHistoryNotice } from './server.js';
 
 export function camelToKebab(value: string): string {
   return value.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
@@ -71,7 +72,7 @@ export function assistantElementMarkup(
 export function appendLegalLinks(
   legal: HTMLElement,
   appearance: Pick<ResolvedAssistantAppearance, 'privacyUrl' | 'termsUrl'>,
-  history?: { readonly retentionDays: number },
+  history?: AssistantHistoryNotice,
 ): void {
   for (const [label, href] of [
     ['Privacy', appearance.privacyUrl],
@@ -91,14 +92,15 @@ export function appendLegalLinks(
 /** The recorded conversation's retention window, first in the legal footer (ADR 0241). */
 export function showHistoryNotice(
   legal: HTMLElement,
-  history: { readonly retentionDays: number } | undefined,
+  history: AssistantHistoryNotice | undefined,
 ): void {
   legal.querySelector('.history-notice')?.remove();
   if (!history) return;
   const notice = document.createElement('span');
   notice.className = 'history-notice';
   const days = history.retentionDays;
-  notice.textContent = `Chats are kept for ${days} ${days === 1 ? 'day' : 'days'}`;
+  notice.textContent =
+    history.notice ?? `Chats are kept for ${days} ${days === 1 ? 'day' : 'days'}`;
   legal.prepend(notice);
 }
 

@@ -184,7 +184,7 @@ export default server(
         apiKey: secret('ASSISTANT_MODEL_API_KEY'),
         transport: 'responses',
       }),
-      // Production origins are exact HTTPS; http://localhost:<port> is allowed for local development.
+      // Exact HTTPS origins; http://localhost:<port> for local dev.
       access: [
         authenticatedWebsite({
           origins: [assistantOrigin, 'https://dev.noodleseed.com', 'http://localhost:3000'],
@@ -203,6 +203,7 @@ export default server(
         launcherPlaceholder: 'Ask Noodle Seed anything',
         composerPlaceholder: 'Ask about your apps…',
       },
+      historyNotice: 'Chats are kept for {days} day(s)',
       presentation: {
         panel: { elevation: 'soft', border: 'subtle' },
         launcher: {

@@ -2,9 +2,12 @@ import type { AssistantSessionRecord } from '@noodle-borg/assistant-gateway/port
 import { describe, expect, it, vi } from 'vitest';
 import {
   ConversationCapture,
+  historyNoticeSentence,
+  historyNoticeText,
   messagingSurfaceHistory,
   sessionHistoryNotice,
   sessionSurfaceHistory,
+  websiteSurfaceHistory,
 } from '../src/conversation-history/capture.js';
 import {
   CONVERSATION_DAY_MS,
@@ -313,6 +316,51 @@ describe('a surface declared history: false (ADR 0241 decision 11)', () => {
     // An unreadable surface never records: nothing proves this caller may be kept.
     expect(sessionSurfaceHistory(undefined, { origin: 'x' } as AssistantSessionRecord)).toEqual(
       disabled,
+    );
+  });
+});
+
+describe('a localized retention notice (ADR 0241 decision 17)', () => {
+  const spanish = 'Los chats se guardan {days} días';
+
+  it('reads the authored template from the served assistant for every surface', () => {
+    const assistant = {
+      historyNotice: spanish,
+      surfaces: [
+        { mode: 'public', origins: ['https://www.acme.test'], capabilities: [] },
+        { kind: 'messaging', channel: 'whatsapp', mode: 'public', capabilities: [] },
+      ],
+    };
+    expect(websiteSurfaceHistory(assistant, 'public')).toEqual({
+      historyDisabled: false,
+      noticeTemplate: spanish,
+    });
+    expect(messagingSurfaceHistory(assistant).noticeTemplate).toBe(spanish);
+    expect(websiteSurfaceHistory({ surfaces: [] }, 'public')).toEqual(recording);
+  });
+
+  it('states the rendered template beside the window, and only when one was authored', async () => {
+    const { history } = capture(optedIn);
+    const localized = { ...recording, noticeTemplate: spanish };
+    expect(await sessionHistoryNotice(history, TENANT, 'website_visitors', localized)).toEqual({
+      history: { retentionDays: 7, notice: 'Los chats se guardan 7 días' },
+    });
+    expect(await sessionHistoryNotice(history, TENANT, 'website_visitors', recording)).toEqual({
+      history: { retentionDays: 7 },
+    });
+    const off = { historyDisabled: true, noticeTemplate: spanish };
+    expect(await sessionHistoryNotice(history, TENANT, 'website_visitors', off)).toEqual({});
+  });
+
+  it('renders the English default and the WhatsApp sentence without doubling punctuation', () => {
+    expect(historyNoticeText(1)).toBe('Chats are kept for 1 day');
+    expect(historyNoticeText(30)).toBe('Chats are kept for 30 days');
+    expect(historyNoticeText(30, spanish)).toBe('Los chats se guardan 30 días');
+    expect(historyNoticeSentence(30)).toBe('Chats are kept for 30 days.');
+    expect(historyNoticeSentence(30, spanish)).toBe('Los chats se guardan 30 días.');
+    expect(historyNoticeSentence(2, '¡Guardamos {days} días!')).toBe('¡Guardamos 2 días!');
+    expect(historyNoticeSentence(2, '会話は{days}日間保存されます。')).toBe(
+      '会話は2日間保存されます。',
     );
   });
 });

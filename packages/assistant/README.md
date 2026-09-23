@@ -645,6 +645,12 @@ await forgetUser({ ...credentials, user: { id: account.id } });
 `forgetUser` erases stored conversation history only; a live session's short-lived working memory is not
 touched and expires within two hours. Failures throw `AssistantConversationsError` with a typed `detail` (`status`, `retryable`, `serviceCode`).
 
+A recorded session also carries `history: { retentionDays, notice? }`, and the widget footer states it:
+"Chats are kept for 30 days" by default, or your own language when `server.ts` declares
+`embeddedAssistant({ historyNotice: 'Los chats se guardan {days} días', ... })` (`{days}` is required; the
+WhatsApp first reply uses the same text). A custom renderer shows `history.notice` from `session_started`,
+else that English line.
+
 The MCP server's top-level `branding` block is the portable deployment source for identity and colors shared
 by widgets and the assistant. The embedding application may use the typed `appearance` object when it needs
 exact control over assistant-specific roles:

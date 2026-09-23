@@ -22,7 +22,7 @@ import {
 import { guardedFetch } from '@noodle-borg/connector-http';
 import { executePreparedTool, prepareToolForConfirmation } from '@noodle-borg/runtime';
 import type { ServedTarget } from '@noodle-borg/transport-http';
-import { messagingSurfaceHistory } from '../conversation-history/capture.js';
+import { historyNoticeSentence, messagingSurfaceHistory } from '../conversation-history/capture.js';
 import type { AssistantRouteDeps } from '../routes/assistant.js';
 import { runAgentTurn } from '../routes/assistant-agent.js';
 import { resolveAssistantKnowledge } from '../routes/assistant-knowledge.js';
@@ -574,16 +574,18 @@ export class WhatsAppRuntime {
           },
         );
         if (failure || !text.trim()) throw new ChannelError(failure ?? 'answer_unavailable');
-        // WhatsApp has no footer, so a recorded channel states its window here (ADR 0241 decision 17).
+        // WhatsApp has no footer, so a recorded channel states its window here (ADR 0241 decision 17),
+        // in the author's `historyNotice` language when one is declared.
+        const surface = messagingSurfaceHistory(artifact.server.assistant);
         const days =
           participant.history.length === 0
             ? ((await this.deps.conversations?.retentionDays(
                 binding.tenant,
                 'whatsapp',
-                messagingSurfaceHistory(artifact.server.assistant),
+                surface,
               )) ?? 0)
             : 0;
-        const kept = days > 0 ? ` Chats are kept for ${days} ${days === 1 ? 'day' : 'days'}.` : '';
+        const kept = days > 0 ? ` ${historyNoticeSentence(days, surface.noticeTemplate)}` : '';
         const disclosure =
           participant.history.length === 0
             ? `I’m ${artifact.server.branding?.name ?? artifact.server.title}’s AI assistant.${kept}\n\n`

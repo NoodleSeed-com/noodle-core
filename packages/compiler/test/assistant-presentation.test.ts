@@ -130,3 +130,27 @@ describe('embedded assistant presentation manifest', () => {
     expect(result.errors.some((error) => error.path.includes('assistant.labels'))).toBe(true);
   });
 });
+
+describe('embedded assistant retention notice template (ADR 0241 decision 17)', () => {
+  it('carries the localized template into the runtime artifact', () => {
+    const result = compile(base('    historyNotice: "Los chats se guardan {days} días"'));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.artifact.server.assistant).toMatchObject({
+      historyNotice: 'Los chats se guardan {days} días',
+    });
+  });
+
+  it.each([
+    ['a template without the {days} placeholder', '    historyNotice: "Chats are kept"'],
+    ['an empty template', '    historyNotice: ""'],
+    ['an over-long template', `    historyNotice: "{days} ${'x'.repeat(160)}"`],
+  ])('rejects %s', (_name, body) => {
+    const result = compile(base(body));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.errors.some((error) => error.path.includes('assistant.historyNotice'))).toBe(
+      true,
+    );
+  });
+});

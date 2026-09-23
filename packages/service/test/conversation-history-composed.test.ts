@@ -29,7 +29,9 @@ const CREATED: TenantRef = { org: 'acme', app: 'shop', env: 'prod' };
 const PREVIEW: TenantRef = { org: 'acme', app: 'site', env: 'dev' };
 const key = (tenant: TenantRef) => `${tenant.app}/${tenant.env}`;
 const CARD = '4242 4242 4242 4242';
-const manifest = (name: string) => `manifestVersion: "2"
+const SPANISH_NOTICE = "    historyNotice: 'Los chats se guardan {days} días'\n";
+/** The existing site states its window in Spanish (ADR 0241 decision 17); the others keep English. */
+const manifest = (name: string, notice = '') => `manifestVersion: "2"
 server:
   name: ${name}
   version: 1.0.0
@@ -37,7 +39,7 @@ server:
   assistant:
     model: { kind: noodle-managed }
     allowedOrigins: ["${ORIGIN}"]
-    surfaces:
+${notice}    surfaces:
       - { mode: authenticated, origins: ["${ORIGIN}"], capabilities: [{ kind: tool, name: ask }] }
       - { kind: messaging, channel: whatsapp, mode: public, capabilities: [{ kind: tool, name: ask }] }
   collections:
@@ -261,9 +263,13 @@ describe('conversation capture through the hosted composition', () => {
     await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve));
     base = `http://127.0.0.1:${(http.address() as AddressInfo).port}`;
     for (const tenant of [EXISTING, CREATED, PREVIEW]) {
-      const deployed = await registry.deploy(tenant, manifest(tenant.app), {
-        accessMode: 'public',
-      });
+      const deployed = await registry.deploy(
+        tenant,
+        manifest(tenant.app, tenant === EXISTING ? SPANISH_NOTICE : ''),
+        {
+          accessMode: 'public',
+        },
+      );
       if (!deployed.ok) throw new Error(JSON.stringify(deployed.errors));
       deployments.set(key(tenant), deployed.deploymentId);
     }
@@ -337,14 +343,17 @@ describe('conversation capture through the hosted composition', () => {
       body: JSON.stringify({ origin: ORIGIN, user: { id: 'omar_7' } }),
     });
     expect(minted.status, await minted.clone().text()).toBe(201);
-    expect((await minted.json()).history).toEqual({ retentionDays: 7 });
+    expect((await minted.json()).history).toEqual({
+      retentionDays: 7,
+      notice: 'Los chats se guardan 7 días',
+    });
   });
 
   it('records a WhatsApp exchange under the participant with card numbers masked', async () => {
     await whatsapp(`Charge my card ${CARD} please`);
-    // The first reply's AI disclosure states the default window.
+    // The first reply's AI disclosure states the window in the authored language.
     expect(sent.at(-1)?.text?.body).toMatch(
-      /^I’m Acme’s AI assistant\. Chats are kept for 7 days\.\n\n/,
+      /^I’m Acme’s AI assistant\. Los chats se guardan 7 días\.\n\n/,
     );
     const [conversation, ...others] = await whatsappConversations();
     expect(others).toEqual([]);
@@ -371,10 +380,10 @@ describe('conversation capture through the hosted composition', () => {
     await historySettings('site-prod', { conversations: { retentionDays: 14 } });
     await whatsapp('Hello, are you open?', '15559876543');
     expect(sent.at(-1)?.text?.body).toMatch(
-      /^I’m Acme’s AI assistant\. Chats are kept for 14 days\.\n\n/,
+      /^I’m Acme’s AI assistant\. Los chats se guardan 14 días\.\n\n/,
     );
     await whatsapp('And on Sunday?', '15559876543');
-    expect(sent.at(-1)?.text?.body).not.toContain('Chats are kept');
+    expect(sent.at(-1)?.text?.body).not.toContain('Los chats se guardan');
   });
 
   it('forgets a WhatsApp participant from history and working memory, keeping safeguards', async () => {

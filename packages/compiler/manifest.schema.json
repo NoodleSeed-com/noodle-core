@@ -922,6 +922,11 @@
                 "direction": {
                   "type": "string",
                   "enum": ["ltr", "rtl", "auto"]
+                },
+                "historyNotice": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
                 }
               },
               "required": ["model", "allowedOrigins"],
@@ -3091,6 +3096,11 @@
                 "direction": {
                   "type": "string",
                   "enum": ["ltr", "rtl", "auto"]
+                },
+                "historyNotice": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
                 }
               },
               "required": ["model", "allowedOrigins"],

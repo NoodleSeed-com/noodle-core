@@ -89,13 +89,18 @@ export function parseSession(value: unknown): AssistantSessionResponse {
   };
 }
 
-/** Tolerant: a malformed notice states nothing rather than failing the session. */
+/**
+ * Tolerant: a malformed window states nothing rather than failing the session, and a malformed
+ * localized text falls back to the English default rather than hiding the window.
+ */
 function parseHistory(value: unknown): Pick<AssistantSessionResponse, 'history'> {
   if (!isRecord(value)) return {};
   const days = value.retentionDays;
-  return typeof days === 'number' && Number.isInteger(days) && days >= 1 && days <= 365
-    ? { history: { retentionDays: days } }
-    : {};
+  if (!(typeof days === 'number' && Number.isInteger(days) && days >= 1 && days <= 365)) return {};
+  const notice = value.notice;
+  return typeof notice === 'string' && notice.length >= 1 && notice.length <= 160
+    ? { history: { retentionDays: days, notice } }
+    : { history: { retentionDays: days } };
 }
 
 export function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {

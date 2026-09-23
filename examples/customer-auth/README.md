@@ -63,18 +63,16 @@ const api = connector('noodleseed_app_api')
   });
 ```
 
-`delegatedTokenExchange` consumes a verified customer caller; an MCP access mode does not create one. The
-server must declare `customerAuth.*(...)` or `embeddedAssistant(...)` so Noodle Seed can establish the caller
-subject, issuer, and audience. Otherwise `noodle validate`, `noodle auth doctor`, and deploy fail early with
-`delegated_token_exchange_identity_required`, before secrets are resolved or any connector egress. A
-successful local Devtools exchange is not evidence that the hosted server has an identity source. Devtools
-supplies a separate, loopback-only local identity context that is never accepted by hosted deployment.
+`delegatedTokenExchange` consumes a verified customer caller; an MCP access mode does not create one. Declare
+`customerAuth.*(...)` or `embeddedAssistant(...)` to establish its subject, issuer, and audience, or
+`noodle validate`, `noodle auth doctor`, and deploy fail with `delegated_token_exchange_identity_required`
+before resolving secrets or any egress. Hosted deployment never accepts the loopback-only Devtools identity.
+A successful local Devtools exchange is not evidence that the hosted server has an identity source.
 
 At both connector and operation level, auth must be omitted or use `delegatedTokenExchange`. The compiler
-validates the concrete connector definition emitted from TypeScript, including connector defaults and
-operation overrides, and reports the exact failing auth path and kind. Do not keep a bearer, API-key,
-client-credentials, or managed-provider fallback for local mode; use operation fakes while leaving auth
-declarative.
+checks the emitted connector, including defaults and operation overrides, and reports the failing auth path
+and kind. Keep no bearer, API-key, client-credentials, or managed-provider fallback for local mode; use
+operation fakes.
 
 ## Map the endpoint from verified OIDC
 
@@ -222,11 +220,11 @@ fulfil({ input, connectors }) {
 
 The broker exchanges a short-lived, platform-signed assertion at the fixed token endpoint and caches the
 result by caller, connector, scopes, and a route fingerprint. The assertion carries only the route key and
-fingerprint, never the URL. The MCP access token is never forwarded to the customer API. The exchange wire
-contract lives in docs/spec/connectors.md.
+fingerprint, never the URL. The MCP access token is never forwarded to the customer API. Wire contract:
+docs/spec/connectors.md.
 
-Firebase and Microsoft remain supported managed adapters; their provider-specific contracts and tests live
-in docs/spec/auth-and-policy.md and the SharePoint flagship.
+Firebase and Microsoft remain supported managed adapters (docs/spec/auth-and-policy.md and the SharePoint
+flagship).
 
 ## Supabase direct-OIDC access-token hook
 
@@ -417,12 +415,20 @@ import { NoodleAssistant } from '@noodleseed/assistant/react';
 `resolvedTheme` is the application's current `'light' | 'dark'` value. Use `theme="auto"` only when the
 browser operating-system preference is intentionally authoritative.
 
+The backend's account deletion also erases the user's assistant history by the `user.id` it exchanges
+(idempotent; a no-op while the admin surface declares `history: false`):
+
+```ts
+import { forgetUser } from '@noodleseed/assistant/server';
+
+await forgetUser({ serviceUrl, clientId, clientSecret, user: { id: user.id } });
+```
+
 ### Minimal fail-closed custom renderer skeleton
 
-Use the renderer-free hook only when the product has a concrete reason to own the conversation UI. This
-minimal skeleton keeps the canonical client and App host, but intentionally refuses confirmation and input
-acceptance until the application implements their complete schema-aware presentation. Start with the managed
-renderer unless the application accepts every obligation below.
+Use the renderer-free hook only when the product must own the conversation UI and accepts every obligation
+below; otherwise start with the managed renderer. This skeleton keeps the canonical client and App host but
+refuses confirmation and input acceptance until the application implements their schema-aware presentation.
 
 ```tsx
 'use client';

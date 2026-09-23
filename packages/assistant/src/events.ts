@@ -1,6 +1,7 @@
 import type { AssistantConfiguration } from './appearance.js';
 import type { AssistantAppearanceWarning } from './host-appearance.js';
 import type { AssistantJsonValue, AssistantModelContextUpdate } from './model-context.js';
+import type { AssistantHistoryNotice } from './server.js';
 import type { AssistantEvent } from './transport.js';
 
 interface NamedEvent<Name extends string, Data> {
@@ -137,7 +138,7 @@ export type AssistantClientLifecycleEvent =
         readonly expiresAt: string;
         readonly configuration?: AssistantConfiguration;
         /** Present only when this conversation is recorded; custom renderers must state it. */
-        readonly history?: { readonly retentionDays: number };
+        readonly history?: AssistantHistoryNotice;
       }
     >
   | NamedEvent<'session_expired', Readonly<Record<string, never>>>

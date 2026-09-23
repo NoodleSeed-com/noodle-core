@@ -112,6 +112,12 @@ export interface AssistantUiOptions {
   readonly termsUrl?: string;
   readonly locale?: string;
   readonly direction?: 'ltr' | 'rtl' | 'auto';
+  /**
+   * The retention notice a recorded conversation states, in your visitors' language, e.g.
+   * `'Los chats se guardan {days} días'`. `{days}` is required and becomes the window; unset keeps
+   * the English "Chats are kept for N days". The widget footer and the first WhatsApp reply use it.
+   */
+  readonly historyNotice?: string;
 }
 
 export type OpenAICompatibleTransport = 'chat-completions' | 'responses';
@@ -445,6 +451,9 @@ export function embeddedAssistant(input: EmbeddedAssistantOptions): EmbeddedAssi
   assertAccessDeclared(input, access);
   const surfaces = (Array.isArray(access) ? access : [access]) as readonly AssistantAccess[];
   assertDistinctSurfaces(surfaces);
+  if (ui.historyNotice !== undefined && !ui.historyNotice.includes('{days}')) {
+    throw new Error('historyNotice must contain {days}, where the retention window is stated');
+  }
 
   const sessionClaims = surfaces.find(
     (surface): surface is AuthenticatedWebsiteAccess => surface.mode === 'authenticated',

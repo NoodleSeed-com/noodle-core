@@ -115,8 +115,15 @@ export interface AssistantSession {
    * Present only when the business records this caller's conversation: the widget states the
    * window in its footer, and custom renderers read it from `session_started`.
    */
-  readonly history?: { readonly retentionDays: number };
+  readonly history?: AssistantHistoryNotice;
   readonly configuration?: AssistantConfiguration;
+}
+
+/** The retention window a recorded conversation states (ADR 0241 decision 17). */
+export interface AssistantHistoryNotice {
+  readonly retentionDays: number;
+  /** The business's localized `historyNotice`, filled in; absent, state "Chats are kept for N days". */
+  readonly notice?: string;
 }
 
 /** The service's refusal codes for a sign-in ticket the exchange would not honour. */

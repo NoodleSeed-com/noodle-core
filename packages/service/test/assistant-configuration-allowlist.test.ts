@@ -75,6 +75,17 @@ describe('assistant browser configuration allowlist', () => {
     expect(configuration).toEqual({ assistant: { labels: { welcomeHeading: 'Hi' } } });
   });
 
+  it('keeps the localized retention notice template server-side (ADR 0241 decision 17)', () => {
+    // Published widgets parse `configuration` strictly and drop all of it on one unknown key, so the
+    // template is rendered into the session's top-level `history.notice` and never crosses here.
+    const configuration = assistantBrowserConfiguration({
+      assistant: { ...uiFields, historyNotice: 'Los chats se guardan {days} días' },
+    } as never);
+
+    expect(JSON.stringify(configuration)).not.toContain('historyNotice');
+    expect(configuration).toEqual({ assistant: uiFields });
+  });
+
   it('omits configuration entirely when no assistant or branding is declared', () => {
     expect(assistantBrowserConfiguration({} as never)).toBeUndefined();
   });

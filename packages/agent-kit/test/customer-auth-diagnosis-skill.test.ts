@@ -88,6 +88,13 @@ describe('customer-auth diagnosis guidance', () => {
     }
   });
 
+  it('shows account deletion forgetting the exchanged user', () => {
+    const readme = example('customer-auth');
+
+    expect(readme).toContain("import { forgetUser } from '@noodleseed/assistant/server';");
+    expect(readme).toContain('user: { id: user.id } });');
+  });
+
   it('bundles the one canonical local delegated-exchange setup path without a new surface', () => {
     const readme = example('customer-auth');
 

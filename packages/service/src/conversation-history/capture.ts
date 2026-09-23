@@ -36,6 +36,8 @@ export interface ConversationOutcome {
  */
 export interface SurfaceHistory {
   readonly historyDisabled: boolean;
+  /** The authored `historyNotice` template, when the application states its window localized. */
+  readonly noticeTemplate?: string;
 }
 
 /**
@@ -64,11 +66,35 @@ export function websiteSurfaceHistory(assistant: unknown, binding: string): Surf
       : binding === 'authenticated'
         ? authenticatedSurfaceOf(assistant)
         : undefined;
-  return { historyDisabled: surface?.history === false };
+  return { historyDisabled: surface?.history === false, ...noticeTemplateOf(assistant) };
 }
 
 export function messagingSurfaceHistory(assistant: unknown): SurfaceHistory {
-  return { historyDisabled: messagingSurfaceOf(assistant)?.history === false };
+  return {
+    historyDisabled: messagingSurfaceOf(assistant)?.history === false,
+    ...noticeTemplateOf(assistant),
+  };
+}
+
+/** The compiler admits only a bounded template naming `{days}`; anything else states the default. */
+function noticeTemplateOf(assistant: unknown): { readonly noticeTemplate?: string } {
+  const template = (assistant as { readonly historyNotice?: unknown } | undefined)?.historyNotice;
+  return typeof template === 'string' && template.includes('{days}')
+    ? { noticeTemplate: template }
+    : {};
+}
+
+/** The retention notice in the author's language, else the English default (ADR 0241 decision 17). */
+export function historyNoticeText(days: number, template?: string): string {
+  return template
+    ? template.replaceAll('{days}', String(days))
+    : `Chats are kept for ${days} ${days === 1 ? 'day' : 'days'}`;
+}
+
+/** The same notice as a sentence, for channels without a footer to state it in. */
+export function historyNoticeSentence(days: number, template?: string): string {
+  const text = historyNoticeText(days, template);
+  return /[.!?。！？]$/u.test(text) ? text : `${text}.`;
 }
 
 export interface ChannelConversationTurn {
@@ -242,7 +268,10 @@ export async function sessionHistoryNotice(
   tenant: TenantRef,
   source: Exclude<ConversationSource, 'whatsapp'>,
   surface: SurfaceHistory,
-): Promise<{ readonly history?: { readonly retentionDays: number } }> {
+): Promise<{ readonly history?: { readonly retentionDays: number; readonly notice?: string } }> {
   const retentionDays = (await conversations?.retentionDays(tenant, source, surface)) ?? 0;
-  return retentionDays > 0 ? { history: { retentionDays } } : {};
+  if (retentionDays <= 0) return {};
+  // Only an authored template is sent: absent, every widget already states its English default.
+  const notice = surface.noticeTemplate && historyNoticeText(retentionDays, surface.noticeTemplate);
+  return { history: { retentionDays, ...(notice ? { notice } : {}) } };
 }

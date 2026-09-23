@@ -9,6 +9,7 @@ import { showHistoryNotice } from './element-helpers.js';
 import { createInputRequestCard } from './input-request-card.js';
 import { createInteractionCard, createResultCard } from './interaction-card.js';
 import { renderMarkdown } from './markdown.js';
+import type { AssistantHistoryNotice } from './server.js';
 import { createSignInCard } from './sign-in-card.js';
 import type { AssistantErrorDetail } from './transport.js';
 
@@ -35,14 +36,14 @@ export class AssistantElementEventController {
   #completedTool: AssistantToolCompletedDetail | undefined;
   #streamKind: 'message' | 'interaction' | undefined;
   readonly #proposalCards = new Map<string, HTMLElement>();
-  #history: { readonly retentionDays: number } | undefined;
+  #history: AssistantHistoryNotice | undefined;
 
   constructor(host: AssistantElementEventHost) {
     this.#host = host;
   }
 
   /** The current session's retention notice; absent when its conversation is not recorded. */
-  get history(): { readonly retentionDays: number } | undefined {
+  get history(): AssistantHistoryNotice | undefined {
     return this.#history;
   }
 

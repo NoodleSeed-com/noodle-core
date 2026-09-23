@@ -27,6 +27,7 @@
     "tool": "my_orders"
   },
   "history": {
-    "retentionDays": 30
+    "retentionDays": 30,
+    "notice": "Los chats se guardan 30 días"
   }
 }
