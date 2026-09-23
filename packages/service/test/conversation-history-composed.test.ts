@@ -349,6 +349,44 @@ describe('conversation capture through the hosted composition', () => {
     expect(sent.at(-1)?.text?.body).not.toContain('Chats are kept');
   });
 
+  it('forgets a WhatsApp participant from history and working memory, keeping safeguards', async () => {
+    await whatsapp('Please forget me', '15550001111');
+    const [conversation] = (await whatsappConversations()).filter((row) =>
+      row?.items.some((item) => item.kind === 'message' && item.text === 'Please forget me'),
+    );
+    const ref = conversation?.subject.ref ?? '';
+    expect(ref).toMatch(/^p_[a-f0-9]{64}$/);
+    const memory = () =>
+      channels.transaction([bindingId], async (tx) => ({
+        participant: await tx.get(bindingId, ref),
+        events: (await tx.list(bindingId, { kind: 'event', limit: 1000 }))
+          .map((row) => row.value as { participantId: string; text?: string; code?: string })
+          .filter((event) => event.participantId === ref),
+      }));
+    expect((await memory()).participant).toBeDefined();
+    const coordinator = new ChannelCoordinator(channels, () => Date.now());
+    await coordinator.block(bindingId, ref, 'operator', 'block-before-forget', null);
+    const forget = (subject: unknown) =>
+      owner('/v1/orgs/acme/solution-installations/site-prod/conversations/forget', 'POST', {
+        subject,
+      });
+    const response = await forget({ kind: 'participant', ref });
+    expect(response.status, await response.clone().text()).toBe(200);
+    expect((await response.json()).data.forgotten.conversations).toBe(1);
+    const after = await memory();
+    expect(after.participant).toBeUndefined();
+    expect(after.events.length).toBeGreaterThan(0);
+    for (const event of after.events) expect(event).toMatchObject({ code: 'forgotten' });
+    expect(JSON.stringify(after.events)).not.toContain('Please forget me');
+    // A content-free control survives erasure.
+    expect((await coordinator.blocks(bindingId)).map((block) => block.participantId)).toContain(
+      ref,
+    );
+    // A reference that cannot name a participant never reaches the channel store.
+    expect((await forget({ kind: 'participant', ref: 'binding' })).status).toBe(200);
+    expect((await coordinator.internal(bindingId)).id).toBe(bindingId);
+  });
+
   it('records a newly created installation from day one at the plan default', async () => {
     const created = await owner('/v1/orgs/acme/solution-installations', 'POST', {
       definition: {

@@ -30,7 +30,6 @@ const HANDLER_FAMILY_SURFACES = {
     'channels whatsapp events list',
     'channels whatsapp events inspect',
     'channels whatsapp events reconcile',
-    'channels whatsapp conversation forget',
   ],
   start: ['start'],
   init: ['init'],

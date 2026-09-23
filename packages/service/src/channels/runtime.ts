@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
 import {
   beginChannelProviderBlock,
@@ -250,6 +251,22 @@ export class WhatsAppRuntime {
         reason: 'The active deployment or installation is unavailable.',
       };
     }
+  }
+  /**
+   * Erases one participant's working memory on the tenant's binding (ADR 0241): their context and every
+   * message body and reply, keeping content-free controls. False when the tenant has no binding or the
+   * reference cannot name a participant, which never reaches the channel store.
+   */
+  async forgetParticipant(
+    tenant: ChannelBinding['tenant'],
+    participantId: string,
+    actor: string,
+  ): Promise<boolean> {
+    if (!/^p_[a-f0-9]{64}$/.test(participantId)) return false;
+    const binding = await this.channels.get(tenant);
+    if (!binding) return false;
+    await this.channels.forget(binding.id, participantId, actor, `history-forget:${randomUUID()}`);
+    return true;
   }
   async providerBlock(
     id: string,

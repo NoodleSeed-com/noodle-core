@@ -42,6 +42,13 @@ export interface ApplicationConversationsOptions {
   readonly now?: () => number;
 }
 
+/** Erases one channel participant's working memory in a tenant; false when no channel holds any. */
+export type ConversationWorkingMemoryEraser = (
+  tenant: TenantRef,
+  participantId: string,
+  actor: string,
+) => Promise<boolean>;
+
 export type ConversationProjectionAction = 'list' | 'show' | 'review' | 'export' | 'forget';
 
 const MESSAGES = {
@@ -74,6 +81,8 @@ export class ApplicationConversations {
       readonly body?: unknown;
       /** The staff subject a note is written by. */
       readonly actor?: string;
+      /** Erases a channel participant's working memory; false when no channel holds any. */
+      readonly forgetWorkingMemory?: ConversationWorkingMemoryEraser;
     },
     local: ConversationLocalOperation = runLocal,
   ) {
@@ -85,7 +94,10 @@ export class ApplicationConversations {
       if (!allowed.includes(key) || parameters.has(key)) throw invalid();
       parameters.set(key, value);
     }
-    const audit = (eventType: string, details: Readonly<Record<string, string | number>>) => ({
+    const audit = (
+      eventType: string,
+      details: Readonly<Record<string, string | number | boolean>>,
+    ) => ({
       eventType,
       details,
     });
@@ -129,11 +141,26 @@ export class ApplicationConversations {
       const parsed = ConversationForgetRequestSchema.safeParse(input.body);
       if (!parsed.success) throw invalid();
       const request = parsed.data;
-      const forgotten = await local(() =>
-        'conversationId' in request
-          ? this.options.store.forget(tenant, request.conversationId)
-          : this.options.store.forgetSubject(tenant, request.subject),
-      );
+      // A WhatsApp participant's working memory goes with their history (ADR 0241); a web session
+      // expires on its own, so a customer has none to erase.
+      const { forgotten, workingMemory } = await local(async () => {
+        if ('conversationId' in request)
+          return {
+            forgotten: await this.options.store.forget(tenant, request.conversationId),
+            workingMemory: false,
+          };
+        const erased = await this.options.store.forgetSubject(tenant, request.subject);
+        return {
+          forgotten: erased,
+          workingMemory:
+            request.subject.kind === 'participant' &&
+            (await input.forgetWorkingMemory?.(
+              tenant,
+              request.subject.ref,
+              String(input.actor),
+            )) === true,
+        };
+      });
       return {
         response: ConversationForgetResponseSchema.parse({ ok: true, data: { forgotten } }),
         audits: [
@@ -141,6 +168,7 @@ export class ApplicationConversations {
             conversations: forgotten.conversations,
             items: forgotten.items,
             kind: 'conversationId' in request ? 'conversation' : request.subject.kind,
+            workingMemory,
           }),
         ],
       };

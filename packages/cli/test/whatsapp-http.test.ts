@@ -55,7 +55,7 @@ describe('WhatsApp CLI against the real operator HTTP routes', () => {
     if (http) await new Promise<void>((resolve) => http.close(() => resolve()));
     rmSync(home, { recursive: true, force: true });
   });
-  it('configures paused, operates limits and blocks, erases context, and fails unavailable readiness', async () => {
+  it('configures paused, operates limits and blocks, and fails unavailable readiness', async () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const error = vi.spyOn(console, 'error').mockImplementation(() => {});
     const command = (args: string[]) =>
@@ -107,7 +107,17 @@ describe('WhatsApp CLI against the real operator HTTP routes', () => {
       expect(JSON.stringify(log.mock.calls.at(-1))).toContain(id);
       expect(await command(['unblock', '--participant-id', id])).toBe(0);
       expect(await command(['cooldown', 'clear', '--participant-id', id])).toBe(0);
-      expect(await command(['conversation', 'forget', '--participant-id', id])).toBe(0);
+      // Erasure is a business operation now: `solutions conversations forget --participant`.
+      expect(await command(['conversation', 'forget', '--participant-id', id])).toBe(2);
+      const retired = await fetch(
+        `${base}/v1/orgs/acme/apps/site/envs/prod/channels/whatsapp/participants/${id}/forget`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'idempotency-key': 'retired-forget' },
+          body: '{}',
+        },
+      );
+      expect(retired.status).toBe(404);
       expect(await command(['events', 'list'])).toBe(0);
       expect(await command(['doctor'])).toBe(2);
       expect(JSON.stringify(log.mock.calls.at(-1))).toContain('durable_storage_required');

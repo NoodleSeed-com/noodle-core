@@ -285,18 +285,6 @@ async function operate(
     return respond(res, wire.WhatsAppCooldownResponseSchema, await channels.cooldown(id, value));
   }
   if (
-    kind === 'participants' &&
-    value &&
-    participant.test(value) &&
-    action === 'forget' &&
-    req.method === 'POST'
-  ) {
-    await body(req, wire.WhatsAppEmptyRequestSchema);
-    await channels.forget(id, value, identity.subject, idempotency);
-    await audit('conversation_forgotten');
-    return sendJson(res, 200, { ok: true });
-  }
-  if (
     kind === 'events' &&
     (!value || eventId.test(value)) &&
     (read || (action === 'reconcile' && req.method === 'POST'))

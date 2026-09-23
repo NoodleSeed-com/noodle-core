@@ -67,7 +67,7 @@ describe('commands --json public wire contract', () => {
 
     expect(envelope.data.commands).toHaveLength(65);
     const paths = leafPaths(envelope.data.commands);
-    expect(paths).toHaveLength(311);
+    expect(paths).toHaveLength(310);
     expect(paths.filter((path) => path.startsWith('solutions records lifecycle '))).toEqual([
       'solutions records lifecycle preview',
       'solutions records lifecycle migrate',

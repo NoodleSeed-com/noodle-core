@@ -32,6 +32,9 @@ let records: InMemoryBusinessInformationStore;
 let history: InMemoryConversationHistoryStore;
 let audit: InMemoryAuditStore;
 let composed: boolean;
+/** The WhatsApp working-memory eraser the service composes; `bound` says whether a binding exists. */
+let erased: { tenant: unknown; participant: string; actor: string }[];
+let bound: boolean;
 
 async function start() {
   const controlPlane = new InMemoryControlPlaneStore();
@@ -59,6 +62,10 @@ async function start() {
       {
         store: records,
         ...(composed ? { conversations } : {}),
+        forgetWhatsApp: async (tenant, participant, actor) => {
+          erased.push({ tenant, participant, actor });
+          return bound;
+        },
         audit,
         controlPlane,
         publicCounters: new InMemoryDailyCounterStore(),
@@ -95,6 +102,8 @@ beforeEach(async () => {
   history = new InMemoryConversationHistoryStore(() => now);
   audit = new InMemoryAuditStore();
   composed = true;
+  erased = [];
+  bound = true;
   for (const target of [scope, otherScope]) {
     await records.createInstallation({
       scope: target,
@@ -362,11 +371,47 @@ describe('conversation history HTTP projection', () => {
       expect((await forget(body)).status, JSON.stringify(body)).toBe(400);
     const events = await audit.list({ org: 'acme', eventType: 'conversation.forgotten' });
     expect(events.map((event) => event.details).reverse()).toEqual([
-      { conversations: 0, items: 0, kind: 'conversation' },
-      { conversations: 1, items: 2, kind: 'conversation' },
-      { conversations: 1, items: 2, kind: 'customer' },
+      { conversations: 0, items: 0, kind: 'conversation', workingMemory: false },
+      { conversations: 1, items: 2, kind: 'conversation', workingMemory: false },
+      { conversations: 1, items: 2, kind: 'customer', workingMemory: false },
     ]);
     expect(JSON.stringify(events)).not.toMatch(/sara_91|private/);
+    // Web sessions expire on their own; only a WhatsApp participant has working memory to erase.
+    expect(erased).toEqual([]);
+  });
+
+  it('forgets a participant with their WhatsApp working memory, and history alone without a binding', async () => {
+    const participant: ConversationSubject = { kind: 'participant', ref: `p_${'a'.repeat(64)}` };
+    await seed(id('whatsapp'), { subject: participant });
+    for (const role of ['manager', 'operator', 'viewer'])
+      expect((await forget({ subject: participant }, role)).status, role).toBe(403);
+    expect(erased).toEqual([]);
+    const forgotten = ConversationForgetResponseSchema.parse(
+      await (await forget({ subject: participant })).json(),
+    );
+    expect(forgotten.data.forgotten).toEqual({ conversations: 1, items: 2 });
+    expect(erased).toEqual([
+      {
+        tenant: { org: 'acme', app: 'travel', env: 'prod' },
+        participant: participant.ref,
+        actor: 'owner',
+      },
+    ]);
+    bound = false;
+    await seed(id('again'), { subject: participant });
+    const unbound = await forget({ subject: participant });
+    expect(unbound.status).toBe(200);
+    expect(ConversationForgetResponseSchema.parse(await unbound.json()).data.forgotten).toEqual({
+      conversations: 1,
+      items: 2,
+    });
+    expect((await get(`travel-prod/conversations/${id('again')}`)).status).toBe(404);
+    const events = await audit.list({ org: 'acme', eventType: 'conversation.forgotten' });
+    expect(events.map((event) => event.details).reverse()).toEqual([
+      { conversations: 1, items: 2, kind: 'participant', workingMemory: true },
+      { conversations: 1, items: 2, kind: 'participant', workingMemory: false },
+    ]);
+    expect(JSON.stringify(events)).not.toContain(participant.ref);
   });
 
   it('reviews and notes a conversation by identifier-only audit, and filters the list by status', async () => {

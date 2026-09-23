@@ -63,3 +63,13 @@ export function createWhatsAppRuntime(
     deps,
   );
 }
+
+/** What business routes may do with WhatsApp: read its projection and erase a participant's memory. */
+export function whatsappBusinessRoutes(whatsapp: WhatsAppRuntime | undefined) {
+  return whatsapp
+    ? {
+        readWhatsApp: whatsapp.projection.bind(whatsapp),
+        forgetWhatsApp: whatsapp.forgetParticipant.bind(whatsapp),
+      }
+    : {};
+}

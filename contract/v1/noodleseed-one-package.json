@@ -258,8 +258,6 @@
       "channels whatsapp events list",
       "channels whatsapp events inspect",
       "channels whatsapp events reconcile",
-      "channels whatsapp conversation",
-      "channels whatsapp conversation forget",
       "capabilities",
       "capabilities inspect",
       "capabilities configure",

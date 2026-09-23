@@ -5,6 +5,7 @@ import type { BusinessPermission } from '../business-information/contracts.js';
 import {
   type ApplicationConversations,
   ConversationHistoryError,
+  type ConversationWorkingMemoryEraser,
 } from '../conversation-history/operator.js';
 import {
   type BusinessInformationRouteDeps,
@@ -15,6 +16,8 @@ import type { SolutionInstallationRef } from './business-information-paths.js';
 
 export interface BusinessConversationRouteDeps extends BusinessInformationRouteDeps {
   readonly conversations?: ApplicationConversations;
+  /** Erases a WhatsApp participant's working memory when their history is forgotten. */
+  readonly forgetWhatsApp?: ConversationWorkingMemoryEraser;
 }
 
 /**
@@ -87,6 +90,7 @@ export async function handleApplicationConversations(
         ...(ref.conversationId === undefined ? {} : { conversationId: ref.conversationId }),
         body,
         actor: identity.subject,
+        ...(deps.forgetWhatsApp ? { forgetWorkingMemory: deps.forgetWhatsApp } : {}),
       },
       (operation) => deps.store.staff.run(authorized.scope, identity.subject, fence, operation),
     );

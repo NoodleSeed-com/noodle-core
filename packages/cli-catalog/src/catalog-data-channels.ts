@@ -143,13 +143,6 @@ export const CHANNELS_COMMAND: CommandSpec = {
             ...mutation,
           ]),
         ]),
-        group('conversation', 'Erase conversation content.', [
-          leaf(
-            'forget',
-            'Erase participant context and message content while preserving safeguards.',
-            [participant, ...mutation],
-          ),
-        ]),
       ],
     ),
   ],

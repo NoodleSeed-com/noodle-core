@@ -28,7 +28,7 @@ import {
   resolvePrivateInstallationDefinition,
 } from './business-information-runtime.js';
 import { serviceCapabilityReport } from './capabilities.js';
-import { createWhatsAppRuntime } from './channels/composition.js';
+import { createWhatsAppRuntime, whatsappBusinessRoutes } from './channels/composition.js';
 import { rejectIncompatibleCli } from './client-compatibility.js';
 import { createDataPlaneMembershipAuthorizer } from './data-plane-membership.js';
 import { DEVELOPER_MCP_PATH, handleDeveloperMcpRequest } from './developer-mcp/mount.js';
@@ -390,7 +390,7 @@ export function createServiceHandler(
       dispatchBusinessInformationRoutes(req, res, url, {
         pageOrigin: options.businessPageOrigin,
         pageServiceUrl: options.publicBaseUrl,
-        ...(whatsapp ? { readWhatsApp: whatsapp.projection.bind(whatsapp) } : {}),
+        ...whatsappBusinessRoutes(whatsapp),
         store: businessInformationStore,
         ...(options.businessAuthoring ? { workspaces: options.businessAuthoring.workspaces } : {}),
         ...(businessOnboarding ? { businessOnboarding } : {}),

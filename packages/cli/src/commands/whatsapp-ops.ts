@@ -188,13 +188,6 @@ export function whatsappOperation(rest: readonly string[], protectedPhone?: stri
       ...(action === 'clear' ? { body: {} } : {}),
       response: wire.WhatsAppCooldownClientResponseSchema,
     };
-  if (noun === 'conversation' && action === 'forget')
-    return {
-      path: `/participants/${participant()}/forget`,
-      method: 'POST',
-      body: {},
-      response: wire.WhatsAppMutationClientResponseSchema,
-    };
   if (noun === 'events' && action === 'list')
     return get(
       `/events${flags.after ? `?after=${encodeURIComponent(flags.after)}` : ''}`,
