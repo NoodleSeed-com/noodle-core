@@ -23,6 +23,7 @@ describe('status renderers', () => {
     expect(out).toContain('⠋');
     expect(out).toContain('Compiling…');
     expect(out).toMatch(/\[38;2;\d+;\d+;\d+m/); // 24-bit tint
+    expect(renderSpinnerFrame(1, 'Compiling…', 'truecolor')).toContain(`${ESC}[38;2;249;115;22m`);
   });
 
   it('uses a 256-color tint on a non-truecolor terminal, and no color for none', () => {

@@ -1,7 +1,7 @@
 /**
  * Shared warm brand gradient + ANSI control codes for the CLI's branded output
  * (the `noodle init` splash and the progress `status` module). Keeping the palette
- * in one place means the wordmark and the spinner read as the same Noodle Seed warmth.
+ * in one place gives the wordmark and spinner the same Noodle Seed warmth.
  */
 export type RGB = [number, number, number];
 
@@ -22,7 +22,7 @@ export const mix = (a: RGB, b: RGB, t: number): RGB => [
   lerp(a[2], b[2], t),
 ];
 
-/** Move the cursor up `n` rows, for in-place redraws (e.g. the splash animation). */
+/** Move the cursor up `n` rows for live watch redraws. */
 export const cursorUp = (n: number): string => `${String.fromCharCode(27)}[${n}A`;
 
 /** Seamless cyclic warm palette over u in [0,1): orange -> amber -> rose -> amber -> orange. */

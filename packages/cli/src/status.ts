@@ -1,5 +1,5 @@
 /**
- * TTY-aware progress status for the CLI: a warm-gradient spinner for the active
+ * TTY-aware progress status for the CLI: a warm-tinted spinner for the active
  * step, and semantic step glyphs (done / fail / warn / pending) for the settled
  * ones. Adapts to the terminal — truecolor where advertised, a 256-color fallback
  * elsewhere (so macOS Terminal.app and bare xterm stay warm), and ASCII glyphs when
@@ -9,11 +9,11 @@
 import {
   CLEAR_EOL,
   type ColorMode,
-  cyclic,
   detectColorMode,
   detectGlyphMode,
   type GlyphMode,
   HIDE_CURSOR,
+  ORANGE,
   paint,
   type RGB,
   SHOW_CURSOR,
@@ -38,7 +38,7 @@ const SYMBOL_COLOR: Record<StepKind, RGB> = {
   pending: [115, 115, 115], // dim grey
 };
 
-/** One spinner frame: `<glyph> <label>`, warm-tinted (flowing hue by index) per color mode. */
+/** One spinner frame: `<glyph> <label>`, with a stable warm tint per color mode. */
 export function renderSpinnerFrame(
   index: number,
   label: string,
@@ -47,7 +47,7 @@ export function renderSpinnerFrame(
 ): string {
   const frames = glyph === 'ascii' ? FRAMES_ASCII : FRAMES_UNICODE;
   const ch = frames[((index % frames.length) + frames.length) % frames.length] as string;
-  return `${paint(cyclic(index / frames.length), ch, color)} ${label}`;
+  return `${paint(ORANGE, ch, color)} ${label}`;
 }
 
 /** One settled step line: `<symbol> <text>`, semantic color per color mode. */

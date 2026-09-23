@@ -13,8 +13,7 @@
  * `color: 'none'` (pipes / CI / NO_COLOR / non-TTY) it emits plain, escape-free,
  * still-aligned ASCII; callers suppress it entirely under `--json`.
  *
- * The animated gradient sweep lives in the `--watch`/loading redraw path (status.ts),
- * not here — a one-shot printed table carries a static gradient.
+ * A one-shot printed table carries a static gradient.
  */
 import { AMBER, type ColorMode, cyclic, type GlyphMode, paint, type RGB } from './gradient.js';
 

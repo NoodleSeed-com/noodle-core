@@ -1,14 +1,11 @@
 /**
- * Live `--watch` dashboards for the resource `list`/`status` commands (ADR 0129: the ANIMATED
- * warm gradient — `cyclic` from `gradient.ts` — is reserved for this live-redraw moment;
- * one-shot tables/spinners elsewhere only ever use a static/per-position tint).
+ * Live `--watch` dashboards for the resource `list`/`status` commands (ADR 0129).
  *
  * TTY mode repaints in place: hide the cursor, render a frame, then on every tick move the
  * cursor back up over the previous frame and redraw — blanking any now-stale trailing lines
  * when the new frame is shorter than the last, so a shrinking table never leaves orphaned rows
  * behind. A footer line (`watching · refreshed HH:MM:SS · every Ns · Ctrl-C to stop`) is
- * appended every tick; its leading glyph is tinted by the tick's position in the warm cyclic
- * gradient, so the display visibly "breathes" between refreshes. SIGINT restores the cursor and
+ * appended every tick with a stable warm glyph. SIGINT restores the cursor and
  * exits 0 — a stopped watch is not a failure.
  *
  * Non-TTY mode (piped output, CI) never repaints or emits ANSI: it appends timestamped
@@ -26,11 +23,11 @@ import {
   CLEAR_EOL,
   type ColorMode,
   cursorUp,
-  cyclic,
   detectColorMode,
   detectGlyphMode,
   type GlyphMode,
   HIDE_CURSOR,
+  ORANGE,
   paint,
   SHOW_CURSOR,
 } from './gradient.js';
@@ -98,17 +95,11 @@ function timeLabel(at: Date): string {
   return at.toTimeString().slice(0, 8);
 }
 
-/** The animated footer line: `<glyph> watching · refreshed HH:MM:SS · every Ns · Ctrl-C to stop`. */
-function footerLine(
-  tick: number,
-  intervalMs: number,
-  at: Date,
-  color: ColorMode,
-  glyph: GlyphMode,
-): string {
+/** The footer line: `<glyph> watching · refreshed HH:MM:SS · every Ns · Ctrl-C to stop`. */
+function footerLine(intervalMs: number, at: Date, color: ColorMode, glyph: GlyphMode): string {
   const dot = glyph === 'ascii' ? WATCH_GLYPH_ASCII : WATCH_GLYPH_UNICODE;
   const sep = glyph === 'ascii' ? '-' : '·';
-  const tinted = paint(cyclic(tick * 0.15), dot, color);
+  const tinted = paint(ORANGE, dot, color);
   const seconds = Math.round(intervalMs / 1000);
   return (
     `${tinted} watching ${sep} refreshed ${timeLabel(at)} ${sep} ` +
@@ -182,7 +173,7 @@ async function runWatchTty(
       } else {
         consecutiveFailures += 1;
       }
-      const lines = [...lastGoodFrame, footerLine(tick, opts.intervalMs, now(), color, glyph)];
+      const lines = [...lastGoodFrame, footerLine(opts.intervalMs, now(), color, glyph)];
       if (!result.ok)
         lines.push(dimText(`refresh failed (${result.error.code}), retrying…`, stream));
       previousLineCount = repaint(stream, previousLineCount, lines);
