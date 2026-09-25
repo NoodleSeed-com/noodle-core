@@ -18,8 +18,8 @@
 
 - [Architecture](architecture.md) — public components, data flow, certified defaults, and commercial boundary.
 - [Connector development](connector-contributions.md) — design and test HTTP/compute capability through the
-  TypeScript authoring surface; see CONTRIBUTING for intake status.
-- [Governance](governance.md) — repository authority, maintainership, licensing, and the future contribution flow.
+  TypeScript authoring surface; see CONTRIBUTING for how proposals land.
+- [Governance](governance.md) — repository authority, maintainership, licensing, and how contributions land.
 
 Repository-wide participation rules live in [CONTRIBUTING.md](../CONTRIBUTING.md). Support is
 [best-effort](../SUPPORT.md), security reports are [private](../SECURITY.md), and trademark use follows

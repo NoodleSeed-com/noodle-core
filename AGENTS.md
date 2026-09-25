@@ -10,6 +10,6 @@ run `pnpm build`, `pnpm typecheck`, `pnpm test`, and `pnpm lint` before offering
 integration. Do not add credentials, customer information, private infrastructure, or proprietary Noodle Seed
 implementation details.
 
-Upstream pull requests and automated contribution integration are paused during the initial beta. See
-[CONTRIBUTING.md](CONTRIBUTING.md) for the current disclosure and the future DCO/review process. The private
-source-of-truth repository remains authoritative, and reviewed exports update public `main`.
+This repository does not accept pull requests. See [CONTRIBUTING.md](CONTRIBUTING.md) for how a change proposed
+in a public issue lands. The private source-of-truth repository remains authoritative, and reviewed exports update
+public `main`.

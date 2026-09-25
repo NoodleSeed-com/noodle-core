@@ -6,8 +6,8 @@ Noodle Core is the Apache-2.0 TypeScript authoring SDK, compiler, runtime, CLI, 
 Noodle Seed. This repository is a single-node, single-operator beta that you can run locally without a
 Noodle Seed account or license key.
 
-Contribution intake is paused during this initial beta. See the current disclosure in
-[CONTRIBUTING.md](CONTRIBUTING.md); public issues remain available for reproducible bugs and feedback.
+This repository does not accept pull requests; public issues remain open for reproducible bugs, feedback, and
+change proposals. [CONTRIBUTING.md](CONTRIBUTING.md) explains how an accepted proposal lands.
 
 ## Run the self-hosted stack
 
@@ -63,6 +63,6 @@ changes have a focused [contribution guide](docs/connector-contributions.md). Re
 ## Repository model
 
 Noodle Seed develops Noodle Core in a larger private monorepo and deterministically projects the Apache-2.0
-surface here. Public issues are available now; upstream pull requests and automated contribution integration are
-paused for the initial beta. [CONTRIBUTING.md](CONTRIBUTING.md) owns the current disclosure, and
-[governance](docs/governance.md) explains repository authority and the future reviewed Copybara round trip.
+surface here. Public issues are open for bugs, feedback, and change proposals; the repository does not accept pull
+requests. [CONTRIBUTING.md](CONTRIBUTING.md) explains how an accepted proposal lands, and
+[governance](docs/governance.md) explains repository authority.

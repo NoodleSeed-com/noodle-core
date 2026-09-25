@@ -1,18 +1,18 @@
 # Contributing to Noodle Core
 
-You can inspect, clone, modify, fork, and run Noodle Core under Apache-2.0. Upstream pull requests and automated contribution integration are paused during this initial beta. Public issues remain available for reproducible bugs and feedback. We will announce contribution intake after its safety verification is complete.
+You can inspect, clone, modify, fork, and run Noodle Core under Apache-2.0. This repository does not accept pull requests: Noodle Seed's CI runs only code its own team authors. Public issues remain open for reproducible bugs, feedback, and change proposals.
 
-You may develop changes in your own fork. For now, use a public issue to report a reproducible bug, offer focused
-feedback, or discuss a substantial behavior or contract proposal. Do not attach secrets or vulnerability details;
-follow [SECURITY.md](SECURITY.md) for private disclosure.
+You may develop changes in your own fork. Use a public issue to report a reproducible bug, offer focused
+feedback, or propose a behavior or contract change, and link your fork's branch when you have one. Do not attach
+secrets or vulnerability details; follow [SECURITY.md](SECURITY.md) for private disclosure.
 
-## Future contribution requirements
+## Preparing a proposal
 
-When upstream contribution intake opens, it will use these requirements:
+A change proposed from a fork is easiest to evaluate when it follows these practices:
 
 1. Add or update the smallest owning-layer test first.
 2. Keep changes within the Apache paths documented in [LICENSE-SCOPE.md](LICENSE-SCOPE.md).
-3. Run focused checks while editing and `pnpm verify` once before requesting integration.
+3. Run focused checks while editing and `pnpm verify` once before linking the branch.
 4. Sign every commit with `git commit -s` for the
    [Developer Certificate of Origin 1.1](https://developercertificate.org/).
 
@@ -23,23 +23,13 @@ credentials, network boundaries, examples, and tests. Issues labelled
 self-contained; [`help wanted`](https://github.com/NoodleSeed-com/noodle-core/labels/help%20wanted) marks work
 maintainers would genuinely welcome.
 
-## Future pull-request process
+## How an accepted change lands
 
-This process is not active during the initial beta. After contribution intake is announced, Noodle Core's
-synchronized projection will use this flow instead of direct GitHub merges:
+Discussion and the accept or reject decision happen on the public issue. When maintainers accept a change, a
+Noodle Seed team member re-authors it in Noodle Seed's private engineering repository, where it goes through
+normal review and CI. It reaches public `main` through the next synchronized export, and the maintainer links the
+exported commit on the issue.
 
-1. Public CI validates the exact head revision and DCO metadata.
-2. Review happens on your public pull request. Maintainers explain requests and accept/reject decisions there.
-3. A green, approved revision is imported as a draft internal change without making the public repository an
-   engineering or release authority.
-4. The exact transformed revision passes isolated validation before it can join the internal merge queue.
-5. After internal merge, the accepted change is exported to public `main`, with your authorship restored and
-   integration feedback posted on the original pull request.
-
-The exported commit has a different hash because Copybara transforms and integrates it. A new public head needs
-fresh review and validation, and integration can take longer than a direct GitHub merge. Public review remains
-the canonical record even when maintainers need additional private-system validation.
-
-The [governance guide](docs/governance.md) explains maintainer authority, decision transparency, licensing,
-and the future round trip in more detail. Report vulnerabilities through [SECURITY.md](SECURITY.md), never through
+The [governance guide](docs/governance.md) explains maintainer authority, decision transparency, and licensing
+in more detail. Report vulnerabilities through [SECURITY.md](SECURITY.md), never through
 a public issue.

@@ -9,8 +9,8 @@ Most integrations do not need a new runtime package. Start in normal TypeScript 
 `server.ts`; Noodle compiles the declaration into system-owned runtime data. Do not ask app authors to edit a
 manifest, connector YAML, or generated artifact.
 
-Upstream pull requests are paused during the initial beta. You can develop and test a connector in your fork;
-[CONTRIBUTING.md](../CONTRIBUTING.md) owns the current intake disclosure and future submission process.
+This repository does not accept pull requests. You can develop and test a connector in your fork and propose it
+in a public issue; [CONTRIBUTING.md](../CONTRIBUTING.md) owns how an accepted proposal lands.
 
 The public `examples/weather/src/server.ts` is the clearest HTTP connector reference. It demonstrates an exact
 base origin, `allowedOrigins`, typed Zod input/output, bounded response size, response projection, and sandboxed
@@ -54,6 +54,6 @@ request encoding and egress policy, and one curated example path when behavior i
 and obviously synthetic credentials. Cover error status, timeout, redirect, size, malformed response, and secret
 non-disclosure cases relevant to the operation.
 
-Run focused package tests while editing, then run `pnpm verify`. Once contribution intake opens, sign every
-submitted commit and follow [CONTRIBUTING.md](../CONTRIBUTING.md). Future public review should be able to understand
-why the connector is useful, how it is bounded, and which behavior the tests prove.
+Run focused package tests while editing, then run `pnpm verify`, and follow [CONTRIBUTING.md](../CONTRIBUTING.md)
+when you propose the connector. The public issue should explain why the connector is useful, how it is bounded,
+and which behavior the tests prove.
